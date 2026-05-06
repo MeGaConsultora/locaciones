@@ -398,11 +398,11 @@ async function loadAll() {
 // ============================================================
 // HELPERS
 // ============================================================
-function formatDate(d) {
+function formatDate(d, showDay=false) {
   if (!d) return '—';
   const [y,m,day] = d.substring(0,10).split('-');
   const months = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-  return `${parseInt(day)} ${months[parseInt(m)-1]} ${y}`;
+  return showDay ? `${parseInt(day)} ${months[parseInt(m)-1]} ${y}` : `${months[parseInt(m)-1]} ${y}`;
 }
 function formatMoney(n) {
   if (n == null || isNaN(n)) return '—';
@@ -524,7 +524,7 @@ function renderContratos() {
         return `<tr onclick="openContrato(${c.id})">
           <td><strong>${c.titulo||c.hoja}</strong></td>
           <td>${c.locador||'—'}</td><td>${c.locatario||'—'}</td>
-          <td>${formatDate(c.vigencia_hasta)}${alerta}</td>
+          <td>${formatDate(c.vigencia_hasta, true)}${alerta}</td>
           <td><span class="tag-tipo">${normTipo(c.tipo_inmueble)}</span></td>
           <td><span class="badge ${est==='vigente'?'badge-green':'badge-gray'}">${est}</span></td>
         </tr>`;
@@ -569,7 +569,7 @@ function renderPagos() {
     : slice.map(p => {
         const pend = p.saldo&&p.saldo>0;
         return `<tr onclick="openContrato(${DB.contratos.find(c=>c.hoja===p.hoja)?.id})">
-          <td>${p.hoja}</td><td>${formatDate(p.mes)}</td><td>${formatDate(p.fecha_pago_hasta)}</td>
+          <td>${p.hoja}</td><td>${formatDate(p.mes)}</td><td>${formatDate(p.fecha_pago_hasta, true)}</td>
           <td class="num">${formatMoney(p.importe_alquiler)}</td>
           <td class="num">${formatMoney(p.impuestos_servicios)}</td>
           <td class="num"><strong>${formatMoney(p.total)}</strong></td>
@@ -605,7 +605,7 @@ function renderVencimientos() {
     const dtext = d<0?`Venció hace ${-d} días`:d===0?'¡Vence hoy!':`Vence en ${d} días`;
     const lastPago = DB.pagos.filter(p=>p.hoja===c.hoja).slice(-1)[0];
     return `<div class="venc-item ${cls}" onclick="openContrato(${c.id})">
-      <div class="venc-date">${formatDate(c.vigencia_hasta)}</div>
+      <div class="venc-date">${formatDate(c.vigencia_hasta, true)}</div>
       <div class="venc-info">
         <div class="venc-nombre">${c.titulo}</div>
         <div class="venc-detalle">${c.locatario||''} · ${normTipo(c.tipo_inmueble)}</div>
@@ -669,8 +669,8 @@ async function openContrato(id) {
     <div class="detail-grid">
       <div class="detail-item"><label>Locador</label><span>${c.locador||'—'}</span></div>
       <div class="detail-item"><label>Locatario</label><span>${c.locatario||'—'}</span></div>
-      <div class="detail-item"><label>Desde</label><span>${formatDate(c.vigencia_desde)}</span></div>
-      <div class="detail-item"><label>Hasta</label><span>${formatDate(c.vigencia_hasta)}</span></div>
+      <div class="detail-item"><label>Desde</label><span>${formatDate(c.vigencia_desde, true)}</span></div>
+      <div class="detail-item"><label>Hasta</label><span>${formatDate(c.vigencia_hasta, true)}</span></div>
       <div class="detail-item"><label>Tipo</label><span>${normTipo(c.tipo_inmueble)}</span></div>
       <div class="detail-item"><label>Modalidad</label><span>${c.modalidad_pago||'—'}</span></div>
       <div class="detail-item"><label>Estado</label><span><span class="badge ${est==='vigente'?'badge-green':'badge-gray'}">${est}</span></span></div>
@@ -708,7 +708,7 @@ async function openContrato(id) {
               ${cpagos.map(p => {
                 const pend = p.saldo&&p.saldo>0;
                 return `<tr>
-                  <td>${formatDate(p.mes)}</td><td>${formatDate(p.fecha_pago_hasta)}</td>
+                  <td>${formatDate(p.mes)}</td><td>${formatDate(p.fecha_pago_hasta, true)}</td>
                   <td class="num">${formatMoney(p.importe_alquiler)}</td>
                   <td class="num">${formatMoney(p.impuestos_servicios)}</td>
                   <td class="num"><strong>${formatMoney(p.total)}</strong></td>
