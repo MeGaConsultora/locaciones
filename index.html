@@ -653,18 +653,14 @@ function renderPendientes() {
 // ============================================================
 // MODAL DETALLE CONTRATO
 // ============================================================
-function openContrato(id) {
+async function openContrato(id) {
   if (!id) return;
   const c = DB.contratos.find(x => x.id===id);
   if (!c) return;
-  const cpagos = DB.pagos.filter(p=>p.hoja===c.hoja).sort((a,b)=>b.mes?.localeCompare(a.mes));
-  const totalAlq = cpagos.reduce((s,p)=>s+(p.importe_alquiler||0),0);
-  const totalPend = cpagos.filter(p=>p.saldo&&p.saldo>0).reduce((s,p)=>s+p.saldo,0);
   const est = getEstado(c);
 
   document.getElementById('modal-title').textContent = c.titulo||c.hoja;
-  document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · ${cpagos.length} registros`;
-
+  document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · Cargando pagos...`;
   document.getElementById('modal-body').innerHTML = `
     <div style="display:flex;gap:0.75rem;margin-bottom:1.5rem;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="openEditContrato(${c.id})">✏️ Editar contrato</button>
@@ -678,39 +674,58 @@ function openContrato(id) {
       <div class="detail-item"><label>Tipo</label><span>${normTipo(c.tipo_inmueble)}</span></div>
       <div class="detail-item"><label>Modalidad</label><span>${c.modalidad_pago||'—'}</span></div>
       <div class="detail-item"><label>Estado</label><span><span class="badge ${est==='vigente'?'badge-green':'badge-gray'}">${est}</span></span></div>
-      <div class="detail-item"><label>Total alquileres</label><span style="font-weight:700">${formatMoney(totalAlq)}</span></div>
-      <div class="detail-item"><label>Saldo pendiente</label><span class="${totalPend>0?'saldo-pendiente':'saldo-ok'}" style="font-weight:700">${totalPend>0?formatMoney(totalPend):'✓ Al día'}</span></div>
+      <div class="detail-item" id="detail-total-alq"><label>Total alquileres</label><span>Calculando...</span></div>
+      <div class="detail-item" id="detail-saldo"><label>Saldo pendiente</label><span>Calculando...</span></div>
     </div>
     <div class="section-title">Historial de pagos</div>
-    <div style="overflow-x:auto">
-      <table class="pagos-table">
-        <thead><tr>
-          <th>Mes</th><th>Vence</th>
-          <th class="num">Alquiler</th><th class="num">Impuestos</th><th class="num">Total</th>
-          <th class="num">Saldo</th><th class="num">Comisión</th><th class="num">EPE</th><th class="num">Agua</th><th class="num">TGIU</th>
-          <th>Estado</th>
-        </tr></thead>
-        <tbody>
-          ${cpagos.map(p => {
-            const pend = p.saldo&&p.saldo>0;
-            return `<tr>
-              <td>${formatDate(p.mes)}</td><td>${formatDate(p.fecha_pago_hasta)}</td>
-              <td class="num">${formatMoney(p.importe_alquiler)}</td>
-              <td class="num">${formatMoney(p.impuestos_servicios)}</td>
-              <td class="num"><strong>${formatMoney(p.total)}</strong></td>
-              <td class="num ${pend?'saldo-pendiente':''}">${pend?formatMoney(p.saldo):'✓'}</td>
-              <td class="num">${formatMoney(p.comision_8)}</td>
-              <td class="num">${formatMoney(p.monto_epe)}</td>
-              <td class="num">${formatMoney(p.monto_agua)}</td>
-              <td class="num">${formatMoney(p.monto_tgiu)}</td>
-              <td><span class="badge ${pend?'badge-red':'badge-green'}">${pend?'Pendiente':'Pagado'}</span></td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
+    <div id="pagos-container"><div class="loading-overlay">Cargando pagos...</div></div>
   `;
   document.getElementById('modal-overlay').classList.add('open');
+
+  // Fetch pagos directly from Supabase for this contract
+  try {
+    const hojaEncoded = encodeURIComponent(c.hoja);
+    const cpagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.desc&limit=500`);
+
+    const totalAlq = cpagos.reduce((s,p)=>s+(p.importe_alquiler||0),0);
+    const totalPend = cpagos.filter(p=>p.saldo&&p.saldo>0).reduce((s,p)=>s+p.saldo,0);
+
+    document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · ${cpagos.length} registros`;
+    document.getElementById('detail-total-alq').innerHTML = `<label>Total alquileres</label><span style="font-weight:700">${formatMoney(totalAlq)}</span>`;
+    document.getElementById('detail-saldo').innerHTML = `<label>Saldo pendiente</label><span class="${totalPend>0?'saldo-pendiente':'saldo-ok'}" style="font-weight:700">${totalPend>0?formatMoney(totalPend):'✓ Al día'}</span>`;
+
+    document.getElementById('pagos-container').innerHTML = cpagos.length === 0
+      ? `<div class="empty-state"><div class="icon">💳</div><p>Sin pagos registrados</p></div>`
+      : `<div style="overflow-x:auto">
+          <table class="pagos-table">
+            <thead><tr>
+              <th>Mes</th><th>Vence</th>
+              <th class="num">Alquiler</th><th class="num">Impuestos</th><th class="num">Total</th>
+              <th class="num">Saldo</th><th class="num">Comisión</th><th class="num">EPE</th><th class="num">Agua</th><th class="num">TGIU</th>
+              <th>Estado</th>
+            </tr></thead>
+            <tbody>
+              ${cpagos.map(p => {
+                const pend = p.saldo&&p.saldo>0;
+                return `<tr>
+                  <td>${formatDate(p.mes)}</td><td>${formatDate(p.fecha_pago_hasta)}</td>
+                  <td class="num">${formatMoney(p.importe_alquiler)}</td>
+                  <td class="num">${formatMoney(p.impuestos_servicios)}</td>
+                  <td class="num"><strong>${formatMoney(p.total)}</strong></td>
+                  <td class="num ${pend?'saldo-pendiente':''}">${pend?formatMoney(p.saldo):'✓'}</td>
+                  <td class="num">${formatMoney(p.comision_8)}</td>
+                  <td class="num">${formatMoney(p.monto_epe)}</td>
+                  <td class="num">${formatMoney(p.monto_agua)}</td>
+                  <td class="num">${formatMoney(p.monto_tgiu)}</td>
+                  <td><span class="badge ${pend?'badge-red':'badge-green'}">${pend?'Pendiente':'Pagado'}</span></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>`;
+  } catch(e) {
+    document.getElementById('pagos-container').innerHTML = `<div class="empty-state"><p>Error al cargar pagos: ${e.message}</p></div>`;
+  }
 }
 
 // ============================================================
