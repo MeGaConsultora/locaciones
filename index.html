@@ -737,6 +737,7 @@ async function openContrato(id) {
     <div style="display:flex;gap:0.75rem;margin-bottom:1.5rem;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="openEditContrato(${c.id})">✏️ Editar contrato</button>
       <button class="btn btn-green" onclick="openNuevoPago('${c.hoja}')">+ Registrar pago</button>
+      <button class="btn btn-secondary" onclick="openReciboPropietario('${c.hoja}')">📄 Recibo propietario</button>
     </div>
     <div class="detail-grid">
       <div class="detail-item"><label>Locador</label><span>${c.locador||'—'}</span></div>
@@ -766,29 +767,46 @@ async function openContrato(id) {
     document.getElementById('detail-total-alq').innerHTML = `<label>Total alquileres</label><span style="font-weight:700">${formatMoney(totalAlq)}</span>`;
     document.getElementById('detail-saldo').innerHTML = `<label>Saldo pendiente</label><span class="${totalPend>0?'saldo-pendiente':'saldo-ok'}" style="font-weight:700">${totalPend>0?formatMoney(totalPend):'✓ Al día'}</span>`;
 
-    document.getElementById('pagos-container').innerHTML = cpagos.length === 0
+    // Solo mostrar hasta mes corriente para impagos
+    const TODAY_DATE = TODAY;
+    const pagosAMostrar = cpagos.filter(p => {
+      if (!p.mes) return false;
+      // Siempre mostrar pagados; para impagos solo hasta mes corriente
+      if (p.saldo && p.saldo > 0) return p.mes.substring(0,7) <= TODAY_DATE.substring(0,7);
+      return true;
+    });
+
+    document.getElementById('pagos-container').innerHTML = pagosAMostrar.length === 0
       ? `<div class="empty-state"><div class="icon">💳</div><p>Sin pagos registrados</p></div>`
       : `<div style="overflow-x:auto">
-          <table class="pagos-table">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:0.5rem">
+            <button class="btn btn-secondary" style="font-size:0.78rem;padding:4px 12px" onclick="imprimirHistorial(${c.id})">🖨️ Imprimir historial</button>
+          </div>
+          <table class="pagos-table" style="min-width:900px">
             <thead><tr>
               <th>Mes</th><th>Vence</th>
-              <th class="num">Alquiler</th><th class="num">Impuestos</th><th class="num">Total</th>
-              <th class="num">Saldo</th><th class="num">Comisión</th><th class="num">EPE</th><th class="num">Agua</th><th class="num">TGIU</th>
+              <th class="num">Alquiler</th>
+              <th class="num">EPE</th><th class="num">Agua</th><th class="num">TGIU</th>
+              <th class="num">Seguro</th><th class="num">Otros</th>
+              <th class="num">Total</th>
+              <th class="num">Saldo</th>
               <th>Estado</th>
             </tr></thead>
             <tbody>
-              ${cpagos.map(p => {
+              ${pagosAMostrar.map(p => {
                 const pend = p.saldo&&p.saldo>0;
-                return `<tr>
-                  <td>${formatDate(p.mes)}</td><td>${formatDate(p.fecha_pago_hasta, true)}</td>
+                const rowStyle = pend ? 'background:#fff0f0;color:#721c24;' : '';
+                return `<tr style="${rowStyle}">
+                  <td><strong>${formatDate(p.mes)}</strong></td>
+                  <td>${formatDate(p.fecha_pago_hasta, true)}</td>
                   <td class="num">${formatMoney(p.importe_alquiler)}</td>
-                  <td class="num">${formatMoney(p.impuestos_servicios)}</td>
-                  <td class="num"><strong>${formatMoney(p.total)}</strong></td>
-                  <td class="num ${pend?'saldo-pendiente':''}">${pend?formatMoney(p.saldo):'✓'}</td>
-                  <td class="num">${formatMoney(p.comision_8)}</td>
                   <td class="num">${formatMoney(p.monto_epe)}</td>
                   <td class="num">${formatMoney(p.monto_agua)}</td>
                   <td class="num">${formatMoney(p.monto_tgiu)}</td>
+                  <td class="num">${formatMoney(p.monto_seguro)}</td>
+                  <td class="num">${formatMoney(p.monto_otros)}</td>
+                  <td class="num"><strong>${formatMoney(p.total)}</strong></td>
+                  <td class="num ${pend?'saldo-pendiente':''}">${pend?formatMoney(p.saldo):'✓'}</td>
                   <td><span class="badge ${pend?'badge-red':'badge-green'}">${pend?'Pendiente':'Pagado'}</span></td>
                 </tr>`;
               }).join('')}
@@ -801,16 +819,233 @@ async function openContrato(id) {
 }
 
 // ============================================================
+// IMPRIMIR HISTORIAL
+// ============================================================
+async function imprimirHistorial(contratoId) {
+  const c = DB.contratos.find(x => x.id === contratoId);
+  if (!c) return;
+  const hojaEncoded = encodeURIComponent(c.hoja);
+  const cpagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc&limit=500`);
+  const TODAY_DATE = TODAY;
+  const pagos = cpagos.filter(p => {
+    if (!p.mes) return false;
+    if (p.saldo && p.saldo > 0) return p.mes.substring(0,7) <= TODAY_DATE.substring(0,7);
+    return true;
+  });
+
+  const ventana = window.open('', '_blank', 'width=1100,height=800');
+  ventana.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8"><title>Historial - ${c.titulo}</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family:'DM Sans',Arial,sans-serif; padding:20px; background:#f5f0e8; }
+      .no-print { text-align:center; margin-bottom:16px; }
+      .no-print button { background:#1a1a2e; color:white; border:none; padding:10px 28px; border-radius:8px; font-size:1rem; cursor:pointer; }
+      .card { background:white; border-radius:10px; padding:24px; box-shadow:0 2px 12px rgba(0,0,0,0.1); }
+      h1 { font-size:1.3rem; color:#1a1a2e; margin-bottom:4px; }
+      .sub { font-size:0.82rem; color:#888; margin-bottom:16px; }
+      table { width:100%; border-collapse:collapse; font-size:0.82rem; }
+      th { background:#1a1a2e; color:white; padding:7px 8px; text-align:left; font-size:0.7rem; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; }
+      th.r, td.r { text-align:right; }
+      td { padding:6px 8px; border-bottom:1px solid #f0ece4; }
+      tr.impago td { background:#fff0f0; color:#721c24; }
+      tr.pagado td { background:white; }
+      @media print { body { background:white; padding:0; } .no-print { display:none; } .card { box-shadow:none; border-radius:0; } }
+    </style>
+  </head><body>
+    <div class="no-print"><button onclick="window.print()">🖨️ Imprimir</button></div>
+    <div class="card">
+      <h1>MeGa Consultora — Historial de Pagos</h1>
+      <div class="sub">${c.titulo} · ${c.locador||''} / ${c.locatario||''} · ${formatDate(c.vigencia_desde,true)} — ${formatDate(c.vigencia_hasta,true)}</div>
+      <table>
+        <thead><tr>
+          <th>Mes</th><th>Vence</th>
+          <th class="r">Alquiler</th><th class="r">EPE</th><th class="r">Agua</th><th class="r">TGIU</th>
+          <th class="r">Seguro</th><th class="r">Otros</th><th class="r">Total</th><th class="r">Saldo</th><th>Estado</th>
+        </tr></thead>
+        <tbody>
+          ${pagos.map(p => {
+            const pend = p.saldo && p.saldo > 0;
+            return `<tr class="${pend?'impago':'pagado'}">
+              <td><strong>${formatDate(p.mes)}</strong></td>
+              <td>${formatDate(p.fecha_pago_hasta,true)}</td>
+              <td class="r">${formatMoney(p.importe_alquiler)}</td>
+              <td class="r">${formatMoney(p.monto_epe)}</td>
+              <td class="r">${formatMoney(p.monto_agua)}</td>
+              <td class="r">${formatMoney(p.monto_tgiu)}</td>
+              <td class="r">${formatMoney(p.monto_seguro)}</td>
+              <td class="r">${formatMoney(p.monto_otros)}</td>
+              <td class="r"><strong>${formatMoney(p.total)}</strong></td>
+              <td class="r" style="${pend?'color:#c8483a;font-weight:700':'color:#2d7a4f'}">${pend?formatMoney(p.saldo):'✓'}</td>
+              <td><span style="font-size:0.72rem;font-weight:600;padding:2px 8px;border-radius:100px;background:${pend?'#f8d7da':'#d4edda'};color:${pend?'#721c24':'#155724'}">${pend?'Pendiente':'Pagado'}</span></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </body></html>`);
+  ventana.document.close();
+}
+
+// ============================================================
+// RECIBO AL PROPIETARIO
+// ============================================================
+async function openReciboPropietario(hojaStr) {
+  const c = DB.contratos.find(x => x.hoja === hojaStr);
+  if (!c) return;
+  const hojaEncoded = encodeURIComponent(hojaStr);
+  const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.desc&limit=500`);
+  const pagados = pagos.filter(p => p.pagado === 'SI' || (p.saldo === 0 && p.total > 0));
+
+  document.getElementById('modal-title').textContent = 'Recibo al Propietario';
+  document.getElementById('modal-subtitle').textContent = c.titulo;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-group" style="margin-bottom:1rem">
+      <label>Seleccioná el mes a rendir</label>
+      <select id="sel-mes-prop" class="filter-select" style="width:100%;margin-top:4px" onchange="cargarRendicion('${hojaStr}', this.value, ${JSON.stringify(pagados).replace(/"/g,'&quot;')})">
+        <option value="">-- Elegí un mes --</option>
+        ${pagados.map(p => `<option value="${p.id}">${formatDate(p.mes)} — ${formatMoney(p.total)}</option>`).join('')}
+      </select>
+    </div>
+    <div id="rendicion-container"></div>
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function cargarRendicion(hoja, pagoId, pagados) {
+  if (!pagoId) { document.getElementById('rendicion-container').innerHTML = ''; return; }
+  const p = pagados.find(x => x.id == pagoId);
+  if (!p) return;
+  const c = DB.contratos.find(x => x.hoja === hoja);
+
+  document.getElementById('rendicion-container').innerHTML = `
+    <div class="section-title" style="margin-bottom:1rem">Rendición — ${formatDate(p.mes)}</div>
+    <div style="background:var(--cream);border-radius:10px;padding:1rem;margin-bottom:1rem">
+      <div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)">
+        <span>Alquiler cobrado</span><span style="font-weight:600">${formatMoney(p.importe_alquiler)}</span>
+      </div>
+      ${p.monto_epe>0?`<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span>EPE</span><span>${formatMoney(p.monto_epe)}</span></div>`:''}
+      ${p.monto_agua>0?`<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span>Agua</span><span>${formatMoney(p.monto_agua)}</span></div>`:''}
+      ${p.monto_tgiu>0?`<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span>TGIU</span><span>${formatMoney(p.monto_tgiu)}</span></div>`:''}
+      ${p.monto_seguro>0?`<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span>Seguro</span><span>${formatMoney(p.monto_seguro)}</span></div>`:''}
+      ${p.monto_otros>0?`<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span>Otros</span><span>${formatMoney(p.monto_otros)}</span></div>`:''}
+      <div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border);color:var(--accent)">
+        <span>Comisión 8%</span><span>- ${formatMoney(p.comision_8)}</span>
+      </div>
+      <div class="form-group" style="padding:0.5rem 0">
+        <label>Descuentos adicionales al propietario</label>
+        <input id="descuento-prop" type="number" placeholder="0" value="${p.descuento_propietario||0}" oninput="recalcRendicion(${p.importe_alquiler||0},${p.comision_8||0})">
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:0.75rem 0 0;font-weight:700;font-size:1rem;border-top:2px solid var(--ink)">
+        <span>Total a rendir al propietario:</span>
+        <span id="total-rendir" style="color:var(--green)">${formatMoney((p.importe_alquiler||0)-(p.comision_8||0)-(p.descuento_propietario||0))}</span>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="generarReciboPropietario(${p.id},'${hoja}')">🖨️ Generar recibo</button>
+    </div>
+  `;
+}
+
+function recalcRendicion(alquiler, comision) {
+  const desc = parseFloat(document.getElementById('descuento-prop').value)||0;
+  const total = alquiler - comision - desc;
+  document.getElementById('total-rendir').textContent = formatMoney(total);
+}
+
+async function generarReciboPropietario(pagoId, hoja) {
+  const c = DB.contratos.find(x => x.hoja === hoja);
+  const hojaEncoded = encodeURIComponent(hoja);
+  const pagos = await sbGet('pagos', `id=eq.${pagoId}&limit=1`);
+  const p = pagos[0];
+  if (!p) return;
+
+  const descuento = parseFloat(document.getElementById('descuento-prop').value)||0;
+  const totalRendir = (p.importe_alquiler||0) - (p.comision_8||0) - descuento;
+
+  // Save descuento
+  await sbPatch('pagos', pagoId, { descuento_propietario: descuento });
+
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const fechaMes = p.mes ? (() => { const [y,m]=p.mes.split('-'); return `${meses[parseInt(m)-1]} ${y}`; })() : '';
+  const fechaHoy = (() => { const [y,m,d]=TODAY.split('-'); return `${d}/${m}/${y}`; })();
+
+  const ventana = window.open('', '_blank', 'width=780,height=600');
+  ventana.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8"><title>Recibo Propietario</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family:'DM Sans',Arial,sans-serif; background:#f5f0e8; padding:20px; display:flex; flex-direction:column; align-items:center; gap:20px; }
+      .no-print { text-align:center; }
+      .no-print button { background:#1a1a2e; color:white; border:none; padding:10px 28px; border-radius:8px; font-size:1rem; cursor:pointer; }
+      .recibo { background:white; border:2px solid #1a1a2e; border-radius:8px; padding:28px; width:100%; max-width:680px; }
+      .header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #1a1a2e; padding-bottom:12px; margin-bottom:16px; }
+      .empresa { font-family:'DM Serif Display',serif; font-size:1.4rem; color:#1a1a2e; }
+      .tipo-recibo { font-size:0.72rem; color:#888; margin-top:4px; }
+      .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; font-size:0.85rem; }
+      .field label { font-size:0.7rem; text-transform:uppercase; color:#888; letter-spacing:.05em; display:block; }
+      table { width:100%; border-collapse:collapse; margin-bottom:12px; font-size:0.85rem; }
+      th { background:#1a1a2e; color:white; padding:7px 10px; text-align:left; font-size:0.7rem; text-transform:uppercase; }
+      th.r, td.r { text-align:right; }
+      td { padding:7px 10px; border-bottom:1px solid #f0ece4; }
+      .total-row td { font-weight:700; font-size:1rem; border-top:2px solid #1a1a2e; color:#2d7a4f; }
+      .firmas { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:20px; padding-top:16px; border-top:1px dashed #ccc; }
+      .firma { text-align:center; }
+      .firma-line { border-top:1px solid #333; padding-top:6px; font-size:0.78rem; color:#666; margin-top:24px; }
+      .separador { border-top:3px dashed #ccc; padding-top:8px; font-size:0.7rem; color:#aaa; text-align:center; margin:8px 0; }
+      @media print { body { background:white; padding:0; gap:0; } .no-print { display:none; } .recibo { border-radius:0; box-shadow:none; page-break-after:always; } .recibo:last-child { page-break-after:avoid; } }
+    </style>
+  </head><body>
+    <div class="no-print"><button onclick="window.print()">🖨️ Imprimir por duplicado</button></div>
+    ${['','<div class="separador">— DUPLICADO —</div>'].map(sep => `
+    ${sep}
+    <div class="recibo">
+      <div class="header">
+        <div><div class="empresa">MeGa Consultora</div><div class="tipo-recibo">Recibo de Rendición al Propietario</div></div>
+        <div style="text-align:right"><div style="font-size:0.72rem;color:#888">Fecha</div><div style="font-size:1.1rem;font-weight:700">${fechaHoy}</div></div>
+      </div>
+      <div class="grid">
+        <div class="field"><label>Propietario</label>${c?.locador||'—'}</div>
+        <div class="field"><label>Inmueble</label>${c?.titulo||'—'}</div>
+        <div class="field"><label>Inquilino</label>${c?.locatario||'—'}</div>
+        <div class="field"><label>Período</label>${fechaMes}</div>
+      </div>
+      <table>
+        <thead><tr><th>Concepto</th><th class="r">Importe</th></tr></thead>
+        <tbody>
+          <tr><td>Alquiler cobrado</td><td class="r">${formatMoney(p.importe_alquiler)}</td></tr>
+          ${p.comision_8>0?`<tr><td style="color:#c8483a">Comisión 8% (inmobiliaria)</td><td class="r" style="color:#c8483a">- ${formatMoney(p.comision_8)}</td></tr>`:''}
+          ${descuento>0?`<tr><td style="color:#c8483a">Descuentos</td><td class="r" style="color:#c8483a">- ${formatMoney(descuento)}</td></tr>`:''}
+        </tbody>
+        <tfoot><tr class="total-row"><td>TOTAL A RECIBIR</td><td class="r">${formatMoney(totalRendir)}</td></tr></tfoot>
+      </table>
+      <div class="firmas">
+        <div class="firma"><div class="firma-line">Firma propietario</div></div>
+        <div class="firma"><div class="firma-line">Firma inmobiliaria</div></div>
+      </div>
+    </div>`).join('')}
+  </body></html>`);
+  ventana.document.close();
+  toast('Recibo generado ✓');
+  closeModal();
+}
+
+// ============================================================
 // NUEVO CONTRATO
 // ============================================================
 function openNuevoContrato() {
   document.getElementById('modal-title').textContent = 'Nuevo Contrato';
   document.getElementById('modal-subtitle').textContent = 'Completá los datos del contrato';
   document.getElementById('modal-body').innerHTML = `
+    <div class="section-title" style="margin-bottom:1rem">Datos del contrato</div>
     <div class="form-grid">
-      <div class="form-group" style="grid-column:1/-1"><label>Título / Nombre del contrato</label><input id="f-titulo" type="text" placeholder="Ej: García-Pérez"></div>
-      <div class="form-group"><label>Locador (Parte 1)</label><input id="f-locador" type="text"></div>
-      <div class="form-group"><label>Locatario (Parte 2)</label><input id="f-locatario" type="text"></div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Título / Nombre del contrato</label>
+        <input id="f-titulo" type="text" placeholder="Ej: García-Pérez">
+      </div>
       <div class="form-group"><label>Vigencia desde</label><input id="f-desde" type="date"></div>
       <div class="form-group"><label>Vigencia hasta</label><input id="f-hasta" type="date"></div>
       <div class="form-group"><label>Tipo de inmueble</label>
@@ -823,8 +1058,75 @@ function openNuevoContrato() {
       <div class="form-group"><label>Modalidad de pago</label>
         <select id="f-modalidad"><option>ADELANTADO</option><option>VENCIDO</option></select>
       </div>
+      <div class="form-group"><label>Periodicidad actualización</label>
+        <select id="f-periodicidad">
+          <option value="">Sin actualización</option>
+          <option>Mensual</option><option>Bimestral</option><option>Trimestral</option>
+          <option>Cuatrimestral</option><option>Semestral</option><option>Anual</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Índice de actualización</label>
+        <select id="f-indice">
+          <option value="">—</option>
+          <option>IPC (Índice de Precios al Consumidor)</option>
+          <option>ICL (Índice Contratos de Locación)</option>
+          <option>IRL (Índice de Referencia de Locaciones)</option>
+          <option>Kg de novillos</option>
+          <option>Dólar oficial</option>
+          <option>Acuerdo entre partes</option>
+          <option>Otro</option>
+        </select>
+      </div>
       <div class="form-group"><label>Gastos inicio</label><input id="f-gastos" type="number" placeholder="0"></div>
     </div>
+
+    <div class="section-title" style="margin:1.2rem 0 1rem">Servicios e impuestos a cargo del inquilino</div>
+    <div style="display:flex;flex-wrap:wrap;gap:0.75rem;background:var(--cream);padding:1rem;border-radius:10px;margin-bottom:1.2rem">
+      ${['EPE','Agua','TGIU','Gas','Internet','Expensas','Seguro','Otros'].map(s =>
+        `<label style="display:flex;align-items:center;gap:6px;font-size:0.88rem;cursor:pointer">
+          <input type="checkbox" id="srv-${s}" value="${s}" style="width:15px;height:15px"> ${s}
+        </label>`
+      ).join('')}
+    </div>
+
+    <div class="section-title" style="margin-bottom:1rem">Propietario</div>
+    <div class="form-grid" style="margin-bottom:0.5rem">
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Buscar propietario existente</label>
+        <input id="busca-prop" type="text" placeholder="Apellido o DNI..." oninput="buscarPersona('prop',this.value)">
+        <div id="sugerencias-prop" style="background:white;border:1px solid var(--border);border-radius:8px;margin-top:4px;display:none;max-height:150px;overflow-y:auto"></div>
+      </div>
+    </div>
+    <div class="form-grid" id="form-prop">
+      <div class="form-group"><label>Apellido/s</label><input id="prop-apellido" type="text"></div>
+      <div class="form-group"><label>Nombre/s</label><input id="prop-nombre" type="text"></div>
+      <div class="form-group"><label>DNI</label><input id="prop-dni" type="text"></div>
+      <div class="form-group"><label>CUIT</label><input id="prop-cuit" type="text"></div>
+      <div class="form-group"><label>Domicilio</label><input id="prop-domicilio" type="text"></div>
+      <div class="form-group"><label>Teléfono</label><input id="prop-tel" type="text"></div>
+      <div class="form-group"><label>Email</label><input id="prop-email" type="email"></div>
+    </div>
+    <input type="hidden" id="prop-id" value="">
+
+    <div class="section-title" style="margin:1.2rem 0 1rem">Inquilino</div>
+    <div class="form-grid" style="margin-bottom:0.5rem">
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Buscar inquilino existente</label>
+        <input id="busca-inq" type="text" placeholder="Apellido o DNI..." oninput="buscarPersona('inq',this.value)">
+        <div id="sugerencias-inq" style="background:white;border:1px solid var(--border);border-radius:8px;margin-top:4px;display:none;max-height:150px;overflow-y:auto"></div>
+      </div>
+    </div>
+    <div class="form-grid" id="form-inq">
+      <div class="form-group"><label>Apellido/s</label><input id="inq-apellido" type="text"></div>
+      <div class="form-group"><label>Nombre/s</label><input id="inq-nombre" type="text"></div>
+      <div class="form-group"><label>DNI</label><input id="inq-dni" type="text"></div>
+      <div class="form-group"><label>CUIT</label><input id="inq-cuit" type="text"></div>
+      <div class="form-group"><label>Domicilio</label><input id="inq-domicilio" type="text"></div>
+      <div class="form-group"><label>Teléfono</label><input id="inq-tel" type="text"></div>
+      <div class="form-group"><label>Email</label><input id="inq-email" type="email"></div>
+    </div>
+    <input type="hidden" id="inq-id" value="">
+
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarContrato()">Guardar contrato</button>
@@ -833,20 +1135,110 @@ function openNuevoContrato() {
   document.getElementById('modal-overlay').classList.add('open');
 }
 
+async function buscarPersona(tipo, q) {
+  if (q.length < 2) { document.getElementById('sugerencias-'+tipo).style.display='none'; return; }
+  try {
+    const res = await sbGet('personas', `or=(apellido.ilike.*${encodeURIComponent(q)}*,dni.ilike.*${encodeURIComponent(q)}*)&limit=8`);
+    const div = document.getElementById('sugerencias-'+tipo);
+    if (!res.length) { div.style.display='none'; return; }
+    div.style.display='block';
+    div.innerHTML = res.map(p => `
+      <div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0ece4;font-size:0.85rem"
+        onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background='white'"
+        onclick="seleccionarPersona('${tipo}',${JSON.stringify(p).replace(/"/g,'&quot;')})">
+        <strong>${p.apellido}, ${p.nombre}</strong> — DNI: ${p.dni||'—'}
+      </div>
+    `).join('');
+  } catch(e) {}
+}
+
+function seleccionarPersona(tipo, p) {
+  document.getElementById(tipo+'-apellido').value = p.apellido||'';
+  document.getElementById(tipo+'-nombre').value = p.nombre||'';
+  document.getElementById(tipo+'-dni').value = p.dni||'';
+  document.getElementById(tipo+'-cuit').value = p.cuit||'';
+  document.getElementById(tipo+'-domicilio').value = p.domicilio||'';
+  document.getElementById(tipo+'-tel').value = p.telefono||'';
+  document.getElementById(tipo+'-email').value = p.email||'';
+  document.getElementById(tipo+'-id').value = p.id||'';
+  document.getElementById('sugerencias-'+tipo).style.display='none';
+  document.getElementById('busca-'+tipo).value = `${p.apellido}, ${p.nombre}`;
+  toast(`${tipo==='prop'?'Propietario':'Inquilino'} cargado ✓`);
+}
+
 async function guardarContrato() {
+  const titulo = document.getElementById('f-titulo').value.trim();
+  if (!titulo) { toast('El título es obligatorio','error'); return; }
+
+  // Servicios seleccionados
+  const servicios = ['EPE','Agua','TGIU','Gas','Internet','Expensas','Seguro','Otros']
+    .filter(s => document.getElementById('srv-'+s)?.checked).join(',');
+
+  // Guardar/actualizar propietario
+  let propId = document.getElementById('prop-id').value;
+  const propData = {
+    apellido: document.getElementById('prop-apellido').value.trim(),
+    nombre: document.getElementById('prop-nombre').value.trim(),
+    dni: document.getElementById('prop-dni').value.trim(),
+    cuit: document.getElementById('prop-cuit').value.trim(),
+    domicilio: document.getElementById('prop-domicilio').value.trim(),
+    telefono: document.getElementById('prop-tel').value.trim(),
+    email: document.getElementById('prop-email').value.trim(),
+  };
+  if (propData.apellido || propData.nombre) {
+    try {
+      if (propId) {
+        await sbPatch('personas', propId, propData);
+      } else {
+        const r = await sbPost('personas', propData);
+        propId = r[0]?.id || '';
+      }
+    } catch(e) {}
+  }
+
+  // Guardar/actualizar inquilino
+  let inqId = document.getElementById('inq-id').value;
+  const inqData = {
+    apellido: document.getElementById('inq-apellido').value.trim(),
+    nombre: document.getElementById('inq-nombre').value.trim(),
+    dni: document.getElementById('inq-dni').value.trim(),
+    cuit: document.getElementById('inq-cuit').value.trim(),
+    domicilio: document.getElementById('inq-domicilio').value.trim(),
+    telefono: document.getElementById('inq-tel').value.trim(),
+    email: document.getElementById('inq-email').value.trim(),
+  };
+  if (inqData.apellido || inqData.nombre) {
+    try {
+      if (inqId) {
+        await sbPatch('personas', inqId, inqData);
+      } else {
+        const r = await sbPost('personas', inqData);
+        inqId = r[0]?.id || '';
+      }
+    } catch(e) {}
+  }
+
+  const locador = propData.apellido ? `${propData.apellido}, ${propData.nombre}`.trim() : '';
+  const locatario = inqData.apellido ? `${inqData.apellido}, ${inqData.nombre}`.trim() : '';
+
   const body = {
-    hoja: document.getElementById('f-titulo').value.trim(),
-    titulo: document.getElementById('f-titulo').value.trim(),
-    locador: document.getElementById('f-locador').value.trim(),
-    locatario: document.getElementById('f-locatario').value.trim(),
+    hoja: titulo,
+    titulo,
+    locador,
+    locatario,
     vigencia_desde: document.getElementById('f-desde').value||null,
     vigencia_hasta: document.getElementById('f-hasta').value||null,
     tipo_inmueble: document.getElementById('f-tipo').value,
     modalidad_pago: document.getElementById('f-modalidad').value,
+    periodicidad_actualizacion: document.getElementById('f-periodicidad').value||null,
+    indice_actualizacion: document.getElementById('f-indice').value||null,
+    servicios_inquilino: servicios||null,
     gastos_inicio: parseFloat(document.getElementById('f-gastos').value)||0,
-    gastos_pagado: 0
+    gastos_pagado: 0,
+    propietario_id: propId||null,
+    inquilino_id: inqId||null,
   };
-  if (!body.titulo) { toast('El título es obligatorio','error'); return; }
+
   try {
     await sbPost('contratos', body);
     toast('Contrato guardado ✓');
