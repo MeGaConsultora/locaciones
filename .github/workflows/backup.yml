@@ -1,0 +1,111 @@
+name: Backup diario Supabase
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # Todos los días a las 3am UTC (medianoche Argentina)
+  workflow_dispatch:       # También permite ejecutarlo manualmente
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repositorio
+        uses: actions/checkout@v3
+
+      - name: Exportar contratos desde Supabase
+        run: |
+          curl -s "${{ secrets.SUPABASE_URL }}/rest/v1/contratos?select=*&limit=10000" \
+            -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}" \
+            -o backup_contratos.json
+          echo "Contratos exportados: $(cat backup_contratos.json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+
+      - name: Exportar pagos desde Supabase
+        run: |
+          curl -s "${{ secrets.SUPABASE_URL }}/rest/v1/pagos?select=*&limit=50000" \
+            -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}" \
+            -o backup_pagos.json
+          echo "Pagos exportados: $(cat backup_pagos.json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+
+      - name: Exportar usuarios desde Supabase
+        run: |
+          curl -s "${{ secrets.SUPABASE_URL }}/rest/v1/usuarios?select=*&limit=1000" \
+            -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}" \
+            -o backup_usuarios.json
+
+      - name: Crear archivo de backup consolidado
+        run: |
+          FECHA=$(date '+%Y-%m-%d')
+          python3 << 'EOF'
+          import json, os
+          from datetime import datetime
+
+          fecha = datetime.now().strftime('%Y-%m-%d %H:%M UTC')
+
+          with open('backup_contratos.json') as f:
+            contratos = json.load(f)
+          with open('backup_pagos.json') as f:
+            pagos = json.load(f)
+          with open('backup_usuarios.json') as f:
+            usuarios = json.load(f)
+
+          backup = {
+            'fecha_backup': fecha,
+            'resumen': {
+              'contratos': len(contratos),
+              'pagos': len(pagos),
+              'usuarios': len(usuarios)
+            },
+            'contratos': contratos,
+            'pagos': pagos,
+            'usuarios': usuarios
+          }
+
+          # Guardar backup con fecha
+          os.makedirs('backups', exist_ok=True)
+          filename = f"backups/backup_{datetime.now().strftime('%Y-%m-%d')}.json"
+          with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(backup, f, ensure_ascii=False, indent=2, default=str)
+
+          # Guardar también como ultimo_backup.json (siempre el más reciente)
+          with open('backups/ultimo_backup.json', 'w', encoding='utf-8') as f:
+            json.dump(backup, f, ensure_ascii=False, indent=2, default=str)
+
+          print(f"Backup guardado: {filename}")
+          print(f"Contratos: {len(contratos)}, Pagos: {len(pagos)}, Usuarios: {len(usuarios)}")
+          EOF
+
+      - name: Limpiar backups viejos (mantener últimos 30 días)
+        run: |
+          python3 << 'EOF'
+          import os, glob
+          from datetime import datetime, timedelta
+
+          archivos = sorted(glob.glob('backups/backup_*.json'))
+          limite = datetime.now() - timedelta(days=30)
+
+          for archivo in archivos:
+            nombre = os.path.basename(archivo)
+            try:
+              fecha_str = nombre.replace('backup_','').replace('.json','')
+              fecha = datetime.strptime(fecha_str, '%Y-%m-%d')
+              if fecha < limite:
+                os.remove(archivo)
+                print(f"Eliminado backup viejo: {archivo}")
+            except:
+              pass
+
+          restantes = glob.glob('backups/backup_*.json')
+          print(f"Backups conservados: {len(restantes)}")
+          EOF
+
+      - name: Commit y push del backup
+        run: |
+          git config user.name "Backup Bot"
+          git config user.email "backup@megaconsultora.com"
+          git add backups/
+          git diff --staged --quiet || git commit -m "Backup automático $(date '+%Y-%m-%d')"
+          git push
