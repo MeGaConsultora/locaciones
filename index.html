@@ -836,62 +836,231 @@ async function actualizarContrato(id) {
 }
 
 // ============================================================
-// NUEVO PAGO
+// REGISTRAR PAGO - NUEVO FLUJO
 // ============================================================
-function openNuevoPago(hoja) {
+async function openNuevoPago(hoja) {
+  const contrato = DB.contratos.find(c => c.hoja === hoja);
   document.getElementById('modal-title').textContent = 'Registrar Pago';
   document.getElementById('modal-subtitle').textContent = hoja;
-  const hoy = TODAY;
-  document.getElementById('modal-body').innerHTML = `
-    <div class="form-grid">
-      <div class="form-group"><label>Mes (fecha)</label><input id="p-mes" type="date" value="${hoy}"></div>
-      <div class="form-group"><label>Fecha vencimiento</label><input id="p-vence" type="date"></div>
-      <div class="form-group"><label>Importe alquiler</label><input id="p-alquiler" type="number" placeholder="0"></div>
-      <div class="form-group"><label>Impuestos / Servicios</label><input id="p-impuestos" type="number" placeholder="0"></div>
-      <div class="form-group"><label>Total</label><input id="p-total" type="number" placeholder="0"></div>
-      <div class="form-group"><label>Saldo pendiente</label><input id="p-saldo" type="number" placeholder="0" value="0"></div>
-      <div class="form-group"><label>Comisión 8%</label><input id="p-comision" type="number" placeholder="0"></div>
-      <div class="form-group"><label>Pago Nº</label><input id="p-nro" type="text"></div>
-      <div class="form-group"><label>Monto EPE</label><input id="p-epe" type="number" placeholder="0" value="0"></div>
-      <div class="form-group"><label>Monto Agua</label><input id="p-agua" type="number" placeholder="0" value="0"></div>
-      <div class="form-group"><label>Monto TGIU</label><input id="p-tgiu" type="number" placeholder="0" value="0"></div>
-      <div class="form-group"><label>Estado pago</label>
-        <select id="p-pagado"><option value="SI">Pagado</option><option value="">Pendiente</option></select>
+  document.getElementById('modal-body').innerHTML = `<div class="loading-overlay">Cargando meses impagos...</div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+
+  try {
+    const hojaEncoded = encodeURIComponent(hoja);
+    const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc&limit=500`);
+    const impagos = pagos.filter(p => p.saldo && p.saldo > 0);
+
+    if (impagos.length === 0) {
+      document.getElementById('modal-body').innerHTML = `
+        <div class="empty-state"><div class="icon">✅</div><p>No hay meses con saldo pendiente para este contrato.</p></div>
+        <div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Cerrar</button></div>
+      `;
+      return;
+    }
+
+    // Calcular nro de mes para cada pago (posición en lista total de pagos)
+    const todosPagos = pagos;
+
+    document.getElementById('modal-body').innerHTML = `
+      <div class="form-group" style="margin-bottom:1.2rem">
+        <label>Seleccioná el mes a pagar</label>
+        <select id="sel-mes-impago" class="filter-select" style="width:100%;margin-top:4px" onchange="cargarItemsPago(${JSON.stringify(impagos).replace(/"/g,'&quot;')}, this.value, ${JSON.stringify(todosPagos).replace(/"/g,'&quot;')})">
+          <option value="">-- Elegí un mes --</option>
+          ${impagos.map((p,i) => {
+            const nroMes = todosPagos.findIndex(x => x.id === p.id) + 1;
+            return `<option value="${p.id}">Mes ${nroMes} — ${formatDate(p.mes)} — Saldo: ${formatMoney(p.saldo)}</option>`;
+          }).join('')}
+        </select>
       </div>
+      <div id="items-pago"></div>
+    `;
+  } catch(e) {
+    document.getElementById('modal-body').innerHTML = `<div class="empty-state"><p>Error: ${e.message}</p></div>`;
+  }
+}
+
+function cargarItemsPago(impagos, pagoId, todosPagos) {
+  if (!pagoId) { document.getElementById('items-pago').innerHTML = ''; return; }
+  const pago = impagos.find(p => p.id == pagoId);
+  if (!pago) return;
+  const nroMes = todosPagos.findIndex(x => x.id == pagoId) + 1;
+
+  const items = [
+    { id:'alquiler', label:'Alquiler', val: pago.importe_alquiler },
+    { id:'epe',      label:'EPE',      val: pago.monto_epe },
+    { id:'agua',     label:'Agua',     val: pago.monto_agua },
+    { id:'tgiu',     label:'TGIU',     val: pago.monto_tgiu },
+    { id:'impuestos',label:'Otros Impuestos/Servicios', val: pago.impuestos_servicios },
+    { id:'comision', label:'Comisión 8%', val: pago.comision_8 },
+  ].filter(it => it.val && it.val > 0);
+
+  document.getElementById('items-pago').innerHTML = `
+    <div class="section-title" style="margin-bottom:1rem">Mes ${nroMes} — ${formatDate(pago.mes)}</div>
+    <p style="font-size:0.82rem;color:#888;margin-bottom:1rem">Marcá los ítems que abona en este momento:</p>
+    <div style="background:var(--cream);border-radius:10px;padding:1rem;margin-bottom:1rem">
+      ${items.map(it => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9rem">
+            <input type="checkbox" id="chk-${it.id}" value="${it.val}" checked
+              style="width:16px;height:16px;cursor:pointer"
+              onchange="recalcularTotal()">
+            ${it.label}
+          </label>
+          <span style="font-weight:600">${formatMoney(it.val)}</span>
+        </div>
+      `).join('')}
+      <div style="display:flex;justify-content:space-between;padding:0.75rem 0 0;font-weight:700;font-size:1rem">
+        <span>Total a cobrar:</span>
+        <span id="total-cobrar" style="color:var(--green)">$ 0</span>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:1rem">
+      <label>Fecha de pago</label>
+      <input id="p-fecha" type="date" value="${TODAY}" style="margin-top:4px">
     </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-green" onclick="guardarPago('${hoja}')">Guardar pago</button>
+      <button class="btn btn-green" onclick="confirmarPago(${pago.id}, '${pago.hoja}', ${nroMes})">Guardar y generar recibo</button>
     </div>
   `;
+  recalcularTotal();
 }
 
-async function guardarPago(hoja) {
-  const alq = parseFloat(document.getElementById('p-alquiler').value)||0;
-  const imp = parseFloat(document.getElementById('p-impuestos').value)||0;
-  const total = parseFloat(document.getElementById('p-total').value)||(alq+imp);
-  const body = {
-    hoja,
-    mes: document.getElementById('p-mes').value||null,
-    fecha_pago_hasta: document.getElementById('p-vence').value||null,
-    corresponde_a_mes: document.getElementById('p-mes').value||null,
-    importe_alquiler: alq,
-    impuestos_servicios: imp,
-    total,
-    pagado: document.getElementById('p-pagado').value,
-    saldo: parseFloat(document.getElementById('p-saldo').value)||0,
-    comision_8: parseFloat(document.getElementById('p-comision').value)||0,
-    pago_nro: document.getElementById('p-nro').value||null,
-    monto_epe: parseFloat(document.getElementById('p-epe').value)||0,
-    monto_agua: parseFloat(document.getElementById('p-agua').value)||0,
-    monto_tgiu: parseFloat(document.getElementById('p-tgiu').value)||0,
-  };
+function recalcularTotal() {
+  const checks = document.querySelectorAll('[id^="chk-"]');
+  let total = 0;
+  checks.forEach(c => { if (c.checked) total += parseFloat(c.value)||0; });
+  const el = document.getElementById('total-cobrar');
+  if (el) el.textContent = formatMoney(total);
+}
+
+async function confirmarPago(pagoId, hoja, nroMes) {
+  const checks = document.querySelectorAll('[id^="chk-"]');
+  let totalAbonado = 0;
+  const itemsAbonados = [];
+  checks.forEach(c => {
+    if (c.checked) {
+      totalAbonado += parseFloat(c.value)||0;
+      itemsAbonados.push({ label: c.closest('div').querySelector('label').textContent.trim(), monto: parseFloat(c.value) });
+    }
+  });
+
+  if (totalAbonado === 0) { toast('Seleccioná al menos un ítem','error'); return; }
+
+  const fechaPago = document.getElementById('p-fecha').value;
+  const contrato = DB.contratos.find(c => c.hoja === hoja);
+
+  // Traer pago actual para calcular nuevo saldo
   try {
-    await sbPost('pagos', body);
+    const hojaEncoded = encodeURIComponent(hoja);
+    const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc&limit=500`);
+    const pagoActual = pagos.find(p => p.id == pagoId);
+    const nuevoSaldo = Math.max(0, (pagoActual.saldo||0) - totalAbonado);
+
+    // Actualizar saldo en Supabase
+    await sbPatch('pagos', pagoId, {
+      saldo: nuevoSaldo,
+      pagado: nuevoSaldo === 0 ? 'SI' : 'PARCIAL',
+      pago_nro: String(nroMes)
+    });
+
     toast('Pago registrado ✓');
+
+    // Generar recibo
+    imprimirRecibo({
+      contrato,
+      nroMes,
+      mes: pagoActual.mes,
+      fechaPago,
+      itemsAbonados,
+      totalAbonado,
+      nuevoSaldo
+    });
+
     closeModal();
     await loadAll();
-  } catch(e) { toast('Error: '+e.message,'error'); }
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+function imprimirRecibo(data) {
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const fechaMes = data.mes ? (() => { const [y,m,d]=data.mes.split('-'); return `${meses[parseInt(m)-1]} ${y}`; })() : '';
+  const fechaPago = data.fechaPago ? (() => { const [y,m,d]=data.fechaPago.split('-'); return `${d}/${m}/${y}`; })() : '';
+
+  const recibo = `
+    <div style="font-family:'DM Sans',Arial,sans-serif;width:100%;max-width:680px;margin:0 auto;padding:24px;border:2px solid #1a1a2e;border-radius:8px;page-break-inside:avoid">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:2px solid #1a1a2e;padding-bottom:12px">
+        <div>
+          <div style="font-size:1.4rem;font-weight:700;color:#1a1a2e">MeGa Consultora</div>
+          <div style="font-size:0.8rem;color:#666;margin-top:2px">Gestión Inmobiliaria</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:0.72rem;color:#888;text-transform:uppercase;letter-spacing:.06em">Recibo Nº</div>
+          <div style="font-size:1.6rem;font-weight:700;color:#c8483a">${String(data.nroMes).padStart(4,'0')}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;font-size:0.85rem">
+        <div><span style="color:#888;font-size:0.72rem;text-transform:uppercase;display:block">Contrato</span><strong>${data.contrato?.titulo||'—'}</strong></div>
+        <div><span style="color:#888;font-size:0.72rem;text-transform:uppercase;display:block">Período</span><strong>${fechaMes}</strong></div>
+        <div><span style="color:#888;font-size:0.72rem;text-transform:uppercase;display:block">Locador</span>${data.contrato?.locador||'—'}</div>
+        <div><span style="color:#888;font-size:0.72rem;text-transform:uppercase;display:block">Locatario</span>${data.contrato?.locatario||'—'}</div>
+        <div><span style="color:#888;font-size:0.72rem;text-transform:uppercase;display:block">Fecha de pago</span>${fechaPago}</div>
+        <div><span style="color:#888;font-size:0.72rem;text-transform:uppercase;display:block">Tipo inmueble</span>${data.contrato?.tipo_inmueble||'—'}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:0.85rem">
+        <thead><tr style="background:#1a1a2e;color:white">
+          <th style="padding:8px 10px;text-align:left;font-size:0.7rem;letter-spacing:.06em;text-transform:uppercase">Concepto</th>
+          <th style="padding:8px 10px;text-align:right;font-size:0.7rem;letter-spacing:.06em;text-transform:uppercase">Importe</th>
+        </tr></thead>
+        <tbody>
+          ${data.itemsAbonados.map((it,i) => `
+            <tr style="background:${i%2===0?'#f5f0e8':'white'}">
+              <td style="padding:7px 10px">${it.label}</td>
+              <td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums">${formatMoney(it.monto)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+        <tfoot><tr style="border-top:2px solid #1a1a2e">
+          <td style="padding:10px;font-weight:700;font-size:0.95rem">TOTAL ABONADO</td>
+          <td style="padding:10px;text-align:right;font-weight:700;font-size:1.1rem;color:#2d7a4f">${formatMoney(data.totalAbonado)}</td>
+        </tr></tfoot>
+      </table>
+      ${data.nuevoSaldo > 0 ? `<div style="background:#fff3cd;border-radius:6px;padding:8px 12px;font-size:0.82rem;color:#856404;margin-bottom:12px">⚠ Saldo pendiente: <strong>${formatMoney(data.nuevoSaldo)}</strong></div>` : '<div style="background:#d4edda;border-radius:6px;padding:8px 12px;font-size:0.82rem;color:#155724;margin-bottom:12px">✓ Mes cancelado en su totalidad</div>'}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:20px;padding-top:16px;border-top:1px dashed #ccc">
+        <div style="text-align:center"><div style="border-top:1px solid #333;padding-top:6px;font-size:0.78rem;color:#666">Firma locador</div></div>
+        <div style="text-align:center"><div style="border-top:1px solid #333;padding-top:6px;font-size:0.78rem;color:#666">Firma locatario</div></div>
+      </div>
+      <div style="text-align:center;font-size:0.7rem;color:#aaa;margin-top:12px">MeGa Consultora — Gestión Inmobiliaria</div>
+    </div>
+  `;
+
+  const ventana = window.open('', '_blank', 'width=780,height=700');
+  ventana.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8">
+    <title>Recibo Nº ${String(data.nroMes).padStart(4,'0')}</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; padding:20px; gap:20px; }
+      .no-print { text-align:center; margin-bottom:10px; }
+      .no-print button { background:#1a1a2e; color:white; border:none; padding:10px 28px; border-radius:8px; font-size:1rem; cursor:pointer; font-family:'DM Sans',sans-serif; font-weight:600; }
+      .no-print button:hover { background:#c8483a; }
+      .recibo-wrap { background:white; border-radius:10px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.12); width:100%; max-width:720px; }
+      @media print {
+        body { background:white; padding:0; gap:0; }
+        .no-print { display:none; }
+        .recibo-wrap { box-shadow:none; border-radius:0; page-break-after:always; }
+        .recibo-wrap:last-child { page-break-after:avoid; }
+      }
+    </style>
+  </head><body>
+    <div class="no-print"><button onclick="window.print()">🖨️ Imprimir por duplicado</button></div>
+    <div class="recibo-wrap"><div style="padding:28px">${recibo}</div></div>
+    <div class="recibo-wrap" style="border-top:3px dashed #ccc"><div style="padding:4px 28px 4px;font-size:0.72rem;color:#aaa;text-align:center;letter-spacing:.1em">— DUPLICADO —</div><div style="padding:8px 28px 28px">${recibo}</div></div>
+  </body></html>`);
+  ventana.document.close();
 }
 
 // ============================================================
