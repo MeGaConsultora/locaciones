@@ -264,8 +264,8 @@
   <button class="tab-btn" onclick="showTab('contratos',this)">📋 Contratos</button>
   <button class="tab-btn" onclick="showTab('pagos',this)">💰 Pagos y Pendientes</button>
   <button class="tab-btn" onclick="showTab('vencimientos',this)">📅 Vencimientos</button>
-  <button class="tab-btn" id="tab-admin" onclick="showTab('admin',this)" style="display:none">👥 Usuarios</button>
   <button class="tab-btn" onclick="showTab('clientes',this)">🧑‍🤝‍🧑 Clientes</button>
+  <button class="tab-btn" id="tab-admin" onclick="showTab('admin',this)" style="display:none;margin-left:auto">👥 Usuarios</button>
 </nav>
 
 <main>
@@ -313,7 +313,7 @@
     <div class="stats-row" id="stats-pendientes"></div>
     <div class="toolbar">
       <input class="search-input" type="text" id="search-pagos" placeholder="Buscar contrato..." oninput="renderPagos()">
-      <select class="filter-select" id="filter-pagado" onchange="renderPagos()">
+      <select class="filter-select" id="filter-pagado" onchange="onChangePagadoFiltro()">
         <option value="">Todos</option>
         <option value="pendiente">⚠️ Solo pendientes</option>
         <option value="pagado">✓ Solo pagados</option>
@@ -656,6 +656,15 @@ function sortBy(table, col) {
 // PAGOS
 // ============================================================
 let pagosFiltrados = [];
+
+function onChangePagadoFiltro() {
+  const val = document.getElementById('filter-pagado').value;
+  if (val === 'pendiente') {
+    document.getElementById('filter-anio').value = '';
+  }
+  PG.pagos = 1;
+  renderPagos();
+}
 
 function renderPagos() {
   const q = document.getElementById('search-pagos').value.toLowerCase();
