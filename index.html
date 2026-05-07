@@ -313,12 +313,12 @@
     <div class="stats-row" id="stats-pendientes"></div>
     <div class="toolbar">
       <input class="search-input" type="text" id="search-pagos" placeholder="Buscar contrato..." oninput="renderPagos()">
-      <select class="filter-select" id="filter-pagado" onchange="onChangePagadoFiltro()">
+      <select class="filter-select" id="filter-pagado" onchange="onChangePagadoFiltro()" oninput="onChangePagadoFiltro()">
         <option value="">Todos</option>
         <option value="pendiente">⚠️ Solo pendientes</option>
         <option value="pagado">✓ Solo pagados</option>
       </select>
-      <select class="filter-select" id="filter-anio" onchange="renderPagos()">
+      <select class="filter-select" id="filter-anio" onchange="PG.pagos=1;renderPagos()" oninput="PG.pagos=1;renderPagos()">
         <option value="">Todos los años</option>
       </select>
       <span class="results-count" id="count-pagos"></span>
