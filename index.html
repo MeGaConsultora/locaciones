@@ -121,7 +121,7 @@
   /* MODAL */
   .modal-overlay { display:none; position:fixed; inset:0; background:rgba(26,26,46,0.55); z-index:200; backdrop-filter:blur(4px); align-items:center; justify-content:center; padding:1rem; }
   .modal-overlay.open { display:flex; }
-  .modal { background:white; border-radius:16px; box-shadow:var(--shadow-lg); width:100%; max-width:720px; max-height:90vh; overflow-y:auto; animation:modalIn 0.22s ease; }
+  .modal { background:white; border-radius:16px; box-shadow:var(--shadow-lg); width:100%; max-width:1100px; max-height:92vh; overflow-y:auto; animation:modalIn 0.22s ease; }
   @keyframes modalIn { from { opacity:0; transform:scale(0.96) translateY(10px); } to { opacity:1; transform:none; } }
   .modal-header { background:var(--ink); color:var(--cream); padding:1.4rem 1.8rem; border-radius:16px 16px 0 0; display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
   .modal-title { font-family:'DM Serif Display',serif; font-size:1.4rem; line-height:1.2; }
@@ -347,7 +347,11 @@
           <th class="sortable" onclick="sortBy('pagos','mes')">Mes ↕</th>
           <th>Vence</th>
           <th class="num sortable" onclick="sortBy('pagos','importe_alquiler')">Alquiler ↕</th>
-          <th class="num sortable" onclick="sortBy('pagos','impuestos_servicios')">Impuestos ↕</th>
+          <th class="num">EPE</th>
+          <th class="num">Agua</th>
+          <th class="num">TGIU</th>
+          <th class="num">Seguro</th>
+          <th class="num">Otros</th>
           <th class="num sortable" onclick="sortBy('pagos','total')">Total ↕</th>
           <th class="num sortable" onclick="sortBy('pagos','saldo')">Saldo ↕</th>
           <th>Estado</th>
@@ -434,7 +438,13 @@
 // ============================================================
 const SB_URL = 'https://hpufcseedvdmcoamundr.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhwdWZjc2VlZHZkbWNvYW11bmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMjU5NTQsImV4cCI6MjA5MzYwMTk1NH0.x91y_KKcuqM3CXCNTsMxTmJvi8HIm4SsxxNKUaX12d0';
-const TODAY = new Date().toISOString().split('T')[0];
+// Fecha actual en Argentina (UTC-3)
+function getArgentinaDate() {
+  const now = new Date();
+  const ar = new Date(now.toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
+  return ar.toISOString().split('T')[0];
+}
+const TODAY = getArgentinaDate();
 
 const HEADERS = {
   'apikey': SB_KEY,
@@ -502,7 +512,7 @@ async function loadAll() {
     ]);
     DB.contratos = contratos;
     DB.pagos = pagos;
-    document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR')}`;
+    document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR', {timeZone:'America/Argentina/Buenos_Aires'})}`;
     populateFiltros();
     await loadPersonas();
     renderDashboard();
@@ -724,7 +734,11 @@ function renderPagos() {
         return `<tr onclick="openContrato(${DB.contratos.find(c=>c.hoja===p.hoja)?.id})">
           <td>${p.hoja}</td><td>${formatDate(p.mes)}</td><td>${formatDate(p.fecha_pago_hasta, true)}</td>
           <td class="num">${formatMoney(p.importe_alquiler)}</td>
-          <td class="num">${formatMoney(p.impuestos_servicios)}</td>
+          <td class="num">${p.monto_epe>0?formatMoney(p.monto_epe):'—'}</td>
+          <td class="num">${p.monto_agua>0?formatMoney(p.monto_agua):'—'}</td>
+          <td class="num">${p.monto_tgiu>0?formatMoney(p.monto_tgiu):'—'}</td>
+          <td class="num">${p.monto_seguro>0?formatMoney(p.monto_seguro):'—'}</td>
+          <td class="num" title="${p.concepto_otros||''}">${p.monto_otros>0?formatMoney(p.monto_otros)+(p.concepto_otros?' ('+p.concepto_otros+')':''):'—'}</td>
           <td class="num"><strong>${formatMoney(p.total)}</strong></td>
           <td class="num ${pend?'saldo-pendiente':'saldo-ok'}">${pend?formatMoney(p.saldo):'✓'}</td>
           <td><span class="badge ${pend?'badge-red':'badge-green'}">${pend?'Pendiente':'Pagado'}</span></td>
@@ -1399,12 +1413,12 @@ function cargarItemsPago(impagos, pagoId, todosPagos) {
   const nroMes = todosPagos.findIndex(x => x.id == pagoId) + 1;
 
   const items = [
-    { id:'alquiler', label:'Alquiler', val: pago.importe_alquiler },
-    { id:'epe',      label:'EPE',      val: pago.monto_epe },
-    { id:'agua',     label:'Agua',     val: pago.monto_agua },
-    { id:'tgiu',     label:'TGIU',     val: pago.monto_tgiu },
-    { id:'impuestos',label:'Otros Impuestos/Servicios', val: pago.impuestos_servicios },
-    { id:'comision', label:'Comisión 8%', val: pago.comision_8 },
+    { id:'alquiler', label:'Alquiler',  val: pago.importe_alquiler },
+    { id:'epe',      label:'EPE',       val: pago.monto_epe },
+    { id:'agua',     label:'Agua',      val: pago.monto_agua },
+    { id:'tgiu',     label:'TGIU',      val: pago.monto_tgiu },
+    { id:'seguro',   label:'Seguro',    val: pago.monto_seguro },
+    { id:'otros',    label:'Otros',     val: pago.monto_otros, concepto: pago.concepto_otros },
   ].filter(it => it.val && it.val > 0);
 
   document.getElementById('items-pago').innerHTML = `
@@ -1412,14 +1426,18 @@ function cargarItemsPago(impagos, pagoId, todosPagos) {
     <p style="font-size:0.82rem;color:#888;margin-bottom:1rem">Marcá los ítems que abona en este momento:</p>
     <div style="background:var(--cream);border-radius:10px;padding:1rem;margin-bottom:1rem">
       ${items.map(it => `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
-          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9rem">
-            <input type="checkbox" id="chk-${it.id}" value="${it.val}" checked
-              style="width:16px;height:16px;cursor:pointer"
-              onchange="recalcularTotal()">
-            ${it.label}
-          </label>
-          <span style="font-weight:600">${formatMoney(it.val)}</span>
+        <div style="padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9rem">
+              <input type="checkbox" id="chk-${it.id}" value="${it.val}" checked
+                style="width:16px;height:16px;cursor:pointer"
+                onchange="recalcularTotal()">
+              ${it.label}
+            </label>
+            <span style="font-weight:600">${formatMoney(it.val)}</span>
+          </div>
+          ${it.id==='otros' ? `<input type="text" id="concepto-otros" placeholder="Describí el concepto..." value="${it.concepto||''}"
+            style="width:100%;margin-top:6px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem;font-family:'DM Sans',sans-serif">` : ''}
         </div>
       `).join('')}
       <div style="display:flex;justify-content:space-between;padding:0.75rem 0 0;font-weight:700;font-size:1rem">
@@ -1474,7 +1492,8 @@ async function confirmarPago(pagoId, hoja, nroMes) {
     await sbPatch('pagos', pagoId, {
       saldo: nuevoSaldo,
       pagado: nuevoSaldo === 0 ? 'SI' : 'PARCIAL',
-      pago_nro: String(nroMes)
+      pago_nro: String(nroMes),
+      concepto_otros: conceptoOtros
     });
 
     toast('Pago registrado ✓');
@@ -2095,7 +2114,7 @@ setInterval(async () => {
     ]);
     DB.contratos = contratos;
     DB.pagos = pagos;
-    document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR')}`;
+    document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR', {timeZone:'America/Argentina/Buenos_Aires'})}`;
     await loadPersonas();
     renderDashboard();
     renderContratos();
