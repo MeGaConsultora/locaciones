@@ -677,6 +677,7 @@ function renderPagos() {
     if (anio && !p.mes?.startsWith(anio)) return false;
     if (pagado==='pendiente') {
       if (!(p.saldo&&p.saldo>0)) return false;
+      if (p.mes && p.mes.substring(0,7) > TODAY.substring(0,7)) return false;
     }
     if (pagado==='pagado' && (p.saldo&&p.saldo>0)) return false;
     return true;
