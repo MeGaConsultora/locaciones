@@ -2388,6 +2388,8 @@ document.addEventListener('keydown', e => {
 // ============================================================
 async function loadUsuarios() {
   try {
+    // Make sure personas are loaded
+    if (!DB_PERSONAS.length) await loadPersonas();
     const r = await fetch(`${SB_URL}/rest/v1/usuarios?select=*&order=created_at.desc`, {
       headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${currentUser.token}` }
     });
