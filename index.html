@@ -444,9 +444,27 @@ const HEADERS = {
 };
 
 async function sbGet(table, params='') {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers: HEADERS });
+  const headers = { ...HEADERS, 'Range': '0-9999', 'Prefer': 'count=none' };
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
+}
+
+async function sbGetAll(table, params='') {
+  // Fetches all records using pagination
+  let all = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const headers = { ...HEADERS, 'Range': `${from}-${from+pageSize-1}`, 'Prefer': 'count=none' };
+    const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    all = all.concat(data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
 }
 async function sbPost(table, body) {
   const r = await fetch(`${SB_URL}/rest/v1/${table}`, { method:'POST', headers: HEADERS, body: JSON.stringify(body) });
@@ -480,7 +498,7 @@ async function loadAll() {
   try {
     const [contratos, pagos] = await Promise.all([
       sbGet('contratos', 'select=*&order=titulo.asc&limit=1000'),
-      sbGet('pagos', 'select=*&order=mes.desc&limit=10000')
+      sbGetAll('pagos', 'select=*&order=mes.desc')
     ]);
     DB.contratos = contratos;
     DB.pagos = pagos;
@@ -789,7 +807,7 @@ async function openContrato(id) {
   // Fetch pagos directly from Supabase for this contract
   try {
     const hojaEncoded = encodeURIComponent(c.hoja);
-    const cpagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.desc&limit=500`);
+    const cpagos = await sbGetAll('pagos', `hoja=eq.${hojaEncoded}&order=mes.desc`);
 
     const totalAlq = cpagos.reduce((s,p)=>s+(p.importe_alquiler||0),0);
     const totalPend = cpagos.filter(p=>p.saldo&&p.saldo>0).reduce((s,p)=>s+p.saldo,0);
@@ -2073,7 +2091,7 @@ setInterval(async () => {
   try {
     const [contratos, pagos] = await Promise.all([
       sbGet('contratos', 'select=*&order=titulo.asc&limit=1000'),
-      sbGet('pagos', 'select=*&order=mes.desc&limit=10000')
+      sbGetAll('pagos', 'select=*&order=mes.desc')
     ]);
     DB.contratos = contratos;
     DB.pagos = pagos;
