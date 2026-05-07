@@ -236,7 +236,7 @@
       <button class="login-tab" onclick="switchLoginTab('registro',this)">Registrarse</button>
     </div>
     <div id="login-panel" class="login-form">
-      <input type="email" id="login-email" placeholder="Email" autocomplete="email">
+      <input type="email" id="login-email" placeholder="Email" autocomplete="off">
       <input type="password" id="login-pass" placeholder="Contraseña" autocomplete="current-password">
       <button class="login-btn" onclick="doLogin()">Entrar</button>
       <div id="login-msg"></div>
@@ -676,8 +676,9 @@ function renderPagos() {
     if (q && !p.hoja?.toLowerCase().includes(q)) return false;
     if (anio && !p.mes?.startsWith(anio)) return false;
     if (pagado==='pendiente') {
-      if (!(p.saldo&&p.saldo>0)) return false;
-      if (p.mes && p.mes.substring(0,7) > TODAY.substring(0,7)) return false;
+      if (!(p.saldo && p.saldo > 0)) return false;
+      if (!p.mes) return false;
+      if (p.mes.substring(0,7) > TODAY.substring(0,7)) return false;
     }
     if (pagado==='pagado' && (p.saldo&&p.saldo>0)) return false;
     return true;
@@ -1956,6 +1957,8 @@ function doLogout() {
   currentUser = null;
   currentUsuario = null;
   HEADERS['Authorization'] = `Bearer ${SB_KEY}`;
+  document.getElementById('login-email').value = '';
+  document.getElementById('login-pass').value = '';
   showLoginScreen();
 }
 
@@ -2007,7 +2010,7 @@ async function loadUsuarios() {
           ${!u.aprobado ? `<button class="btn btn-green" style="padding:4px 10px;font-size:0.75rem" onclick="aprobarUsuario('${u.id}')">✓ Aprobar</button>` : ''}
           ${u.aprobado && !u.admin ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="toggleAdmin('${u.id}',true)">↑ Hacer admin</button>` : ''}
           ${u.admin && u.email !== currentUsuario?.email ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="toggleAdmin('${u.id}',false)">↓ Quitar admin</button>` : ''}
-          ${u.email !== currentUsuario?.email ? `<button class="btn" style="padding:4px 10px;font-size:0.75rem;background:#f8d7da;color:#721c24" onclick="darDeBaja('${u.id}','${u.email}')">✕ Dar de baja</button>` : '<span style="font-size:0.75rem;color:#aaa">(vos)</span>'}
+          ${u.email !== currentUsuario?.email && !u.admin ? `<button class="btn" style="padding:4px 10px;font-size:0.75rem;background:#f8d7da;color:#721c24" onclick="darDeBaja('${u.id}','${u.email}')">✕ Dar de baja</button>` : u.email === currentUsuario?.email ? '<span style="font-size:0.75rem;color:#aaa">(vos)</span>' : '<span style="font-size:0.75rem;color:#aaa">Admin</span>'}
         </td>
       </tr>
     `).join('');
