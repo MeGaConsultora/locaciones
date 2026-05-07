@@ -261,7 +261,20 @@
       <input type="email" id="login-email" placeholder="Email" autocomplete="off">
       <input type="password" id="login-pass" placeholder="Contraseña" autocomplete="current-password">
       <button class="login-btn" onclick="doLogin()">Entrar</button>
+      <div style="text-align:center;margin-top:0.5rem">
+        <button onclick="showForgotAdmin()" style="background:none;border:none;color:#999;font-size:0.8rem;cursor:pointer;text-decoration:underline;font-family:'DM Sans',sans-serif">¿Olvidaste tu contraseña?</button>
+      </div>
       <div id="login-msg"></div>
+    </div>
+
+    <div id="forgot-panel-admin" class="login-form" style="display:none">
+      <p style="font-size:0.82rem;color:#666;text-align:center">Ingresá tu email y te enviaremos un link para restablecer tu contraseña.</p>
+      <input type="email" id="forgot-email-admin" placeholder="Tu email" autocomplete="off">
+      <button class="login-btn" onclick="doForgotAdmin()">Enviar link</button>
+      <div style="text-align:center;margin-top:0.5rem">
+        <button onclick="showLoginAdmin()" style="background:none;border:none;color:#999;font-size:0.8rem;cursor:pointer;text-decoration:underline;font-family:'DM Sans',sans-serif">← Volver</button>
+      </div>
+      <div id="forgot-msg-admin"></div>
     </div>
     <div id="registro-panel" class="login-form" style="display:none">
       <input type="text" id="reg-nombre" placeholder="Nombre completo">
@@ -2373,6 +2386,43 @@ function switchLoginTab(tab, btn) {
   btn.classList.add('active');
   document.getElementById('login-panel').style.display = tab === 'login' ? 'flex' : 'none';
   document.getElementById('registro-panel').style.display = tab === 'registro' ? 'flex' : 'none';
+  document.getElementById('forgot-panel-admin').style.display = 'none';
+}
+
+function showForgotAdmin() {
+  document.getElementById('login-panel').style.display = 'none';
+  document.getElementById('registro-panel').style.display = 'none';
+  document.getElementById('forgot-panel-admin').style.display = 'flex';
+  document.querySelectorAll('.login-tab').forEach(b=>b.classList.remove('active'));
+}
+
+function showLoginAdmin() {
+  document.getElementById('login-panel').style.display = 'flex';
+  document.getElementById('forgot-panel-admin').style.display = 'none';
+  document.querySelectorAll('.login-tab')[0].classList.add('active');
+}
+
+async function doForgotAdmin() {
+  const email = document.getElementById('forgot-email-admin').value.trim();
+  if (!email) {
+    const el = document.getElementById('forgot-msg-admin');
+    el.textContent = 'Ingresá tu email'; el.className = 'login-msg error';
+    return;
+  }
+  try {
+    await fetch(`${SB_AUTH_URL}/recover`, {
+      method: 'POST',
+      headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const el = document.getElementById('forgot-msg-admin');
+    el.textContent = '✓ Si el email existe, recibirás el link en minutos.';
+    el.className = 'login-msg success';
+  } catch(e) {
+    const el = document.getElementById('forgot-msg-admin');
+    el.textContent = 'Error al enviar. Intentá de nuevo.';
+    el.className = 'login-msg error';
+  }
 }
 
 // Enter key support
