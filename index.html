@@ -262,10 +262,10 @@
 <nav>
   <button class="tab-btn active" onclick="showTab('dashboard',this)">📊 Dashboard</button>
   <button class="tab-btn" onclick="showTab('contratos',this)">📋 Contratos</button>
-  <button class="tab-btn" onclick="showTab('pagos',this)">💰 Pagos</button>
+  <button class="tab-btn" onclick="showTab('pagos',this)">💰 Pagos y Pendientes</button>
   <button class="tab-btn" onclick="showTab('vencimientos',this)">📅 Vencimientos</button>
-  <button class="tab-btn" onclick="showTab('pendientes',this)">⚠️ Pendientes</button>
   <button class="tab-btn" id="tab-admin" onclick="showTab('admin',this)" style="display:none">👥 Usuarios</button>
+  <button class="tab-btn" onclick="showTab('clientes',this)">🧑‍🤝‍🧑 Clientes</button>
 </nav>
 
 <main>
@@ -310,12 +310,13 @@
 
   <!-- PAGOS -->
   <div id="panel-pagos" class="panel">
+    <div class="stats-row" id="stats-pendientes"></div>
     <div class="toolbar">
       <input class="search-input" type="text" id="search-pagos" placeholder="Buscar contrato..." oninput="renderPagos()">
       <select class="filter-select" id="filter-pagado" onchange="renderPagos()">
         <option value="">Todos</option>
-        <option value="pendiente">Pendientes</option>
-        <option value="pagado">Pagados</option>
+        <option value="pendiente">⚠️ Solo pendientes</option>
+        <option value="pagado">✓ Solo pagados</option>
       </select>
       <select class="filter-select" id="filter-anio" onchange="renderPagos()">
         <option value="">Todos los años</option>
@@ -352,25 +353,37 @@
     <div id="venc-list" class="venc-list"></div>
   </div>
 
-  <!-- PENDIENTES -->
-  <div id="panel-pendientes" class="panel">
-    <div class="stats-row" id="stats-pendientes"></div>
+
+
+
+  <!-- CLIENTES -->
+  <div id="panel-clientes" class="panel">
     <div class="toolbar">
-      <input class="search-input" type="text" id="search-pendientes" placeholder="Buscar contrato..." oninput="renderPendientes()">
-      <span class="results-count" id="count-pendientes"></span>
+      <input class="search-input" type="text" id="search-clientes" placeholder="Buscar por apellido, DNI, email..." oninput="renderClientes()">
+      <select class="filter-select" id="filter-rol" onchange="renderClientes()">
+        <option value="">Todos los roles</option>
+        <option value="propietario">Propietarios</option>
+        <option value="inquilino">Inquilinos</option>
+        <option value="ambos">Ambos</option>
+      </select>
+      <button class="btn btn-primary" onclick="openNuevaPersona()">+ Nueva persona</button>
+      <span class="results-count" id="count-clientes"></span>
     </div>
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Contrato</th><th>Mes</th><th>Locatario</th>
-          <th class="num">Importe</th><th class="num">Saldo</th><th>Pago Nº</th>
+          <th>Apellido y nombre</th>
+          <th>DNI</th>
+          <th>Teléfono</th>
+          <th>Email</th>
+          <th>Rol</th>
+          <th>Contratos</th>
         </tr></thead>
-        <tbody id="tbody-pendientes"></tbody>
+        <tbody id="tbody-clientes"></tbody>
       </table>
-      <div class="pagination" id="pg-pendientes"></div>
+      <div class="pagination" id="pg-clientes"></div>
     </div>
   </div>
-
 
   <!-- ADMIN USUARIOS -->
   <div id="panel-admin" class="panel">
@@ -456,11 +469,12 @@ async function loadAll() {
     DB.pagos = pagos;
     document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR')}`;
     populateFiltros();
+    await loadPersonas();
     renderDashboard();
     renderContratos();
     renderPagos();
     renderVencimientos();
-    renderPendientes();
+    renderClientes();
   } catch(e) {
     document.getElementById('sync-status').textContent = 'Error de conexión';
     toast('Error al conectar con la base de datos', 'error');
@@ -622,10 +636,23 @@ function renderPagos() {
   const pagado = document.getElementById('filter-pagado').value;
   const anio = document.getElementById('filter-anio').value;
 
+  // Pendientes stats
+  const todosPend = DB.pagos.filter(p => p.saldo && p.saldo > 0 && p.mes && p.mes.substring(0,7) <= TODAY.substring(0,7));
+  const totalSaldo = todosPend.reduce((s,p) => s+(p.saldo||0), 0);
+  const statsEl = document.getElementById('stats-pendientes');
+  if (statsEl) statsEl.innerHTML = `
+    <div class="stat-card accent"><div class="stat-label">Total pendiente</div><div class="stat-val" style="font-size:1.3rem">${formatMoney(totalSaldo)}</div></div>
+    <div class="stat-card warn"><div class="stat-label">Cuotas sin cobrar</div><div class="stat-val">${todosPend.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Contratos afectados</div><div class="stat-val">${new Set(todosPend.map(p=>p.hoja)).size}</div></div>
+  `;
+
   pagosFiltrados = DB.pagos.filter(p => {
     if (q && !p.hoja?.toLowerCase().includes(q)) return false;
     if (anio && !p.mes?.startsWith(anio)) return false;
-    if (pagado==='pendiente' && !(p.saldo&&p.saldo>0)) return false;
+    if (pagado==='pendiente') {
+      if (!(p.saldo&&p.saldo>0)) return false;
+      if (p.mes && p.mes.substring(0,7) > TODAY.substring(0,7)) return false;
+    }
     if (pagado==='pagado' && (p.saldo&&p.saldo>0)) return false;
     return true;
   });
@@ -688,39 +715,7 @@ function renderVencimientos() {
   }).join('');
 }
 
-// ============================================================
-// PENDIENTES
-// ============================================================
-function renderPendientes() {
-  const q = document.getElementById('search-pendientes').value.toLowerCase();
-  const todos = DB.pagos.filter(p => p.saldo&&p.saldo>0);
-  const filtrados = todos.filter(p => !q||p.hoja?.toLowerCase().includes(q));
-  filtrados.sort((a,b) => b.saldo-a.saldo);
 
-  const totalSaldo = todos.reduce((s,p)=>s+(p.saldo||0),0);
-  document.getElementById('stats-pendientes').innerHTML = `
-    <div class="stat-card accent"><div class="stat-label">Total pendiente</div><div class="stat-val" style="font-size:1.3rem">${formatMoney(totalSaldo)}</div></div>
-    <div class="stat-card warn"><div class="stat-label">Cuotas sin cobrar</div><div class="stat-val">${todos.length}</div></div>
-    <div class="stat-card"><div class="stat-label">Contratos afectados</div><div class="stat-val">${new Set(todos.map(p=>p.hoja)).size}</div></div>
-  `;
-
-  document.getElementById('count-pendientes').textContent = `${filtrados.length} registro${filtrados.length!==1?'s':''}`;
-  const slice = filtrados.slice((PG.pendientes-1)*PER_PAGE, PG.pendientes*PER_PAGE);
-
-  document.getElementById('tbody-pendientes').innerHTML = slice.length===0
-    ? `<tr><td colspan="6"><div class="empty-state"><div class="icon">✅</div><p>Sin pagos pendientes</p></div></td></tr>`
-    : slice.map(p => {
-        const ct = DB.contratos.find(c=>c.hoja===p.hoja);
-        return `<tr onclick="openContrato(${ct?.id})">
-          <td>${p.hoja}</td><td>${formatDate(p.mes)}</td><td>${ct?.locatario||'—'}</td>
-          <td class="num">${formatMoney(p.importe_alquiler)}</td>
-          <td class="num saldo-pendiente"><strong>${formatMoney(p.saldo)}</strong></td>
-          <td>${p.pago_nro||'—'}</td>
-        </tr>`;
-      }).join('');
-
-  renderPagination('pg-pendientes', filtrados.length, PG.pendientes, n => { PG.pendientes=n; renderPendientes(); });
-}
 
 // ============================================================
 // MODAL DETALLE CONTRATO
@@ -1559,9 +1554,162 @@ function showTab(name, btn) {
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('panel-'+name).classList.add('active');
   if(name==='admin') loadUsuarios();
+  if(name==='clientes') renderClientes();
+  if(name==='pagos') renderPagos();
   btn.classList.add('active');
 }
 
+
+// ============================================================
+// CLIENTES
+// ============================================================
+let DB_PERSONAS = [];
+let clientesFiltrados = [];
+const PG_CLIENTES = { page: 1 };
+
+async function loadPersonas() {
+  try {
+    DB_PERSONAS = await sbGet('personas', 'select=*&order=apellido.asc&limit=2000');
+  } catch(e) {}
+}
+
+function getRolPersona(p) {
+  const esProp = DB.contratos.some(c => c.propietario_id == p.id);
+  const esInq = DB.contratos.some(c => c.inquilino_id == p.id);
+  if (esProp && esInq) return 'ambos';
+  if (esProp) return 'propietario';
+  if (esInq) return 'inquilino';
+  return '—';
+}
+
+function getRolBadge(rol) {
+  if (rol === 'propietario') return '<span class="badge badge-blue">Propietario</span>';
+  if (rol === 'inquilino') return '<span class="badge badge-green">Inquilino</span>';
+  if (rol === 'ambos') return '<span class="badge badge-yellow">Ambos</span>';
+  return '<span class="badge badge-gray">Sin contrato</span>';
+}
+
+function renderClientes() {
+  const q = document.getElementById('search-clientes').value.toLowerCase();
+  const rolFiltro = document.getElementById('filter-rol').value;
+
+  clientesFiltrados = DB_PERSONAS.filter(p => {
+    if (q && !`${p.apellido} ${p.nombre} ${p.dni||''} ${p.email||''}`.toLowerCase().includes(q)) return false;
+    if (rolFiltro) {
+      const rol = getRolPersona(p);
+      if (rolFiltro === 'ambos' && rol !== 'ambos') return false;
+      if (rolFiltro === 'propietario' && rol !== 'propietario' && rol !== 'ambos') return false;
+      if (rolFiltro === 'inquilino' && rol !== 'inquilino' && rol !== 'ambos') return false;
+    }
+    return true;
+  });
+
+  document.getElementById('count-clientes').textContent = `${clientesFiltrados.length} cliente${clientesFiltrados.length!==1?'s':''}`;
+  const page = PG_CLIENTES.page;
+  const slice = clientesFiltrados.slice((page-1)*PER_PAGE, page*PER_PAGE);
+
+  document.getElementById('tbody-clientes').innerHTML = slice.length === 0
+    ? `<tr><td colspan="6"><div class="empty-state"><div class="icon">🧑‍🤝‍🧑</div><p>Sin resultados</p></div></td></tr>`
+    : slice.map(p => {
+        const rol = getRolPersona(p);
+        const contratos = DB.contratos.filter(c => c.propietario_id == p.id || c.inquilino_id == p.id);
+        return `<tr onclick="openPersona(${p.id})">
+          <td><strong>${p.apellido||''}, ${p.nombre||''}</strong></td>
+          <td>${p.dni||'—'}</td>
+          <td>${p.telefono||'—'}</td>
+          <td>${p.email||'—'}</td>
+          <td>${getRolBadge(rol)}</td>
+          <td style="font-size:0.82rem;color:#888">${contratos.length > 0 ? contratos.map(c=>c.titulo).join(', ') : '—'}</td>
+        </tr>`;
+      }).join('');
+
+  renderPagination('pg-clientes', clientesFiltrados.length, PG_CLIENTES.page, n => { PG_CLIENTES.page=n; renderClientes(); });
+}
+
+function openPersona(id) {
+  const p = DB_PERSONAS.find(x => x.id === id);
+  if (!p) return;
+  const contratos = DB.contratos.filter(c => c.propietario_id == id || c.inquilino_id == id);
+  const rol = getRolPersona(p);
+
+  document.getElementById('modal-title').textContent = `${p.apellido||''}, ${p.nombre||''}`;
+  document.getElementById('modal-subtitle').textContent = getRolPersona(p) === '—' ? 'Sin contratos activos' : `${contratos.length} contrato${contratos.length!==1?'s':''}`;
+  document.getElementById('modal-body').innerHTML = `
+    <div style="display:flex;gap:0.75rem;margin-bottom:1.5rem">
+      <button class="btn btn-secondary" onclick="openEditPersona(${id})">✏️ Editar datos</button>
+    </div>
+    <div class="detail-grid">
+      <div class="detail-item"><label>Apellido/s</label><span>${p.apellido||'—'}</span></div>
+      <div class="detail-item"><label>Nombre/s</label><span>${p.nombre||'—'}</span></div>
+      <div class="detail-item"><label>DNI</label><span>${p.dni||'—'}</span></div>
+      <div class="detail-item"><label>CUIT</label><span>${p.cuit||'—'}</span></div>
+      <div class="detail-item"><label>Domicilio</label><span>${p.domicilio||'—'}</span></div>
+      <div class="detail-item"><label>Teléfono</label><span>${p.telefono||'—'}</span></div>
+      <div class="detail-item"><label>Email</label><span>${p.email||'—'}</span></div>
+      <div class="detail-item"><label>Rol</label><span>${getRolBadge(rol)}</span></div>
+    </div>
+    ${contratos.length > 0 ? `
+      <div class="section-title">Contratos vinculados</div>
+      ${contratos.map(c => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openContrato(${c.id})">
+          <div>
+            <strong style="font-size:0.88rem">${c.titulo}</strong>
+            <div style="font-size:0.75rem;color:#888">${c.propietario_id == id ? 'Propietario' : 'Inquilino'} · ${formatDate(c.vigencia_desde,true)} — ${formatDate(c.vigencia_hasta,true)}</div>
+          </div>
+          <span class="badge ${getEstado(c)==='vigente'?'badge-green':'badge-gray'}">${getEstado(c)}</span>
+        </div>
+      `).join('')}
+    ` : ''}
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function openEditPersona(id) {
+  const p = DB_PERSONAS.find(x => x.id === id) || {};
+  document.getElementById('modal-title').textContent = id ? 'Editar persona' : 'Nueva persona';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-grid">
+      <div class="form-group"><label>Apellido/s</label><input id="ep-apellido" type="text" value="${p.apellido||''}"></div>
+      <div class="form-group"><label>Nombre/s</label><input id="ep-nombre" type="text" value="${p.nombre||''}"></div>
+      <div class="form-group"><label>DNI</label><input id="ep-dni" type="text" value="${p.dni||''}"></div>
+      <div class="form-group"><label>CUIT</label><input id="ep-cuit" type="text" value="${p.cuit||''}"></div>
+      <div class="form-group" style="grid-column:1/-1"><label>Domicilio</label><input id="ep-domicilio" type="text" value="${p.domicilio||''}"></div>
+      <div class="form-group"><label>Teléfono</label><input id="ep-tel" type="text" value="${p.telefono||''}"></div>
+      <div class="form-group"><label>Email</label><input id="ep-email" type="email" value="${p.email||''}"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="${id?'openPersona('+id+')':'closeModal()'}"}>← Volver</button>
+      <button class="btn btn-primary" onclick="guardarPersona(${id||'null'})">Guardar</button>
+    </div>
+  `;
+}
+
+function openNuevaPersona() { openEditPersona(null); }
+
+async function guardarPersona(id) {
+  const body = {
+    apellido: document.getElementById('ep-apellido').value.trim(),
+    nombre: document.getElementById('ep-nombre').value.trim(),
+    dni: document.getElementById('ep-dni').value.trim(),
+    cuit: document.getElementById('ep-cuit').value.trim(),
+    domicilio: document.getElementById('ep-domicilio').value.trim(),
+    telefono: document.getElementById('ep-tel').value.trim(),
+    email: document.getElementById('ep-email').value.trim(),
+  };
+  if (!body.apellido) { toast('El apellido es obligatorio','error'); return; }
+  try {
+    if (id) {
+      await sbPatch('personas', id, body);
+    } else {
+      await sbPost('personas', body);
+    }
+    toast('Persona guardada ✓');
+    await loadPersonas();
+    await loadAll();
+    renderClientes();
+    closeModal();
+  } catch(e) { toast('Error: '+e.message,'error'); }
+}
 
 // ============================================================
 // AUTH - SUPABASE AUTH
@@ -1777,11 +1925,12 @@ setInterval(async () => {
     DB.contratos = contratos;
     DB.pagos = pagos;
     document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR')}`;
+    await loadPersonas();
     renderDashboard();
     renderContratos();
     renderPagos();
     renderVencimientos();
-    renderPendientes();
+    renderClientes();
   } catch(e) {
     document.getElementById('sync-status').textContent = 'Sin conexión';
   }
