@@ -323,16 +323,33 @@
       </select>
       <span class="results-count" id="count-pagos"></span>
     </div>
+    <div style="display:flex;gap:0.75rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+      <strong style="font-size:0.85rem">📊 Reporte de adeudado:</strong>
+      <select class="filter-select" id="reporte-anio" style="width:auto">
+        <option value="">-- Elegí un año --</option>
+      </select>
+      <select class="filter-select" id="reporte-mes" style="width:auto">
+        <option value="">-- Elegí un mes --</option>
+        <option value="01">Enero</option><option value="02">Febrero</option>
+        <option value="03">Marzo</option><option value="04">Abril</option>
+        <option value="05">Mayo</option><option value="06">Junio</option>
+        <option value="07">Julio</option><option value="08">Agosto</option>
+        <option value="09">Septiembre</option><option value="10">Octubre</option>
+        <option value="11">Noviembre</option><option value="12">Diciembre</option>
+      </select>
+      <button class="btn btn-secondary" onclick="generarReporteMes()">Ver reporte</button>
+    </div>
+
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Contrato</th>
-          <th class="sortable" onclick="sortBy('pagos','mes')">Mes</th>
+          <th class="sortable" onclick="sortBy('pagos','hoja')">Contrato ↕</th>
+          <th class="sortable" onclick="sortBy('pagos','mes')">Mes ↕</th>
           <th>Vence</th>
-          <th class="num">Alquiler</th>
-          <th class="num">Impuestos</th>
-          <th class="num">Total</th>
-          <th class="num">Saldo</th>
+          <th class="num sortable" onclick="sortBy('pagos','importe_alquiler')">Alquiler ↕</th>
+          <th class="num sortable" onclick="sortBy('pagos','impuestos_servicios')">Impuestos ↕</th>
+          <th class="num sortable" onclick="sortBy('pagos','total')">Total ↕</th>
+          <th class="num sortable" onclick="sortBy('pagos','saldo')">Saldo ↕</th>
           <th>Estado</th>
         </tr></thead>
         <tbody id="tbody-pagos"></tbody>
@@ -452,7 +469,7 @@ async function sbDelete(table, id) {
 let DB = { contratos: [], pagos: [] };
 const PG = { contratos:1, pagos:1, pendientes:1 };
 const PER_PAGE = 25;
-let sortState = { contratos:{col:'titulo',dir:'asc'}, pagos:{col:'mes',dir:'desc'} };
+let sortState = { contratos:{col:'titulo',dir:'asc'}, pagos:{col:'hoja',dir:'asc'} };
 let vencFiltro = '30';
 
 // ============================================================
@@ -537,6 +554,15 @@ function populateFiltros() {
   selA.innerHTML = '<option value="">Todos los años</option>';
   anios.forEach(a => { const o = document.createElement('option'); o.value=a; o.textContent=a; selA.appendChild(o); });
   selA.value = curA;
+
+  // Populate reporte años
+  const selRA = document.getElementById('reporte-anio');
+  if (selRA) {
+    const curRA = selRA.value;
+    selRA.innerHTML = '<option value="">-- Elegí un año --</option>';
+    anios.forEach(a => { const o = document.createElement('option'); o.value=a; o.textContent=a; selRA.appendChild(o); });
+    selRA.value = curRA;
+  }
 }
 
 // ============================================================
@@ -651,7 +677,6 @@ function renderPagos() {
     if (anio && !p.mes?.startsWith(anio)) return false;
     if (pagado==='pendiente') {
       if (!(p.saldo&&p.saldo>0)) return false;
-      if (p.mes && p.mes.substring(0,7) > TODAY.substring(0,7)) return false;
     }
     if (pagado==='pagado' && (p.saldo&&p.saldo>0)) return false;
     return true;
@@ -1559,6 +1584,121 @@ function showTab(name, btn) {
   btn.classList.add('active');
 }
 
+
+// ============================================================
+// REPORTE ADEUDADO POR MES
+// ============================================================
+function generarReporteMes() {
+  const anio = document.getElementById('reporte-anio').value;
+  const mes = document.getElementById('reporte-mes').value;
+  if (!anio || !mes) { toast('Seleccioná año y mes','error'); return; }
+
+  const periodo = `${anio}-${mes}`;
+  const meses = ['','enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const nombreMes = meses[parseInt(mes)];
+
+  // Pagos impagos de ese mes
+  const pendientes = DB.pagos.filter(p =>
+    p.saldo && p.saldo > 0 &&
+    p.mes && p.mes.startsWith(periodo)
+  ).sort((a,b) => (a.hoja||'').localeCompare(b.hoja||''));
+
+  if (pendientes.length === 0) {
+    toast(`Sin pendientes para ${nombreMes} ${anio}`,'error');
+    return;
+  }
+
+  const totalSaldo = pendientes.reduce((s,p) => s+(p.saldo||0), 0);
+  const totalAlq = pendientes.reduce((s,p) => s+(p.importe_alquiler||0), 0);
+
+  const ventana = window.open('', '_blank', 'width=900,height=700');
+  ventana.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8"><title>Reporte adeudado ${nombreMes} ${anio}</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family:'DM Sans',Arial,sans-serif; background:#f5f0e8; padding:20px; }
+      .no-print { text-align:center; margin-bottom:16px; }
+      .no-print button { background:#1a1a2e; color:white; border:none; padding:10px 28px; border-radius:8px; font-size:1rem; cursor:pointer; }
+      .card { background:white; border-radius:10px; padding:24px; box-shadow:0 2px 12px rgba(0,0,0,0.1); }
+      .header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #1a1a2e; padding-bottom:12px; margin-bottom:20px; }
+      .empresa { font-family:'DM Serif Display',serif; font-size:1.4rem; color:#1a1a2e; }
+      .periodo { font-size:1rem; font-weight:700; color:#c8483a; text-align:right; }
+      .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px; }
+      .stat { background:#f5f0e8; border-radius:8px; padding:12px 16px; border-left:3px solid #c8483a; }
+      .stat-label { font-size:0.7rem; text-transform:uppercase; letter-spacing:.06em; color:#888; }
+      .stat-val { font-size:1.3rem; font-weight:700; color:#1a1a2e; margin-top:4px; }
+      table { width:100%; border-collapse:collapse; font-size:0.85rem; }
+      th { background:#1a1a2e; color:white; padding:8px 10px; text-align:left; font-size:0.7rem; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; }
+      th.r, td.r { text-align:right; }
+      td { padding:7px 10px; border-bottom:1px solid #f0ece4; }
+      tr:hover td { background:#faf7f2; }
+      .total-row td { font-weight:700; background:#fff3cd; }
+      @media print { body { background:white; padding:0; } .no-print { display:none; } .card { box-shadow:none; border-radius:0; } }
+    </style>
+  </head><body>
+    <div class="no-print"><button onclick="window.print()">🖨️ Imprimir reporte</button></div>
+    <div class="card">
+      <div class="header">
+        <div>
+          <div class="empresa">MeGa Consultora</div>
+          <div style="font-size:0.82rem;color:#888;margin-top:4px">Reporte de saldos adeudados</div>
+        </div>
+        <div class="periodo">${nombreMes.charAt(0).toUpperCase()+nombreMes.slice(1)} ${anio}</div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="stat-label">Contratos con deuda</div><div class="stat-val">${pendientes.length}</div></div>
+        <div class="stat"><div class="stat-label">Alquileres adeudados</div><div class="stat-val">${formatMoney(totalAlq)}</div></div>
+        <div class="stat"><div class="stat-label">Total saldo pendiente</div><div class="stat-val">${formatMoney(totalSaldo)}</div></div>
+      </div>
+      <table>
+        <thead><tr>
+          <th>Contrato</th>
+          <th>Locatario</th>
+          <th class="r">Alquiler</th>
+          <th class="r">EPE</th>
+          <th class="r">Agua</th>
+          <th class="r">TGIU</th>
+          <th class="r">Seguro</th>
+          <th class="r">Otros</th>
+          <th class="r">Total cuota</th>
+          <th class="r">Saldo deudor</th>
+        </tr></thead>
+        <tbody>
+          ${pendientes.map(p => {
+            const ct = DB.contratos.find(c => c.hoja === p.hoja);
+            return `<tr>
+              <td><strong>${p.hoja}</strong></td>
+              <td>${ct?.locatario||'—'}</td>
+              <td class="r">${formatMoney(p.importe_alquiler)}</td>
+              <td class="r">${formatMoney(p.monto_epe)}</td>
+              <td class="r">${formatMoney(p.monto_agua)}</td>
+              <td class="r">${formatMoney(p.monto_tgiu)}</td>
+              <td class="r">${formatMoney(p.monto_seguro)}</td>
+              <td class="r">${formatMoney(p.monto_otros)}</td>
+              <td class="r"><strong>${formatMoney(p.total)}</strong></td>
+              <td class="r" style="color:#c8483a;font-weight:700">${formatMoney(p.saldo)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+        <tfoot>
+          <tr class="total-row">
+            <td colspan="2">TOTALES</td>
+            <td class="r">${formatMoney(totalAlq)}</td>
+            <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+(p.monto_epe||0),0))}</td>
+            <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+(p.monto_agua||0),0))}</td>
+            <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+(p.monto_tgiu||0),0))}</td>
+            <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+(p.monto_seguro||0),0))}</td>
+            <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+(p.monto_otros||0),0))}</td>
+            <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+(p.total||0),0))}</td>
+            <td class="r" style="color:#c8483a">${formatMoney(totalSaldo)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </body></html>`);
+  ventana.document.close();
+}
 
 // ============================================================
 // CLIENTES
