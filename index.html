@@ -191,6 +191,28 @@
 
   @media(max-width:600px) { main { padding:1rem; } .stats-row { grid-template-columns:1fr 1fr; } }
 
+  /* GRILLA PAGOS ESTILO EXCEL */
+  .grid-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
+  .grid-table th { background:var(--ink); color:var(--cream); padding:7px 8px; text-align:left; font-size:0.68rem; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; position:sticky; top:0; z-index:2; }
+  .grid-table th.r { text-align:right; }
+  .grid-table td { padding:3px 4px; border-bottom:1px solid #e8e4dc; border-right:1px solid #e8e4dc; vertical-align:middle; }
+  .grid-table tr.row-futuro td { background:#f0f4ff; color:#555; }
+  .grid-table tr.row-pagado td { background:#f0fff4; }
+  .grid-table tr.row-vencido td { background:#fff0f0; color:#721c24; }
+  .grid-table tr.row-parcial td { background:#fff8e1; }
+  .grid-table tr:hover td { filter:brightness(0.97); }
+  .grid-input { width:100%; border:none; background:transparent; font-family:'DM Sans',sans-serif; font-size:0.82rem; text-align:right; padding:3px 4px; color:inherit; min-width:70px; }
+  .grid-input:focus { background:white; outline:2px solid var(--accent); border-radius:3px; }
+  .grid-mes { font-weight:600; white-space:nowrap; min-width:70px; }
+  .grid-actions { display:flex; gap:4px; white-space:nowrap; }
+  .grid-btn { border:none; border-radius:4px; padding:3px 8px; font-size:0.72rem; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; }
+  .grid-btn-green { background:#d4edda; color:#155724; }
+  .grid-btn-blue { background:#cce5ff; color:#004085; }
+  .grid-btn-red { background:#f8d7da; color:#721c24; }
+  .extras-row td { background:#fafafa; padding:4px 8px; }
+  .extra-item { display:flex; align-items:center; gap:6px; margin-bottom:4px; font-size:0.8rem; }
+  .extra-item input { border:1px solid var(--border); border-radius:4px; padding:3px 6px; font-size:0.8rem; font-family:'DM Sans',sans-serif; }
+
   /* LOGIN */
   #login-screen {
     min-height:100vh; display:flex; align-items:center; justify-content:center;
@@ -786,99 +808,374 @@ function renderVencimientos() {
 
 
 // ============================================================
-// MODAL DETALLE CONTRATO
+// MODAL DETALLE CONTRATO - GRILLA ESTILO EXCEL
 // ============================================================
+let contratoActual = null;
+let pagosActuales = [];
+let extrasActuales = {};
+
 async function openContrato(id) {
   if (!id) return;
   const c = DB.contratos.find(x => x.id===id);
   if (!c) return;
+  contratoActual = c;
   const est = getEstado(c);
 
   document.getElementById('modal-title').textContent = c.titulo||c.hoja;
-  document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · Cargando pagos...`;
+  document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · Cargando...`;
   document.getElementById('modal-body').innerHTML = `
-    <div style="display:flex;gap:0.75rem;margin-bottom:1.5rem;flex-wrap:wrap">
+    <div style="display:flex;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="openEditContrato(${c.id})">✏️ Editar contrato</button>
-      <button class="btn btn-green" onclick="openNuevoPago('${c.hoja}')">+ Registrar pago</button>
+      <button class="btn btn-primary" onclick="abrirNuevoMes('${c.hoja}')">+ Cargar mes</button>
       <button class="btn btn-secondary" onclick="openReciboPropietario('${c.hoja}')">📄 Recibo propietario</button>
+      <button class="btn btn-secondary" style="font-size:0.78rem" onclick="imprimirHistorial(${c.id})">🖨️ Imprimir</button>
     </div>
-    <div class="detail-grid">
+    <div class="detail-grid" style="margin-bottom:1rem">
       <div class="detail-item"><label>Locador</label><span>${c.locador||'—'}</span></div>
       <div class="detail-item"><label>Locatario</label><span>${c.locatario||'—'}</span></div>
-      <div class="detail-item"><label>Desde</label><span>${formatDate(c.vigencia_desde, true)}</span></div>
-      <div class="detail-item"><label>Hasta</label><span>${formatDate(c.vigencia_hasta, true)}</span></div>
+      <div class="detail-item"><label>Vigencia</label><span>${formatDate(c.vigencia_desde,true)} → ${formatDate(c.vigencia_hasta,true)}</span></div>
       <div class="detail-item"><label>Tipo</label><span>${normTipo(c.tipo_inmueble)}</span></div>
-      <div class="detail-item"><label>Modalidad</label><span>${c.modalidad_pago||'—'}</span></div>
+      <div class="detail-item"><label>Actualización</label><span>${c.periodicidad_actualizacion||'—'} ${c.indice_actualizacion?'· '+c.indice_actualizacion:''}</span></div>
       <div class="detail-item"><label>Estado</label><span><span class="badge ${est==='vigente'?'badge-green':'badge-gray'}">${est}</span></span></div>
-      <div class="detail-item" id="detail-total-alq"><label>Total alquileres</label><span>Calculando...</span></div>
-      <div class="detail-item" id="detail-saldo"><label>Saldo pendiente</label><span>Calculando...</span></div>
+      <div class="detail-item" id="detail-total-alq"><label>Total acumulado</label><span>—</span></div>
+      <div class="detail-item" id="detail-saldo"><label>Saldo pendiente</label><span>—</span></div>
     </div>
-    <div class="section-title">Historial de pagos</div>
-    <div id="pagos-container"><div class="loading-overlay">Cargando pagos...</div></div>
+    <div id="grilla-container"><div class="loading-overlay">Cargando grilla de pagos...</div></div>
   `;
   document.getElementById('modal-overlay').classList.add('open');
+  await recargarGrilla(c);
+}
 
-  // Fetch pagos directly from Supabase for this contract
+async function recargarGrilla(c) {
   try {
     const hojaEncoded = encodeURIComponent(c.hoja);
-    const cpagos = await sbGetAll('pagos', `hoja=eq.${hojaEncoded}&order=mes.desc`);
+    pagosActuales = await sbGetAll('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc`);
 
-    const totalAlq = cpagos.reduce((s,p)=>s+(p.importe_alquiler||0),0);
-    const totalPend = cpagos.filter(p=>p.saldo&&p.saldo>0).reduce((s,p)=>s+p.saldo,0);
+    // Load extras for all pagos
+    if (pagosActuales.length > 0) {
+      const ids = pagosActuales.map(p=>p.id).join(',');
+      const extras = await sbGet('pagos_extras', `pago_id=in.(${ids})&order=id.asc`);
+      extrasActuales = {};
+      extras.forEach(e => {
+        if (!extrasActuales[e.pago_id]) extrasActuales[e.pago_id] = [];
+        extrasActuales[e.pago_id].push(e);
+      });
+    }
 
-    document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · ${cpagos.length} registros`;
-    document.getElementById('detail-total-alq').innerHTML = `<label>Total alquileres</label><span style="font-weight:700">${formatMoney(totalAlq)}</span>`;
+    const totalAlq = pagosActuales.reduce((s,p)=>s+(p.importe_alquiler||0),0);
+    const totalPend = pagosActuales.filter(p=>p.saldo&&p.saldo>0&&p.mes&&p.mes.substring(0,7)<=TODAY.substring(0,7)).reduce((s,p)=>s+p.saldo,0);
+
+    document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · ${pagosActuales.length} meses`;
+    document.getElementById('detail-total-alq').innerHTML = `<label>Total acumulado</label><span style="font-weight:700">${formatMoney(totalAlq)}</span>`;
     document.getElementById('detail-saldo').innerHTML = `<label>Saldo pendiente</label><span class="${totalPend>0?'saldo-pendiente':'saldo-ok'}" style="font-weight:700">${totalPend>0?formatMoney(totalPend):'✓ Al día'}</span>`;
 
-    // Solo mostrar hasta mes corriente para impagos
-    const TODAY_DATE = TODAY;
-    const pagosAMostrar = cpagos.filter(p => {
-      if (!p.mes) return false;
-      // Siempre mostrar pagados; para impagos solo hasta mes corriente
-      if (p.saldo && p.saldo > 0) return p.mes.substring(0,7) <= TODAY_DATE.substring(0,7);
-      return true;
-    });
-
-    document.getElementById('pagos-container').innerHTML = pagosAMostrar.length === 0
-      ? `<div class="empty-state"><div class="icon">💳</div><p>Sin pagos registrados</p></div>`
-      : `<div style="overflow-x:auto">
-          <div style="display:flex;justify-content:flex-end;margin-bottom:0.5rem">
-            <button class="btn btn-secondary" style="font-size:0.78rem;padding:4px 12px" onclick="imprimirHistorial(${c.id})">🖨️ Imprimir historial</button>
-          </div>
-          <table class="pagos-table" style="min-width:900px">
-            <thead><tr>
-              <th>Mes</th><th>Vence</th>
-              <th class="num">Alquiler</th>
-              <th class="num">EPE</th><th class="num">Agua</th><th class="num">TGIU</th>
-              <th class="num">Seguro</th><th class="num">Otros</th>
-              <th class="num">Total</th>
-              <th class="num">Saldo</th>
-              <th>Estado</th>
-            </tr></thead>
-            <tbody>
-              ${pagosAMostrar.map(p => {
-                const pend = p.saldo&&p.saldo>0;
-                const rowStyle = pend ? 'background:#fff0f0;color:#721c24;' : '';
-                return `<tr style="${rowStyle}">
-                  <td><strong>${formatDate(p.mes)}</strong></td>
-                  <td>${formatDate(p.fecha_pago_hasta, true)}</td>
-                  <td class="num">${formatMoney(p.importe_alquiler)}</td>
-                  <td class="num">${formatMoney(p.monto_epe)}</td>
-                  <td class="num">${formatMoney(p.monto_agua)}</td>
-                  <td class="num">${formatMoney(p.monto_tgiu)}</td>
-                  <td class="num">${formatMoney(p.monto_seguro)}</td>
-                  <td class="num">${formatMoney(p.monto_otros)}</td>
-                  <td class="num"><strong>${formatMoney(p.total)}</strong></td>
-                  <td class="num ${pend?'saldo-pendiente':''}">${pend?formatMoney(p.saldo):'✓'}</td>
-                  <td><span class="badge ${pend?'badge-red':'badge-green'}">${pend?'Pendiente':'Pagado'}</span></td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>`;
+    renderGrilla(c);
   } catch(e) {
-    document.getElementById('pagos-container').innerHTML = `<div class="empty-state"><p>Error al cargar pagos: ${e.message}</p></div>`;
+    document.getElementById('grilla-container').innerHTML = `<div class="empty-state"><p>Error: ${e.message}</p></div>`;
   }
+}
+
+function getRowClass(p) {
+  if (!p.mes) return '';
+  const esFuturo = p.mes.substring(0,7) > TODAY.substring(0,7);
+  if (esFuturo) return 'row-futuro';
+  if (!p.saldo || p.saldo === 0) return 'row-pagado';
+  if (p.pagado === 'PARCIAL') return 'row-parcial';
+  return 'row-vencido';
+}
+
+function getEstadoLabel(p) {
+  if (!p.mes) return '—';
+  const esFuturo = p.mes.substring(0,7) > TODAY.substring(0,7);
+  if (esFuturo) return '<span class="badge badge-blue">Futuro</span>';
+  if (!p.saldo || p.saldo === 0) return '<span class="badge badge-green">✓ Pagado</span>';
+  if (p.pagado === 'PARCIAL') return '<span class="badge badge-yellow">Parcial</span>';
+  return '<span class="badge badge-red">Pendiente</span>';
+}
+
+function renderGrilla(c) {
+  if (pagosActuales.length === 0) {
+    document.getElementById('grilla-container').innerHTML = `<div class="empty-state"><div class="icon">📋</div><p>Sin meses cargados. Usá "+ Cargar mes" para agregar.</p></div>`;
+    return;
+  }
+
+  const rows = pagosActuales.map(p => {
+    const extras = extrasActuales[p.id] || [];
+    const totalExtras = extras.reduce((s,e)=>s+(e.importe||0),0);
+    const rowClass = getRowClass(p);
+
+    return `<tr class="${rowClass}" id="row-${p.id}">
+      <td class="grid-mes">${formatDate(p.mes)}</td>
+      <td class="num"><input class="grid-input" type="number" value="${p.importe_alquiler||''}" onchange="actualizarCampo(${p.id},'importe_alquiler',this.value)" placeholder="0"></td>
+      <td class="num"><input class="grid-input" type="number" value="${p.monto_epe||''}" onchange="actualizarCampo(${p.id},'monto_epe',this.value)" placeholder="—"></td>
+      <td class="num"><input class="grid-input" type="number" value="${p.monto_agua||''}" onchange="actualizarCampo(${p.id},'monto_agua',this.value)" placeholder="—"></td>
+      <td class="num"><input class="grid-input" type="number" value="${p.monto_tgiu||''}" onchange="actualizarCampo(${p.id},'monto_tgiu',this.value)" placeholder="—"></td>
+      <td class="num"><input class="grid-input" type="number" value="${p.monto_seguro||''}" onchange="actualizarCampo(${p.id},'monto_seguro',this.value)" placeholder="—"></td>
+      <td>
+        <div id="extras-${p.id}">
+          ${extras.map(e => `
+            <div class="extra-item">
+              <input type="text" value="${e.concepto||''}" placeholder="Concepto" style="width:120px" onchange="actualizarExtra(${e.id},'concepto',this.value)">
+              <input type="number" value="${e.importe||''}" placeholder="$" style="width:70px" onchange="actualizarExtra(${e.id},'importe',this.value)">
+              <button class="grid-btn grid-btn-red" onclick="eliminarExtra(${e.id},${p.id})">✕</button>
+            </div>
+          `).join('')}
+        </div>
+        <button class="grid-btn grid-btn-blue" onclick="agregarExtra(${p.id})" style="font-size:0.7rem;margin-top:2px">+ Extra</button>
+      </td>
+      <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>
+      <td class="num" id="saldo-${p.id}">${p.saldo&&p.saldo>0?`<span class="saldo-pendiente">${formatMoney(p.saldo)}</span>`:'<span class="saldo-ok">✓</span>'}</td>
+      <td id="estado-${p.id}">${getEstadoLabel(p)}</td>
+      <td>
+        <div class="grid-actions">
+          ${(!p.saldo||p.saldo===0)?'':`<button class="grid-btn grid-btn-green" onclick="marcarPagado(${p.id},'${c.hoja}')">✓ Cobrar</button>`}
+          <button class="grid-btn grid-btn-red" onclick="eliminarMes(${p.id},'${c.hoja}')" title="Eliminar">🗑</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('grilla-container').innerHTML = `
+    <div style="overflow-x:auto;max-height:55vh;overflow-y:auto">
+      <table class="grid-table">
+        <thead><tr>
+          <th>Mes</th>
+          <th class="r">Alquiler</th>
+          <th class="r">EPE</th>
+          <th class="r">Agua</th>
+          <th class="r">TGIU</th>
+          <th class="r">Seguro</th>
+          <th>Extras</th>
+          <th class="r">Total</th>
+          <th class="r">Saldo</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function calcularTotal(p, extras) {
+  const totalExtras = (extras||[]).reduce((s,e)=>s+(parseFloat(e.importe)||0),0);
+  return (p.importe_alquiler||0)+(p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+totalExtras;
+}
+
+async function actualizarCampo(pagoId, campo, valor) {
+  const val = parseFloat(valor)||0;
+  try {
+    // Update in DB
+    await sbPatch('pagos', pagoId, { [campo]: val });
+    // Update in memory
+    const p = pagosActuales.find(x=>x.id===pagoId);
+    if (p) {
+      p[campo] = val;
+      // Recalc total
+      const extras = extrasActuales[pagoId]||[];
+      const total = calcularTotal(p, extras);
+      const saldo = Math.max(0, total - (p.pagado&&p.pagado!=='0'?total:0));
+      await sbPatch('pagos', pagoId, { total });
+      p.total = total;
+      const totalEl = document.getElementById(`total-${pagoId}`);
+      if (totalEl) totalEl.innerHTML = `<strong>${formatMoney(total)}</strong>`;
+    }
+  } catch(e) { toast('Error al guardar: '+e.message,'error'); }
+}
+
+async function agregarExtra(pagoId) {
+  try {
+    const r = await sbPost('pagos_extras', { pago_id: pagoId, concepto: '', importe: 0 });
+    const extra = r[0];
+    if (!extrasActuales[pagoId]) extrasActuales[pagoId] = [];
+    extrasActuales[pagoId].push(extra);
+    const div = document.getElementById(`extras-${pagoId}`);
+    if (div) {
+      const newDiv = document.createElement('div');
+      newDiv.className = 'extra-item';
+      newDiv.id = `extra-item-${extra.id}`;
+      newDiv.innerHTML = `
+        <input type="text" value="" placeholder="Concepto" style="width:120px" onchange="actualizarExtra(${extra.id},'concepto',this.value)">
+        <input type="number" value="" placeholder="$" style="width:70px" onchange="actualizarExtra(${extra.id},'importe',this.value)">
+        <button class="grid-btn grid-btn-red" onclick="eliminarExtra(${extra.id},${pagoId})">✕</button>
+      `;
+      div.appendChild(newDiv);
+    }
+  } catch(e) { toast('Error: '+e.message,'error'); }
+}
+
+async function actualizarExtra(extraId, campo, valor) {
+  try {
+    const val = campo==='importe' ? parseFloat(valor)||0 : valor;
+    await fetch(`${SB_URL}/rest/v1/pagos_extras?id=eq.${extraId}`, {
+      method:'PATCH', headers:HEADERS, body:JSON.stringify({[campo]:val})
+    });
+    // Update memory and recalc total
+    for (const pagoId in extrasActuales) {
+      const e = extrasActuales[pagoId].find(x=>x.id===extraId);
+      if (e) {
+        e[campo] = val;
+        const p = pagosActuales.find(x=>x.id==pagoId);
+        if (p) {
+          const total = calcularTotal(p, extrasActuales[pagoId]);
+          await sbPatch('pagos', parseInt(pagoId), { total });
+          p.total = total;
+          const totalEl = document.getElementById(`total-${pagoId}`);
+          if (totalEl) totalEl.innerHTML = `<strong>${formatMoney(total)}</strong>`;
+        }
+        break;
+      }
+    }
+  } catch(e) { toast('Error: '+e.message,'error'); }
+}
+
+async function eliminarExtra(extraId, pagoId) {
+  if (!confirm('¿Eliminar este concepto extra?')) return;
+  try {
+    await fetch(`${SB_URL}/rest/v1/pagos_extras?id=eq.${extraId}`, { method:'DELETE', headers:HEADERS });
+    if (extrasActuales[pagoId]) extrasActuales[pagoId] = extrasActuales[pagoId].filter(e=>e.id!==extraId);
+    const el = document.getElementById(`extra-item-${extraId}`);
+    if (el) el.remove();
+    const p = pagosActuales.find(x=>x.id===pagoId);
+    if (p) {
+      const total = calcularTotal(p, extrasActuales[pagoId]||[]);
+      await sbPatch('pagos', pagoId, { total });
+      p.total = total;
+      const totalEl = document.getElementById(`total-${pagoId}`);
+      if (totalEl) totalEl.innerHTML = `<strong>${formatMoney(total)}</strong>`;
+    }
+  } catch(e) { toast('Error: '+e.message,'error'); }
+}
+
+async function marcarPagado(pagoId, hoja) {
+  const p = pagosActuales.find(x=>x.id===pagoId);
+  if (!p) return;
+  const extras = extrasActuales[pagoId]||[];
+  const total = calcularTotal(p, extras);
+  // Open cobro modal
+  openNuevoPago(hoja, pagoId);
+}
+
+async function eliminarMes(pagoId, hoja) {
+  if (!confirm('¿Eliminar este mes? Esta acción no se puede deshacer.')) return;
+  try {
+    await sbDelete('pagos', pagoId);
+    pagosActuales = pagosActuales.filter(p=>p.id!==pagoId);
+    const c = DB.contratos.find(x=>x.hoja===hoja);
+    if (c) renderGrilla(c);
+    toast('Mes eliminado ✓');
+  } catch(e) { toast('Error: '+e.message,'error'); }
+}
+
+// NUEVO MES
+async function abrirNuevoMes(hoja) {
+  const c = DB.contratos.find(x=>x.hoja===hoja);
+  const ultimoPago = pagosActuales.length>0 ? pagosActuales[pagosActuales.length-1] : null;
+
+  // Suggest next month
+  let mesDefault = '';
+  if (ultimoPago?.mes) {
+    const d = new Date(ultimoPago.mes);
+    d.setMonth(d.getMonth()+1);
+    mesDefault = d.toISOString().substring(0,7)+'-01';
+  } else if (c?.vigencia_desde) {
+    mesDefault = c.vigencia_desde.substring(0,7)+'-01';
+  }
+
+  document.getElementById('modal-title').textContent = 'Cargar mes';
+  document.getElementById('modal-subtitle').textContent = hoja;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-grid">
+      <div class="form-group"><label>Mes</label><input id="nm-mes" type="month" value="${mesDefault?mesDefault.substring(0,7):''}"></div>
+      <div class="form-group"><label>Fecha vencimiento</label><input id="nm-vence" type="date"></div>
+      <div class="form-group"><label>Alquiler</label><input id="nm-alquiler" type="number" value="${ultimoPago?.importe_alquiler||''}"></div>
+      <div class="form-group"><label>EPE</label><input id="nm-epe" type="number" value="${ultimoPago?.monto_epe||''}"></div>
+      <div class="form-group"><label>Agua</label><input id="nm-agua" type="number" value="${ultimoPago?.monto_agua||''}"></div>
+      <div class="form-group"><label>TGIU</label><input id="nm-tgiu" type="number" value="${ultimoPago?.monto_tgiu||''}"></div>
+      <div class="form-group"><label>Seguro</label><input id="nm-seguro" type="number" value="${ultimoPago?.monto_seguro||''}"></div>
+    </div>
+    <div class="section-title" style="margin-bottom:0.75rem">Conceptos extras (opcional)</div>
+    <div id="nm-extras"></div>
+    <button class="btn btn-secondary" style="margin-bottom:1rem;font-size:0.82rem" onclick="agregarExtraNuevoMes()">+ Agregar extra</button>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="openContrato(${c?.id})">← Volver</button>
+      <button class="btn btn-primary" onclick="guardarNuevoMes('${hoja}',${c?.id})">Guardar mes</button>
+    </div>
+  `;
+}
+
+function agregarExtraNuevoMes() {
+  const div = document.getElementById('nm-extras');
+  const idx = div.children.length;
+  const el = document.createElement('div');
+  el.className = 'extra-item';
+  el.id = `nm-extra-${idx}`;
+  el.innerHTML = `
+    <input type="text" id="nm-extra-concepto-${idx}" placeholder="Concepto (ej: Plomería)" style="flex:1">
+    <input type="number" id="nm-extra-importe-${idx}" placeholder="$" style="width:90px">
+    <button class="grid-btn grid-btn-red" onclick="this.closest('.extra-item').remove()">✕</button>
+  `;
+  div.appendChild(el);
+}
+
+async function guardarNuevoMes(hoja, contratoId) {
+  const mesVal = document.getElementById('nm-mes').value;
+  if (!mesVal) { toast('El mes es obligatorio','error'); return; }
+  const mes = mesVal+'-01';
+  const alq = parseFloat(document.getElementById('nm-alquiler').value)||0;
+  const epe = parseFloat(document.getElementById('nm-epe').value)||0;
+  const agua = parseFloat(document.getElementById('nm-agua').value)||0;
+  const tgiu = parseFloat(document.getElementById('nm-tgiu').value)||0;
+  const seguro = parseFloat(document.getElementById('nm-seguro').value)||0;
+  const vence = document.getElementById('nm-vence').value||null;
+
+  // Collect extras
+  const extrasDiv = document.getElementById('nm-extras');
+  const extras = [];
+  if (extrasDiv) {
+    for (const el of extrasDiv.children) {
+      const idx = el.id.replace('nm-extra-','');
+      const concepto = document.getElementById(`nm-extra-concepto-${idx}`)?.value||'';
+      const importe = parseFloat(document.getElementById(`nm-extra-importe-${idx}`)?.value)||0;
+      if (concepto || importe) extras.push({concepto, importe});
+    }
+  }
+  const totalExtras = extras.reduce((s,e)=>s+e.importe,0);
+  const total = alq+epe+agua+tgiu+seguro+totalExtras;
+
+  try {
+    // Check if month already exists
+    const hojaEncoded = encodeURIComponent(hoja);
+    const existing = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
+    let pagoId;
+    if (existing.length > 0) {
+      // Update existing
+      await sbPatch('pagos', existing[0].id, {
+        importe_alquiler:alq, monto_epe:epe, monto_agua:agua,
+        monto_tgiu:tgiu, monto_seguro:seguro, total,
+        fecha_pago_hasta:vence, saldo:total
+      });
+      pagoId = existing[0].id;
+      toast('Mes actualizado ✓');
+    } else {
+      // Create new
+      const r = await sbPost('pagos', {
+        hoja, mes, corresponde_a_mes:mes,
+        importe_alquiler:alq, monto_epe:epe, monto_agua:agua,
+        monto_tgiu:tgiu, monto_seguro:seguro, total,
+        fecha_pago_hasta:vence, saldo:total, pagado:'0'
+      });
+      pagoId = r[0]?.id;
+      toast('Mes cargado ✓');
+    }
+    // Save extras
+    for (const e of extras) {
+      await sbPost('pagos_extras', { pago_id:pagoId, concepto:e.concepto, importe:e.importe });
+    }
+    // Reload grilla
+    const c = DB.contratos.find(x=>x.id===contratoId);
+    if (c) await recargarGrilla(c);
+  } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
 // ============================================================
