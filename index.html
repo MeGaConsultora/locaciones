@@ -1235,7 +1235,8 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
         <span>Total a cobrar:</span>
         <span id="gp-total-cobro" style="color:var(--green)">—</span>
       </div>
-      <div class="form-actions">
+      <div class="form-actions" style="justify-content:space-between">
+        ${(p.total||0) > (p.saldo||0) ? `<button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="revertirCobro('${hoja}',${contratoId},'${mesKey}',${comisionPct})">↩ Revertir cobro</button>` : '<div></div>'}
         <button class="btn btn-green" onclick="confirmarCobroInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct})">✓ Confirmar cobro + Imprimir recibo</button>
       </div>`}
     </div>
@@ -1501,6 +1502,41 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       }, 150);
     }
   } catch(e) { toast('Error al guardar: '+e.message,'error'); }
+}
+
+async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
+  if (!confirm('¿Revertir el cobro de este mes? El saldo volverá al total original.')) return;
+  const mes = mesKey+'-01';
+  const hojaEncoded = encodeURIComponent(hoja);
+  const existing = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
+  if (!existing.length) { toast('No se encontró el registro','error'); return; }
+  const p = existing[0];
+  try {
+    await sbPatch('pagos', p.id, {
+      saldo: p.total,
+      pagado: '0',
+      pago_nro: null
+    });
+    toast('Cobro revertido ✓');
+    const c = DB.contratos.find(x=>x.id===contratoId);
+    if (c) {
+      await recargarGrilla(c);
+      const meses = [];
+      const start = new Date(c.vigencia_desde.substring(0,7)+'-01');
+      const end = new Date(c.vigencia_hasta.substring(0,7)+'-01');
+      const cur = new Date(start);
+      while (cur <= end) {
+        const key = cur.toISOString().substring(0,7);
+        const pago = pagosActuales.find(p => p.mes && p.mes.startsWith(key));
+        meses.push({ key, label: formatDate(key+'-01'), pago });
+        cur.setMonth(cur.getMonth()+1);
+      }
+      setTimeout(async () => {
+        await cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, 's2');
+        await loadAll();
+      }, 150);
+    }
+  } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
 async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
