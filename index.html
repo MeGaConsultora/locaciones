@@ -540,6 +540,7 @@ async function loadAll() {
     document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR', {timeZone:'America/Argentina/Buenos_Aires'})}`;
     populateFiltros();
     await loadPersonas();
+    await loadContratosPersonas();
     renderDashboard();
     renderContratos();
     renderVencimientos();
@@ -564,6 +565,16 @@ function formatDate(d, showDay=false) {
   const months = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   return showDay ? `${parseInt(day)} ${months[parseInt(m)-1]} ${y}` : `${months[parseInt(m)-1]} ${y}`;
 }
+function formatPersonas(personas, rol) {
+  const filtradas = personas.filter(p => p.rol === rol).sort((a,b) => a.orden-b.orden);
+  if (!filtradas.length) return '—';
+  const primera = filtradas[0];
+  const nombre = `${primera.apellido||''}${primera.nombre?', '+primera.nombre:''}`.trim();
+  if (filtradas.length === 1) return nombre;
+  if (filtradas.length === 2) return `${nombre} y otro`;
+  return `${nombre} y otros`;
+}
+
 function formatMoney(n) {
   if (n == null || isNaN(n)) return '—';
   return '$ ' + Math.round(n).toLocaleString('es-AR');
@@ -785,8 +796,8 @@ async function openContrato(id) {
     </div>
     <p style="font-size:0.78rem;color:#999;margin-bottom:0.75rem">💡 Clic en un mes para editarlo o registrar cobro</p>
     <div class="detail-grid" style="margin-bottom:1rem">
-      <div class="detail-item"><label>Locador</label><span>${c.locador||'—'}</span></div>
-      <div class="detail-item"><label>Locatario</label><span>${c.locatario||'—'}</span></div>
+      <div class="detail-item"><label>Propietario/s</label><span>${c._locador||c.locador||'—'}</span></div>
+      <div class="detail-item"><label>Inquilino/s</label><span>${c._locatario||c.locatario||'—'}</span></div>
       <div class="detail-item"><label>Vigencia</label><span>${formatDate(c.vigencia_desde,true)} → ${formatDate(c.vigencia_hasta,true)}</span></div>
       <div class="detail-item"><label>Tipo</label><span>${normTipo(c.tipo_inmueble)}</span></div>
       <div class="detail-item"><label>Actualización</label><span>${c.periodicidad_actualizacion||'—'} ${c.indice_actualizacion?'· '+c.indice_actualizacion:''}</span></div>
@@ -1895,6 +1906,74 @@ function openNuevoContrato() {
   document.getElementById('modal-overlay').classList.add('open');
 }
 
+function agregarPersonaRol(rol) {
+  const contenedor = document.getElementById(`lista-${rol === 'propietario' ? 'propietarios' : 'inquilinos'}`);
+  const idx = contenedor.children.length;
+  const div = document.createElement('div');
+  div.dataset.rol = rol;
+  div.dataset.personaId = '';
+  div.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem';
+  div.innerHTML = `
+    <input type="text" placeholder="Buscar apellido o DNI..." style="flex:1;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem" oninput="buscarPersonaEnLinea(this,'${rol}',${idx})">
+    <div id="sug-${rol}-${idx}" style="position:absolute;background:white;border:1px solid var(--border);border-radius:8px;margin-top:4px;display:none;max-height:150px;overflow-y:auto;z-index:300;min-width:300px"></div>
+    <span id="sel-${rol}-${idx}" style="font-size:0.85rem;color:var(--green);font-weight:600"></span>
+    <button onclick="this.closest('[data-rol]').remove()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
+  `;
+  contenedor.appendChild(div);
+}
+
+async function buscarPersonaEnLinea(input, rol, idx) {
+  const q = input.value;
+  const sugId = `sug-${rol}-${idx}`;
+  const div = document.getElementById(sugId);
+  if (!div) return;
+  if (q.length < 2) { div.style.display='none'; return; }
+  const res = DB_PERSONAS.filter(p => `${p.apellido||''} ${p.nombre||''} ${p.dni||''}`.toLowerCase().includes(q.toLowerCase())).slice(0,8);
+  if (!res.length) { div.style.display='none'; return; }
+  // Position div below input
+  const rect = input.getBoundingClientRect();
+  div.style.display='block';
+  div.style.top = (rect.bottom + window.scrollY) + 'px';
+  div.style.left = rect.left + 'px';
+  div.style.position = 'fixed';
+  div.innerHTML = res.map(p => `
+    <div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0ece4;font-size:0.85rem"
+      onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background='white'"
+      onclick="selPersonaEnLinea(this,'${rol}',${idx},${p.id},'${(p.apellido||'').replace(/'/g,"\'")}','${(p.nombre||'').replace(/'/g,"\'")}')">
+      <strong>${p.apellido||''}, ${p.nombre||''}</strong> ${p.dni?'— DNI: '+p.dni:''}
+    </div>
+  `).join('');
+}
+
+function selPersonaEnLinea(el, rol, idx, personaId, apellido, nombre) {
+  const sugDiv = document.getElementById(`sug-${rol}-${idx}`);
+  const selSpan = document.getElementById(`sel-${rol}-${idx}`);
+  const input = sugDiv?.previousElementSibling;
+  const contenedor = el.closest('[data-rol]') || document.querySelector(`[data-rol="${rol}"]:last-child`);
+  
+  // Find the parent div with data-rol
+  let parent = el.closest('[data-rol]');
+  if (!parent) {
+    const lista = document.getElementById(`lista-${rol === 'propietario' ? 'propietarios' : 'inquilinos'}`);
+    parent = lista?.children[idx];
+  }
+  if (parent) {
+    parent.dataset.personaId = personaId;
+    const sp = document.getElementById(`sel-${rol}-${idx}`);
+    if (sp) sp.textContent = `✓ ${apellido}, ${nombre}`;
+    const inp = parent.querySelector('input[type="text"]');
+    if (inp) inp.value = `${apellido}, ${nombre}`;
+  }
+  if (sugDiv) sugDiv.style.display='none';
+}
+
+// Close suggestion dropdowns on outside click
+document.addEventListener('click', e => {
+  if (!e.target.closest('[data-rol]')) {
+    document.querySelectorAll('[id^="sug-"]').forEach(d => d.style.display='none');
+  }
+});
+
 async function buscarPersona(tipo, q) {
   if (q.length < 2) { document.getElementById('sugerencias-'+tipo).style.display='none'; return; }
   try {
@@ -1929,57 +2008,38 @@ function seleccionarPersona(tipo, p) {
 async function guardarContrato() {
   const titulo = document.getElementById('f-titulo').value.trim();
   if (!titulo) { toast('El título es obligatorio','error'); return; }
+  // Check for duplicate
+  const existe = DB.contratos.find(c => c.titulo?.toLowerCase() === titulo.toLowerCase() || c.hoja?.toLowerCase() === titulo.toLowerCase());
+  if (existe) { toast('Ya existe un contrato con ese nombre','error'); return; }
 
   // Servicios seleccionados
   const servicios = ['EPE','Agua','TGIU','Gas','Internet','Expensas','Seguro','Otros']
     .filter(s => document.getElementById('srv-'+s)?.checked).join(',');
 
-  // Guardar/actualizar propietario
-  let propId = document.getElementById('prop-id').value;
-  const propData = {
-    apellido: document.getElementById('prop-apellido').value.trim(),
-    nombre: document.getElementById('prop-nombre').value.trim(),
-    dni: document.getElementById('prop-dni').value.trim(),
-    cuit: document.getElementById('prop-cuit').value.trim(),
-    domicilio: document.getElementById('prop-domicilio').value.trim(),
-    telefono: document.getElementById('prop-tel').value.trim(),
-    email: document.getElementById('prop-email').value.trim(),
-  };
-  if (propData.apellido || propData.nombre) {
-    try {
-      if (propId) {
-        await sbPatch('personas', propId, propData);
-      } else {
-        const r = await sbPost('personas', propData);
-        propId = r[0]?.id || '';
-      }
-    } catch(e) {}
+  // Collect personas from form
+  const propItems = document.querySelectorAll('[data-rol="propietario"]');
+  const inqItems = document.querySelectorAll('[data-rol="inquilino"]');
+  
+  const propIds = [];
+  const inqIds = [];
+  
+  for (const item of propItems) {
+    const pid = item.dataset.personaId;
+    if (pid) propIds.push(parseInt(pid));
+  }
+  for (const item of inqItems) {
+    const pid = item.dataset.personaId;
+    if (pid) inqIds.push(parseInt(pid));
   }
 
-  // Guardar/actualizar inquilino
-  let inqId = document.getElementById('inq-id').value;
-  const inqData = {
-    apellido: document.getElementById('inq-apellido').value.trim(),
-    nombre: document.getElementById('inq-nombre').value.trim(),
-    dni: document.getElementById('inq-dni').value.trim(),
-    cuit: document.getElementById('inq-cuit').value.trim(),
-    domicilio: document.getElementById('inq-domicilio').value.trim(),
-    telefono: document.getElementById('inq-tel').value.trim(),
-    email: document.getElementById('inq-email').value.trim(),
-  };
-  if (inqData.apellido || inqData.nombre) {
-    try {
-      if (inqId) {
-        await sbPatch('personas', inqId, inqData);
-      } else {
-        const r = await sbPost('personas', inqData);
-        inqId = r[0]?.id || '';
-      }
-    } catch(e) {}
-  }
-
-  const locador = propData.apellido ? `${propData.apellido}, ${propData.nombre}`.trim() : '';
-  const locatario = inqData.apellido ? `${inqData.apellido}, ${inqData.nombre}`.trim() : '';
+  // Build display names from selected personas
+  const propPersonas = propIds.map(id => DB_PERSONAS.find(p => p.id === id)).filter(Boolean);
+  const inqPersonas = inqIds.map(id => DB_PERSONAS.find(p => p.id === id)).filter(Boolean);
+  
+  const locador = propPersonas.length > 0 ? formatPersonasFromCP(propPersonas.map((p,i) => ({personas: p, orden: i+1}))) : '';
+  const locatario = inqPersonas.length > 0 ? formatPersonasFromCP(inqPersonas.map((p,i) => ({personas: p, orden: i+1}))) : '';
+  const propId = propIds[0] || null;
+  const inqId = inqIds[0] || null;
 
   const vigDesde = document.getElementById('f-desde').value||null;
   const vigHasta = document.getElementById('f-hasta').value||null;
@@ -2008,6 +2068,16 @@ async function guardarContrato() {
     const r = await sbPost('contratos', body);
     const nuevoContrato = r[0];
     toast('Contrato guardado ✓');
+
+    // Save contrato_personas relationships
+    if (nuevoContrato && (propIds.length > 0 || inqIds.length > 0)) {
+      for (let i=0; i<propIds.length; i++) {
+        await sbPost('contrato_personas', {contrato_id: nuevoContrato.id, persona_id: propIds[i], rol: 'propietario', orden: i+1});
+      }
+      for (let i=0; i<inqIds.length; i++) {
+        await sbPost('contrato_personas', {contrato_id: nuevoContrato.id, persona_id: inqIds[i], rol: 'inquilino', orden: i+1});
+      }
+    }
 
     // Auto-generate all months in vigencia as empty pagos
     if (vigDesde && vigHasta && nuevoContrato) {
@@ -2507,6 +2577,38 @@ async function loadPersonas() {
   } catch(e) {}
 }
 
+let DB_CONTRATO_PERSONAS = [];
+
+async function loadContratosPersonas() {
+  try {
+    const cp = await sbGet('contrato_personas', 'select=*,personas(id,apellido,nombre)&order=orden.asc&limit=5000');
+    DB_CONTRATO_PERSONAS = cp;
+    // Update contratos with formatted names
+    DB.contratos.forEach(c => {
+      const propietarios = cp.filter(x => x.contrato_id === c.id && x.rol === 'propietario');
+      const inquilinos = cp.filter(x => x.contrato_id === c.id && x.rol === 'inquilino');
+      if (propietarios.length > 0) {
+        c._locador = formatPersonasFromCP(propietarios);
+        c._propietarios = propietarios;
+      }
+      if (inquilinos.length > 0) {
+        c._locatario = formatPersonasFromCP(inquilinos);
+        c._inquilinos = inquilinos;
+      }
+    });
+  } catch(e) {}
+}
+
+function formatPersonasFromCP(lista) {
+  if (!lista.length) return '—';
+  const primera = lista[0].personas;
+  if (!primera) return '—';
+  const nombre = `${primera.apellido||''}${primera.nombre?', '+primera.nombre:''}`.trim();
+  if (lista.length === 1) return nombre;
+  if (lista.length === 2) return `${nombre} y otro`;
+  return `${nombre} y otros`;
+}
+
 function getRolPersona(p) {
   const esProp = DB.contratos.some(c => c.propietario_id == p.id);
   const esInq = DB.contratos.some(c => c.inquilino_id == p.id);
@@ -2616,6 +2718,7 @@ function openEditPersona(id) {
       <button class="btn btn-primary" onclick="guardarPersona(${id||'null'})">Guardar</button>
     </div>
   `;
+  document.getElementById('modal-overlay').classList.add('open');
 }
 
 function openNuevaPersona() { openEditPersona(null); }
@@ -2988,6 +3091,7 @@ setInterval(async () => {
     DB.pagos = pagos;
     document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR', {timeZone:'America/Argentina/Buenos_Aires'})}`;
     await loadPersonas();
+    await loadContratosPersonas();
     renderDashboard();
     renderContratos();
     renderVencimientos();
