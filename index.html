@@ -2452,75 +2452,64 @@ function imprimirRecibo(data) {
   const fechaPago = data.fechaPago ? (() => { const [y,m,d]=data.fechaPago.split('-'); return `${d}/${m}/${y}`; })() : '';
 
   const recibo = `
-    <div style="font-family:'DM Sans',Arial,sans-serif;width:100%;max-width:680px;margin:0 auto;padding:24px;border:2px solid #1a1a2e;border-radius:8px;page-break-inside:avoid">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:2px solid #1a1a2e;padding-bottom:12px">
+    <div style="font-family:'DM Sans',Arial,sans-serif;width:100%;padding:0;border:1.5px solid #1a1a2e;border-radius:4px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;border-bottom:1.5px solid #1a1a2e;padding:10px 14px 8px">
         <div>
-          <div style="font-size:1.4rem;font-weight:700;color:#1a1a2e">MeGa Consultora</div>
-          <div style="font-size:0.8rem;color:#666;margin-top:2px">Gestión Inmobiliaria</div>
+          <div style="font-size:1.1rem;font-weight:700;color:#1a1a2e">MeGa Consultora</div>
+          <div style="font-size:0.72rem;color:#666;margin-top:1px">Gestión Inmobiliaria</div>
         </div>
         <div style="text-align:right">
-          <div style="font-size:0.72rem;color:#888;text-transform:uppercase;letter-spacing:.06em">Recibo Nº</div>
-          <div style="font-size:1.6rem;font-weight:700;color:#c8483a">${String(data.nroMes).padStart(4,'0')}</div>
+          <div style="font-size:0.65rem;color:#888;text-transform:uppercase;letter-spacing:.06em">Recibo Nº</div>
+          <div style="font-size:1.3rem;font-weight:700;color:#c8483a">${String(data.nroMes).padStart(4,'0')}</div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;font-size:0.85rem">
-        <div><span style="color:#888;font-size:0.72rem;text-transform:uppercase;display:block">Contrato</span><strong>${data.contrato?.titulo||'—'}</strong></div>
-        <div><span style="color:#888;font-size:0.72rem;text-transform:uppercase;display:block">Período</span><strong>${fechaMes}</strong></div>
-        <div><span style="color:#888;font-size:0.72rem;text-transform:uppercase;display:block">Locador</span>${data.contrato?.locador||'—'}</div>
-        <div><span style="color:#888;font-size:0.72rem;text-transform:uppercase;display:block">Locatario</span>${data.contrato?.locatario||'—'}</div>
-        <div><span style="color:#888;font-size:0.72rem;text-transform:uppercase;display:block">Fecha de pago</span>${fechaPago}</div>
-        <div><span style="color:#888;font-size:0.72rem;text-transform:uppercase;display:block">Tipo inmueble</span>${data.contrato?.tipo_inmueble||'—'}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;font-size:0.78rem;padding:0 14px">
+        <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Contrato</span><strong>${data.contrato?.titulo||'—'}</strong></div>
+        <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Período</span><strong>${fechaMes}</strong></div>
+        <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Locador</span>${data.contrato?.locador||'—'}</div>
+        <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Locatario</span>${data.contrato?.locatario||'—'}</div>
+        <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Fecha de pago</span>${fechaPago}</div>
+        <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Tipo inmueble</span>${data.contrato?.tipo_inmueble||'—'}</div>
       </div>
-      <table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:0.85rem">
+      <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:0.78rem">
         <thead><tr style="background:#1a1a2e;color:white">
-          <th style="padding:8px 10px;text-align:left;font-size:0.7rem;letter-spacing:.06em;text-transform:uppercase">Concepto</th>
-          <th style="padding:8px 10px;text-align:right;font-size:0.7rem;letter-spacing:.06em;text-transform:uppercase">Importe</th>
+          <th style="padding:5px 14px;text-align:left;font-size:0.65rem;letter-spacing:.06em;text-transform:uppercase">Concepto</th>
+          <th style="padding:5px 14px;text-align:right;font-size:0.65rem;letter-spacing:.06em;text-transform:uppercase">Importe</th>
         </tr></thead>
         <tbody>
           ${data.itemsAbonados.map((it,i) => `
             <tr style="background:${i%2===0?'#f5f0e8':'white'}">
-              <td style="padding:7px 10px">${it.label}</td>
-              <td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums">${formatMoney(it.monto)}</td>
+              <td style="padding:4px 14px">${it.label}</td>
+              <td style="padding:4px 14px;text-align:right;font-variant-numeric:tabular-nums">${formatMoney(it.monto)}</td>
             </tr>
           `).join('')}
         </tbody>
-        <tfoot><tr style="border-top:2px solid #1a1a2e">
-          <td style="padding:10px;font-weight:700;font-size:0.95rem">TOTAL ABONADO</td>
-          <td style="padding:10px;text-align:right;font-weight:700;font-size:1.1rem;color:#2d7a4f">${formatMoney(data.totalAbonado)}</td>
+        <tfoot><tr style="border-top:1.5px solid #1a1a2e">
+          <td style="padding:6px 14px;font-weight:700;font-size:0.85rem">TOTAL ABONADO</td>
+          <td style="padding:6px 14px;text-align:right;font-weight:700;font-size:0.95rem;color:#2d7a4f">${formatMoney(data.totalAbonado)}</td>
         </tr></tfoot>
       </table>
-      ${data.nuevoSaldo > 0 ? `<div style="background:#fff3cd;border-radius:6px;padding:8px 12px;font-size:0.82rem;color:#856404;margin-bottom:12px">⚠ Saldo pendiente: <strong>${formatMoney(data.nuevoSaldo)}</strong></div>` : '<div style="background:#d4edda;border-radius:6px;padding:8px 12px;font-size:0.82rem;color:#155724;margin-bottom:12px">✓ Mes cancelado en su totalidad</div>'}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:20px;padding-top:16px;border-top:1px dashed #ccc">
-        <div style="text-align:center"><div style="border-top:1px solid #333;padding-top:6px;font-size:0.78rem;color:#666">Firma locador</div></div>
-        <div style="text-align:center"><div style="border-top:1px solid #333;padding-top:6px;font-size:0.78rem;color:#666">Firma locatario</div></div>
+      <div style="padding:0 14px 6px">
+        ${data.nuevoSaldo > 0 ? `<div style="background:#fff3cd;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#856404">⚠ Saldo pendiente: <strong>${formatMoney(data.nuevoSaldo)}</strong></div>` : '<div style="background:#d4edda;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#155724">✓ Mes cancelado en su totalidad</div>'}
       </div>
-      <div style="text-align:center;font-size:0.7rem;color:#aaa;margin-top:12px">MeGa Consultora — Gestión Inmobiliaria</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:8px 14px 10px;border-top:1px dashed #ccc;margin:6px 14px 0">
+        <div style="text-align:center"><div style="border-top:1px solid #333;padding-top:4px;font-size:0.7rem;color:#666;margin-top:20px">Firma locador</div></div>
+        <div style="text-align:center"><div style="border-top:1px solid #333;padding-top:4px;font-size:0.7rem;color:#666;margin-top:20px">Firma locatario</div></div>
+      </div>
     </div>
   `;
 
-  const ventana = window.open('', '_blank', 'width=780,height=700');
+  const ventana = window.open('', '_blank');
   ventana.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8">
     <title>Recibo Nº ${String(data.nroMes).padStart(4,'0')}</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>
-      * { margin:0; padding:0; box-sizing:border-box; }
-      body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; padding:20px; gap:20px; }
-      .no-print { text-align:center; margin-bottom:10px; }
-      .no-print button { background:#1a1a2e; color:white; border:none; padding:10px 28px; border-radius:8px; font-size:1rem; cursor:pointer; font-family:'DM Sans',sans-serif; font-weight:600; }
-      .no-print button:hover { background:#c8483a; }
-      .recibo-wrap { background:white; border-radius:10px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.12); width:100%; max-width:720px; }
-      @media print {
-        body { background:white; padding:0; gap:0; }
-        .no-print { display:none; }
-        .recibo-wrap { box-shadow:none; border-radius:0; page-break-after:always; }
-        .recibo-wrap:last-child { page-break-after:avoid; }
-      }
-    </style>
+    <style>${A4_PRINT_CSS}</style>
   </head><body>
-    <div class="no-print"><button onclick="window.print()">🖨️ Imprimir por duplicado</button></div>
-    <div class="recibo-wrap"><div style="padding:28px">${recibo}</div></div>
-    <div class="recibo-wrap" style="border-top:3px dashed #ccc"><div style="padding:4px 28px 4px;font-size:0.72rem;color:#aaa;text-align:center;letter-spacing:.1em">— DUPLICADO —</div><div style="padding:8px 28px 28px">${recibo}</div></div>
+    <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
+    <div class="recibo-wrap"><div style="padding:16px 20px 12px">${recibo}</div></div>
+    <div class="separador">✂ &nbsp;&nbsp; DUPLICADO &nbsp;&nbsp; ✂</div>
+    <div class="recibo-wrap"><div style="padding:12px 20px 16px">${recibo}</div></div>
   </body></html>`);
   ventana.document.close();
 }
