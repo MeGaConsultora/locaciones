@@ -1214,6 +1214,15 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
     <!-- SOLAPA 2: INGRESAR PAGO -->
     <div id="s2" class="solapa-panel">
       ${!p || !p.total ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
+      ${p.saldo > 0 && p.saldo < p.total ? `
+      <div style="background:#fff3cd;border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.75rem;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:0.85rem;color:#856404">💰 Saldo pendiente del mes:</span>
+        <strong style="color:#856404">${formatMoney(p.saldo)}</strong>
+      </div>` : ''}
+      ${p.saldo <= 0 ? `
+      <div style="background:#d4edda;border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.75rem;text-align:center;font-size:0.85rem;color:#155724">
+        ✓ Este mes está completamente pagado
+      </div>` : ''}
       <div id="gp-cobro-items">${generarItemsCobro(p, extrasInq)}</div>
       <div style="margin-top:0.75rem;padding:0.75rem;background:var(--cream);border-radius:8px">
         <div class="form-group">
@@ -1341,16 +1350,17 @@ function recalcCobro() {
   checks.forEach(c => {
     const signo = parseFloat(c.dataset.signo || '1');
     const val = parseFloat(c.value)||0;
-    if (c.checked) {
-      total += signo * val;
-    }
-    // Show/hide amount based on checked state
-    const amountEl = document.getElementById('cobro-lbl-' + c.id.replace('cobro-chk-',''));
-    if (amountEl) amountEl.style.display = c.checked ? '' : 'none';
-    // For extras, find sibling span
-    if (c.id.startsWith('cobro-chk-extra-')) {
-      const span = c.closest('div')?.querySelector('span:last-child');
-      if (span && !span.classList.contains('badge')) span.style.display = c.checked ? '' : 'none';
+    if (c.checked) total += signo * val;
+    // Find the amount span in the same row (last span child of parent div)
+    const parentDiv = c.closest('div');
+    if (parentDiv) {
+      const spans = parentDiv.querySelectorAll('span');
+      spans.forEach(sp => {
+        // Only hide/show the amount span (not badge spans)
+        if (!sp.querySelector('input') && sp !== c) {
+          sp.style.display = c.checked ? '' : 'none';
+        }
+      });
     }
   });
   const acuenta = parseFloat(document.getElementById('gp-acuenta')?.value)||0;
@@ -1366,9 +1376,16 @@ function recalcProp() {
     const signo = parseFloat(c.dataset.signo || '1');
     const val = parseFloat(c.value)||0;
     if (c.checked) total += signo * val;
-    // Show/hide amount span
-    const span = c.closest('div')?.querySelector('span:last-child');
-    if (span) span.style.display = c.checked ? '' : 'none';
+    // Find and show/hide all spans in parent div
+    const parentDiv = c.closest('div');
+    if (parentDiv) {
+      const spans = parentDiv.querySelectorAll('span');
+      spans.forEach(sp => {
+        if (!sp.querySelector('input')) {
+          sp.style.display = c.checked ? '' : 'none';
+        }
+      });
+    }
   });
   const el = document.getElementById('gp-total-prop');
   if (el) el.textContent = formatMoney(total);
