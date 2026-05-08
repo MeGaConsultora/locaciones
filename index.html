@@ -863,17 +863,21 @@ function getRowClass(p) {
   if (!p.mes) return '';
   const esFuturo = p.mes.substring(0,7) > TODAY.substring(0,7);
   if (esFuturo) return 'row-futuro';
-  if (!p.saldo || p.saldo === 0) return 'row-pagado';
-  if (p.pagado === 'PARCIAL') return 'row-parcial';
-  return 'row-vencido';
+  if (!p.total || p.total === 0) return ''; // empty row, no color
+  const abonado = (p.total||0) - (p.saldo||0);
+  if (p.saldo <= 0) return 'row-pagado';        // fully paid = green
+  if (abonado > 0) return 'row-parcial';         // partially paid = yellow
+  return 'row-vencido';                          // nothing paid = red
 }
 
 function getEstadoLabel(p) {
   if (!p.mes) return '—';
   const esFuturo = p.mes.substring(0,7) > TODAY.substring(0,7);
   if (esFuturo) return '<span class="badge badge-blue">Futuro</span>';
-  if (!p.saldo || p.saldo === 0) return '<span class="badge badge-green">✓ Pagado</span>';
-  if (p.pagado === 'PARCIAL') return '<span class="badge badge-yellow">Parcial</span>';
+  if (!p.total || p.total === 0) return '<span class="badge badge-gray">Sin datos</span>';
+  const abonado = (p.total||0) - (p.saldo||0);
+  if (p.saldo <= 0) return '<span class="badge badge-green">✓ Pagado</span>';
+  if (abonado > 0) return '<span class="badge badge-yellow">Parcial</span>';
   return '<span class="badge badge-red">Pendiente</span>';
 }
 
@@ -905,7 +909,8 @@ function renderGrilla(c) {
       <td class="num">${p.monto_seguro>0?formatMoney(p.monto_seguro):'—'}</td>
       <td style="font-size:0.78rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasLabel}">${extrasLabel}</td>
       <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>
-      <td class="num" id="saldo-${p.id}">${p.saldo&&p.saldo>0?`<span class="saldo-pendiente">${formatMoney(p.saldo)}</span>`:'<span class="saldo-ok">✓</span>'}</td>
+      <td class="num" id="abonado-${p.id}">${(() => { const ab = (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
+      <td class="num" id="saldo-${p.id}">${p.saldo>0?`<span class="saldo-pendiente">${formatMoney(p.saldo)}</span>`:'<span class="saldo-ok">✓</span>'}</td>
       <td id="estado-${p.id}">${getEstadoLabel(p)}</td>
       <td onclick="event.stopPropagation()">
         <div class="grid-actions">
@@ -928,6 +933,7 @@ function renderGrilla(c) {
           <th class="r">Seguro</th>
           <th>Extras</th>
           <th class="r">Total</th>
+          <th class="r">Abonado</th>
           <th class="r">Saldo</th>
           <th>Estado</th>
           <th>Acciones</th>
@@ -1249,24 +1255,20 @@ function generarItemsCobro(p, extrasInq) {
   ].filter(i => i.val > 0);
 
   return items.map(it => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
+    <div style="padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
         <input type="checkbox" id="cobro-chk-${it.id}" value="${it.val}" data-signo="1" checked onchange="recalcCobro()" style="width:15px;height:15px">
         ${it.label}
       </label>
-      <span style="font-weight:600">${formatMoney(it.val)}</span>
     </div>
   `).join('') + extrasInq.map(e => {
-    // Inquilino: débito SUMA (+), crédito RESTA (-)
     const signo = e.tipo==='credito' ? -1 : 1;
     const color = e.tipo==='credito' ? 'var(--green)' : 'var(--accent)';
-    const signoLabel = e.tipo==='credito' ? '−' : '+';
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
+    return `<div style="padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
         <input type="checkbox" id="cobro-chk-extra-${e.id}" value="${Math.abs(e.importe||0)}" data-signo="${signo}" checked onchange="recalcCobro()" style="width:15px;height:15px">
-        ${e.concepto||'Extra'} <span style="font-size:0.72rem;color:${color}">(${e.tipo==='credito'?'crédito - resta':'débito - suma'})</span>
+        ${e.concepto||'Extra'} <span style="font-size:0.72rem;color:${color}">(${e.tipo==='credito'?'crédito':'débito'})</span>
       </label>
-      <span style="font-weight:600;color:${color}">${signoLabel} ${formatMoney(Math.abs(e.importe||0))}</span>
     </div>`;
   }).join('');
 }
@@ -1276,31 +1278,26 @@ function generarItemsPropietario(p, extrasProp, comisionPct) {
   const alq = p.importe_alquiler||0;
   const comision = alq * (comisionPct/100);
   return `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
-      <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem">
+    <div style="padding:5px 0;border-bottom:1px solid #f0ece4">
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
         <input type="checkbox" id="prop-chk-alquiler" value="${alq}" checked onchange="recalcProp()" style="width:15px;height:15px">
         Alquiler
       </label>
-      <span style="font-weight:600">${formatMoney(alq)}</span>
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
-      <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem">
+    <div style="padding:5px 0;border-bottom:1px solid #f0ece4">
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
         <input type="checkbox" id="prop-chk-comision" value="${comision}" data-signo="-1" checked onchange="recalcProp()" style="width:15px;height:15px">
         Comisión ${comisionPct}%
       </label>
-      <span style="font-weight:600;color:var(--accent)">− ${formatMoney(comision)}</span>
     </div>
     ${extrasProp.map(e => {
-      // Propietario: débito RESTA (-), crédito SUMA (+)
       const signo = e.tipo==='credito' ? 1 : -1;
       const color = e.tipo==='credito' ? 'var(--green)' : 'var(--accent)';
-      const signoLabel = e.tipo==='credito' ? '+' : '−';
-      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
+      return `<div style="padding:5px 0;border-bottom:1px solid #f0ece4">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
           <input type="checkbox" id="prop-chk-extra-${e.id}" value="${Math.abs(e.importe||0)}" data-signo="${signo}" checked onchange="recalcProp()" style="width:15px;height:15px">
-          ${e.concepto||'Extra'} <span style="font-size:0.72rem;color:${color}">(${e.tipo==='credito'?'crédito - suma':'débito - resta'})</span>
+          ${e.concepto||'Extra'} <span style="font-size:0.72rem;color:${color}">(${e.tipo==='credito'?'crédito':'débito'})</span>
         </label>
-        <span style="font-weight:600;color:${color}">${signoLabel} ${formatMoney(Math.abs(e.importe||0))}</span>
       </div>`;
     }).join('')}
   `;
@@ -1431,12 +1428,23 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       pagoId = r[0]?.id;
     }
     toast('Importes guardados ✓');
-    // Reload grilla and reopen screen
     const c = DB.contratos.find(x=>x.id===contratoId);
     if (c) {
       await recargarGrilla(c);
-      setTimeout(() => abrirNuevoMes(hoja, mesKey), 300);
+      // Rebuild the meses list and reopen with updated data
+      const meses = [];
+      const start = new Date(c.vigencia_desde.substring(0,7)+'-01');
+      const end = new Date(c.vigencia_hasta.substring(0,7)+'-01');
+      const cur = new Date(start);
+      while (cur <= end) {
+        const key = cur.toISOString().substring(0,7);
+        const pago = pagosActuales.find(p => p.mes && p.mes.startsWith(key));
+        meses.push({ key, label: formatDate(key+'-01'), pago });
+        cur.setMonth(cur.getMonth()+1);
+      }
+      await cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct);
     }
+    await loadAll();
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
