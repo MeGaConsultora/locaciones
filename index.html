@@ -1138,16 +1138,21 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
     cur.setMonth(cur.getMonth()+1);
   }
 
+  // Store meses globally to avoid passing large JSON through HTML attributes
+  window._gpMeses = meses;
+  window._gpHoja = hoja;
+  window._gpContratoId = c.id;
+  window._gpComision = c.comision_porcentaje||8;
+
   document.getElementById('modal-title').textContent = 'Gestión de Pago';
   document.getElementById('modal-subtitle').textContent = hoja;
-  // Store contrato id so closing returns to detail
   document.getElementById('modal-overlay').dataset.contratoId = c.id;
   document.getElementById('modal-body').innerHTML = `
     <div class="form-group" style="margin-bottom:1.2rem">
       <label>Seleccioná el mes</label>
-      <select id="gp-mes-sel" class="filter-select" style="width:100%;margin-top:4px" onchange="cargarPantallaGestionPago('${hoja}',${c.id},this.value,${JSON.stringify(meses).replace(/"/g,'&quot;')},${c.comision_porcentaje||8})">
+      <select id="gp-mes-sel" class="filter-select" style="width:100%;margin-top:4px" onchange="cargarPantallaGestionPago(window._gpHoja, window._gpContratoId, this.value, window._gpMeses, window._gpComision)">
         <option value="">-- Elegí un mes --</option>
-        ${meses.map(m => `<option value="${m.key}" ${m.key===mesPreseleccionado?'selected':''}>${m.label}${m.pago&&m.pago.total>0?' ✓':''}</option>`).join('')}
+        ${meses.map(m => `<option value="${m.key}">${m.label}${m.pago&&m.pago.total>0?' ✓':''}</option>`).join('')}
       </select>
     </div>
     <div id="gp-contenido"></div>
@@ -1157,8 +1162,10 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
   if (mesPreseleccionado) {
     setTimeout(() => {
       const sel = document.getElementById('gp-mes-sel');
-      if (sel) sel.value = mesPreseleccionado;
-      cargarPantallaGestionPago(hoja, c.id, mesPreseleccionado, meses, c.comision_porcentaje||8, solapaInicial);
+      if (sel) {
+        sel.value = mesPreseleccionado;
+        cargarPantallaGestionPago(hoja, c.id, mesPreseleccionado, meses, c.comision_porcentaje||8, solapaInicial);
+      }
     }, 50);
   }
 }
