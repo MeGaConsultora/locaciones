@@ -2499,7 +2499,7 @@ function imprimirRecibo(data) {
     </div>
   `;
 
-  const ventana = window.open('', '_blank');
+  const ventana = window.open('about:blank', 'Recibo Nº '+String(data.nroMes).padStart(4,'0'));
   ventana.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8">
     <title>Recibo Nº ${String(data.nroMes).padStart(4,'0')}</title>
