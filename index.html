@@ -843,7 +843,7 @@ async function openContrato(id) {
   document.getElementById('modal-body').innerHTML = `
     <div style="display:flex;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="openEditContrato(${c.id})">✏️ Editar contrato</button>
-      <button class="btn btn-primary" onclick="abrirNuevoMes('${c.hoja}')">+ Cargar mes</button>
+      <button class="btn btn-primary" onclick="abrirNuevoMes('${c.hoja}')">+ Agregar Pago</button>
       <button class="btn btn-secondary" onclick="openReciboPropietario('${c.hoja}')">📄 Recibo propietario</button>
       <button class="btn btn-secondary" style="font-size:0.78rem" onclick="imprimirHistorial(${c.id})">🖨️ Imprimir</button>
     </div>
@@ -912,38 +912,35 @@ function getEstadoLabel(p) {
 
 function renderGrilla(c) {
   if (pagosActuales.length === 0) {
-    document.getElementById('grilla-container').innerHTML = `<div class="empty-state"><div class="icon">📋</div><p>Sin meses cargados. Usá "+ Cargar mes" para agregar.</p></div>`;
+    document.getElementById('grilla-container').innerHTML = `<div class="empty-state"><div class="icon">📋</div><p>Sin pagos cargados. Usá "+ Agregar Pago" para agregar.</p></div>`;
     return;
   }
 
-  const rows = pagosActuales.map(p => {
+  // Sort descending by mes
+  const pagosOrdenados = [...pagosActuales].sort((a,b) => (b.mes||'').localeCompare(a.mes||''));
+
+  const rows = pagosOrdenados.map(p => {
     const extras = extrasActuales[p.id] || [];
     const totalExtras = extras.reduce((s,e)=>s+(e.importe||0),0);
     const rowClass = getRowClass(p);
+    const extrasLabel = extras.length > 0 ? extras.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
 
-    return `<tr class="${rowClass}" id="row-${p.id}">
-      <td class="grid-mes">${formatDate(p.mes)}</td>
-      <td class="num"><input class="grid-input" type="number" value="${p.importe_alquiler||''}" onchange="actualizarCampo(${p.id},'importe_alquiler',this.value)" placeholder="0"></td>
-      <td class="num"><input class="grid-input" type="number" value="${p.monto_epe||''}" onchange="actualizarCampo(${p.id},'monto_epe',this.value)" placeholder="—"></td>
-      <td class="num"><input class="grid-input" type="number" value="${p.monto_agua||''}" onchange="actualizarCampo(${p.id},'monto_agua',this.value)" placeholder="—"></td>
-      <td class="num"><input class="grid-input" type="number" value="${p.monto_tgiu||''}" onchange="actualizarCampo(${p.id},'monto_tgiu',this.value)" placeholder="—"></td>
-      <td class="num"><input class="grid-input" type="number" value="${p.monto_seguro||''}" onchange="actualizarCampo(${p.id},'monto_seguro',this.value)" placeholder="—"></td>
-      <td>
-        <div id="extras-${p.id}">
-          ${extras.map(e => `
-            <div class="extra-item">
-              <input type="text" value="${e.concepto||''}" placeholder="Concepto" style="width:120px" onchange="actualizarExtra(${e.id},'concepto',this.value)">
-              <input type="number" value="${e.importe||''}" placeholder="$" style="width:70px" onchange="actualizarExtra(${e.id},'importe',this.value)">
-              <button class="grid-btn grid-btn-red" onclick="eliminarExtra(${e.id},${p.id})">✕</button>
-            </div>
-          `).join('')}
-        </div>
-        <button class="grid-btn grid-btn-blue" onclick="agregarExtra(${p.id})" style="font-size:0.7rem;margin-top:2px">+ Extra</button>
-      </td>
+    return `<tr class="${rowClass}" id="row-${p.id}" 
+      onclick="editarMes('${c.hoja}',${c.id},'${p.mes?.substring(0,7)}')" 
+      ondblclick="verDetallePago(${p.id},'${c.hoja}')"
+      title="Clic: editar | Doble clic: ver detalle"
+      style="cursor:pointer">
+      <td class="grid-mes"><strong>${formatDate(p.mes)}</strong></td>
+      <td class="num">${p.importe_alquiler>0?formatMoney(p.importe_alquiler):'—'}</td>
+      <td class="num">${p.monto_epe>0?formatMoney(p.monto_epe):'—'}</td>
+      <td class="num">${p.monto_agua>0?formatMoney(p.monto_agua):'—'}</td>
+      <td class="num">${p.monto_tgiu>0?formatMoney(p.monto_tgiu):'—'}</td>
+      <td class="num">${p.monto_seguro>0?formatMoney(p.monto_seguro):'—'}</td>
+      <td style="font-size:0.78rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasLabel}">${extrasLabel}</td>
       <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>
       <td class="num" id="saldo-${p.id}">${p.saldo&&p.saldo>0?`<span class="saldo-pendiente">${formatMoney(p.saldo)}</span>`:'<span class="saldo-ok">✓</span>'}</td>
       <td id="estado-${p.id}">${getEstadoLabel(p)}</td>
-      <td>
+      <td onclick="event.stopPropagation()">
         <div class="grid-actions">
           ${(!p.saldo||p.saldo===0)?'':`<button class="grid-btn grid-btn-green" onclick="marcarPagado(${p.id},'${c.hoja}')">✓ Cobrar</button>`}
           <button class="grid-btn grid-btn-red" onclick="eliminarMes(${p.id},'${c.hoja}')" title="Eliminar">🗑</button>
@@ -972,6 +969,56 @@ function renderGrilla(c) {
       </table>
     </div>
   `;
+}
+
+function verDetallePago(pagoId, hoja) {
+  const p = pagosActuales.find(x=>x.id===pagoId);
+  if (!p) return;
+  const extras = extrasActuales[pagoId]||[];
+  const c = DB.contratos.find(x=>x.hoja===hoja);
+
+  // Show detail in a small info panel at bottom of modal
+  const existing = document.getElementById('detalle-pago-panel');
+  if (existing) existing.remove();
+
+  const panel = document.createElement('div');
+  panel.id = 'detalle-pago-panel';
+  panel.style.cssText = 'background:#f5f0e8;border-radius:10px;padding:1rem;margin-top:1rem;border:1.5px solid var(--border)';
+  
+  const extrasHtml = extras.length > 0 
+    ? extras.map(e=>`<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:0.82rem"><span style="color:#666">${e.concepto||'Extra'}</span><span>${formatMoney(e.importe)}</span></div>`).join('')
+    : '';
+
+  panel.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+      <strong style="font-family:'DM Serif Display',serif">${formatDate(p.mes)}</strong>
+      <button onclick="document.getElementById('detalle-pago-panel').remove()" style="background:none;border:none;cursor:pointer;color:#999;font-size:1rem">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;font-size:0.85rem">
+      ${p.importe_alquiler>0?`<span style="color:#666">Alquiler</span><span style="text-align:right">${formatMoney(p.importe_alquiler)}</span>`:''}
+      ${p.monto_epe>0?`<span style="color:#666">EPE</span><span style="text-align:right">${formatMoney(p.monto_epe)}</span>`:''}
+      ${p.monto_agua>0?`<span style="color:#666">Agua</span><span style="text-align:right">${formatMoney(p.monto_agua)}</span>`:''}
+      ${p.monto_tgiu>0?`<span style="color:#666">TGIU</span><span style="text-align:right">${formatMoney(p.monto_tgiu)}</span>`:''}
+      ${p.monto_seguro>0?`<span style="color:#666">Seguro</span><span style="text-align:right">${formatMoney(p.monto_seguro)}</span>`:''}
+    </div>
+    ${extrasHtml ? `<div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">${extrasHtml}</div>` : ''}
+    <div style="display:flex;justify-content:space-between;padding-top:0.6rem;margin-top:0.5rem;border-top:2px solid var(--ink);font-weight:700">
+      <span>Total</span><span>${formatMoney(p.total)}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;padding-top:4px;font-size:0.88rem;${p.saldo>0?'color:var(--accent)':'color:var(--green)'}">
+      <span>${p.saldo>0?'Saldo pendiente':'Estado'}</span>
+      <span>${p.saldo>0?formatMoney(p.saldo):'✓ Pagado'}</span>
+    </div>
+    <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap">
+      <button class="btn btn-secondary" style="font-size:0.78rem;padding:4px 10px" ondblclick="event.stopPropagation()" onclick="editarMes('${hoja}',${c?.id||0},'${p.mes?.substring(0,7)||''}')">✏️ Editar</button>
+      ${p.saldo>0?`<button class="btn btn-green" style="font-size:0.78rem;padding:4px 10px" onclick="marcarPagado(${p.id},'${hoja}')">✓ Cobrar</button>`:''}
+    </div>
+  `;
+  document.getElementById('grilla-container').appendChild(panel);
+}
+
+async function editarMes(hoja, contratoId, mesPreseleccionado) {
+  await abrirNuevoMes(hoja, mesPreseleccionado);
 }
 
 function calcularTotal(p, extras) {
@@ -1081,7 +1128,7 @@ async function eliminarMes(pagoId, hoja) {
 }
 
 // NUEVO MES
-async function abrirNuevoMes(hoja) {
+async function abrirNuevoMes(hoja, mesPreseleccionado) {
   const c = DB.contratos.find(x=>x.hoja===hoja);
   if (!c?.vigencia_desde || !c?.vigencia_hasta) {
     toast('El contrato no tiene vigencia definida','error');
@@ -1102,14 +1149,14 @@ async function abrirNuevoMes(hoja) {
 
   const mesesNames = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 
-  document.getElementById('modal-title').textContent = 'Cargar / Editar mes';
+  document.getElementById('modal-title').textContent = 'Agregar / Editar Pago';
   document.getElementById('modal-subtitle').textContent = hoja;
   document.getElementById('modal-body').innerHTML = `
     <div class="form-group" style="margin-bottom:1.2rem">
       <label>Seleccioná el mes</label>
       <select id="nm-mes-sel" class="filter-select" style="width:100%;margin-top:4px" onchange="cargarDatosMes('${hoja}',${c.id},this.value,${JSON.stringify(meses).replace(/"/g,'&quot;')})">
         <option value="">-- Elegí un mes de la vigencia --</option>
-        ${meses.map(m => `<option value="${m.key}" ${m.pago?'style="font-weight:600"':''}>${m.label}${m.pago?' ✓':''}</option>`).join('')}
+        ${meses.map(m => `<option value="${m.key}" ${m.key===mesPreseleccionado?'selected':''} ${m.pago?'style="font-weight:600"':''}>${m.label}${m.pago?' ✓':''}</option>`).join('')}
       </select>
     </div>
     <div id="nm-form" style="display:none">
@@ -1130,6 +1177,11 @@ async function abrirNuevoMes(hoja) {
       </div>
     </div>
   `;
+
+  // Auto-load if month preselected
+  if (mesPreseleccionado) {
+    setTimeout(() => cargarDatosMes(hoja, c.id, mesPreseleccionado, meses), 50);
+  }
 }
 
 function cargarDatosMes(hoja, contratoId, mesKey, meses) {
@@ -1182,7 +1234,7 @@ function agregarExtraNuevoMes() {
 }
 
 async function guardarNuevoMes(hoja, contratoId) {
-  const mesVal = document.getElementById('nm-mes').value;
+  const mesVal = document.getElementById('nm-mes-sel').value;
   if (!mesVal) { toast('El mes es obligatorio','error'); return; }
   const mes = mesVal+'-01';
   const alq = parseFloat(document.getElementById('nm-alquiler').value)||0;
