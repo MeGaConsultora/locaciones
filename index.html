@@ -826,6 +826,7 @@ async function openContrato(id) {
     </div>
     <div id="grilla-container"><div class="loading-overlay">Cargando grilla de pagos...</div></div>
   `;
+  document.getElementById('modal-overlay').dataset.contratoId = '';
   document.getElementById('modal-overlay').classList.add('open');
   await recargarGrilla(c);
 }
@@ -914,7 +915,7 @@ function renderGrilla(c) {
       <td id="estado-${p.id}">${getEstadoLabel(p)}</td>
       <td onclick="event.stopPropagation()">
         <div class="grid-actions">
-          ${(!p.saldo||p.saldo===0)?'':`<button class="grid-btn grid-btn-green" onclick="marcarPagado(${p.id},'${c.hoja}')">✓ Cobrar</button>`}
+          ${(!p.saldo||p.saldo===0)?'':`<button class="grid-btn grid-btn-green" onclick="editarMesConSolapa('${c.hoja}',${c.id},'${p.mes?.substring(0,7)}','s2')">✓ Cobrar</button>`}
           <button class="grid-btn grid-btn-red" onclick="eliminarMes(${p.id},'${c.hoja}')" title="Eliminar">🗑</button>
         </div>
       </td>
@@ -991,7 +992,11 @@ function verDetallePago(pagoId, hoja) {
 }
 
 async function editarMes(hoja, contratoId, mesPreseleccionado) {
-  await abrirNuevoMes(hoja, mesPreseleccionado);
+  await abrirNuevoMes(hoja, mesPreseleccionado, 's1');
+}
+
+async function editarMesConSolapa(hoja, contratoId, mesPreseleccionado, solapa) {
+  await abrirNuevoMes(hoja, mesPreseleccionado, solapa);
 }
 
 function calcularTotal(p, extras) {
@@ -1101,7 +1106,7 @@ async function eliminarMes(pagoId, hoja) {
 }
 
 // NUEVO MES
-async function abrirNuevoMes(hoja, mesPreseleccionado) {
+async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
   const c = DB.contratos.find(x=>x.hoja===hoja);
   if (!c?.vigencia_desde || !c?.vigencia_hasta) { toast('El contrato no tiene vigencia definida','error'); return; }
 
@@ -1118,6 +1123,8 @@ async function abrirNuevoMes(hoja, mesPreseleccionado) {
 
   document.getElementById('modal-title').textContent = 'Gestión de Pago';
   document.getElementById('modal-subtitle').textContent = hoja;
+  // Store contrato id so closing returns to detail
+  document.getElementById('modal-overlay').dataset.contratoId = c.id;
   document.getElementById('modal-body').innerHTML = `
     <div class="form-group" style="margin-bottom:1.2rem">
       <label>Seleccioná el mes</label>
@@ -1131,11 +1138,11 @@ async function abrirNuevoMes(hoja, mesPreseleccionado) {
   document.getElementById('modal-overlay').classList.add('open');
 
   if (mesPreseleccionado) {
-    setTimeout(() => cargarPantallaGestionPago(hoja, c.id, mesPreseleccionado, meses, c.comision_porcentaje||8), 50);
+    setTimeout(() => cargarPantallaGestionPago(hoja, c.id, mesPreseleccionado, meses, c.comision_porcentaje||8, solapaInicial), 50);
   }
 }
 
-async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct) {
+async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, solapaInicial='s1') {
   if (!mesKey) { document.getElementById('gp-contenido').innerHTML=''; return; }
   const mesInfo = meses.find(m=>m.key===mesKey);
   const p = mesInfo?.pago || null;
@@ -1235,6 +1242,11 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
   recalcGP(comisionPct);
   recalcCobro();
   recalcProp();
+  // Activate requested tab
+  if (solapaInicial !== 's1') {
+    const btn = document.querySelector(`.solapa-btn:nth-child(${solapaInicial==='s2'?2:3})`);
+    if (btn) mostrarSolapa(solapaInicial, btn);
+  }
 }
 
 function mostrarSolapa(id, btn) {
@@ -1255,20 +1267,23 @@ function generarItemsCobro(p, extrasInq) {
   ].filter(i => i.val > 0);
 
   return items.map(it => `
-    <div style="padding:5px 0;border-bottom:1px solid #f0ece4">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
         <input type="checkbox" id="cobro-chk-${it.id}" value="${it.val}" data-signo="1" checked onchange="recalcCobro()" style="width:15px;height:15px">
         ${it.label}
       </label>
+      <span id="cobro-lbl-${it.id}" style="font-size:0.85rem;color:#666">${formatMoney(it.val)}</span>
     </div>
   `).join('') + extrasInq.map(e => {
     const signo = e.tipo==='credito' ? -1 : 1;
     const color = e.tipo==='credito' ? 'var(--green)' : 'var(--accent)';
-    return `<div style="padding:5px 0;border-bottom:1px solid #f0ece4">
+    const signoLabel = e.tipo==='credito' ? '−' : '+';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
         <input type="checkbox" id="cobro-chk-extra-${e.id}" value="${Math.abs(e.importe||0)}" data-signo="${signo}" checked onchange="recalcCobro()" style="width:15px;height:15px">
         ${e.concepto||'Extra'} <span style="font-size:0.72rem;color:${color}">(${e.tipo==='credito'?'crédito':'débito'})</span>
       </label>
+      <span style="font-size:0.85rem;color:${color}">${signoLabel} ${formatMoney(Math.abs(e.importe||0))}</span>
     </div>`;
   }).join('');
 }
@@ -1278,26 +1293,30 @@ function generarItemsPropietario(p, extrasProp, comisionPct) {
   const alq = p.importe_alquiler||0;
   const comision = alq * (comisionPct/100);
   return `
-    <div style="padding:5px 0;border-bottom:1px solid #f0ece4">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
         <input type="checkbox" id="prop-chk-alquiler" value="${alq}" checked onchange="recalcProp()" style="width:15px;height:15px">
         Alquiler
       </label>
+      <span style="font-size:0.85rem;color:#666">${formatMoney(alq)}</span>
     </div>
-    <div style="padding:5px 0;border-bottom:1px solid #f0ece4">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
         <input type="checkbox" id="prop-chk-comision" value="${comision}" data-signo="-1" checked onchange="recalcProp()" style="width:15px;height:15px">
         Comisión ${comisionPct}%
       </label>
+      <span style="font-size:0.85rem;color:var(--accent)">− ${formatMoney(comision)}</span>
     </div>
     ${extrasProp.map(e => {
       const signo = e.tipo==='credito' ? 1 : -1;
       const color = e.tipo==='credito' ? 'var(--green)' : 'var(--accent)';
-      return `<div style="padding:5px 0;border-bottom:1px solid #f0ece4">
+      const signoLabel = e.tipo==='credito' ? '+' : '−';
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
           <input type="checkbox" id="prop-chk-extra-${e.id}" value="${Math.abs(e.importe||0)}" data-signo="${signo}" checked onchange="recalcProp()" style="width:15px;height:15px">
           ${e.concepto||'Extra'} <span style="font-size:0.72rem;color:${color}">(${e.tipo==='credito'?'crédito':'débito'})</span>
         </label>
+        <span style="font-size:0.85rem;color:${color}">${signoLabel} ${formatMoney(Math.abs(e.importe||0))}</span>
       </div>`;
     }).join('')}
   `;
@@ -1442,10 +1461,13 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
         meses.push({ key, label: formatDate(key+'-01'), pago });
         cur.setMonth(cur.getMonth()+1);
       }
-      await cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct);
+      // Small delay to let DOM settle before updating tabs
+      setTimeout(async () => {
+        await cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, 's1');
+      }, 100);
     }
     await loadAll();
-  } catch(e) { toast('Error: '+e.message,'error'); }
+  } catch(e) { toast('Error al guardar: '+e.message,'error'); }
 }
 
 async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
@@ -1501,8 +1523,9 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   if (cObj) {
     await recargarGrilla(cObj);
     await loadAll();
+    // Go back to contract detail, not close modal
+    openContrato(contratoId);
   }
-  closeModal();
 }
 
 async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
@@ -2453,8 +2476,15 @@ function renderPagination(containerId, total, current, cb) {
 // MODAL
 // ============================================================
 function closeModal(e) {
-  if (!e || e.target===document.getElementById('modal-overlay'))
-    document.getElementById('modal-overlay').classList.remove('open');
+  if (!e || e.target===document.getElementById('modal-overlay')) {
+    const overlay = document.getElementById('modal-overlay');
+    const contratoId = overlay.dataset.contratoId;
+    overlay.classList.remove('open');
+    overlay.dataset.contratoId = '';
+    if (contratoId) {
+      openContrato(parseInt(contratoId));
+    }
+  }
 }
 
 // ============================================================
