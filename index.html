@@ -191,6 +191,14 @@
 
   @media(max-width:600px) { main { padding:1rem; } .stats-row { grid-template-columns:1fr 1fr; } }
 
+  /* SOLAPAS */
+  .solapas { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:1.2rem; }
+  .solapa-btn { background:none; border:none; padding:0.6rem 1.2rem; font-family:'DM Sans',sans-serif; font-size:0.85rem; font-weight:500; color:#888; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; transition:all 0.2s; }
+  .solapa-btn:hover { color:var(--ink); }
+  .solapa-btn.active { color:var(--ink); border-bottom-color:var(--accent); font-weight:600; }
+  .solapa-panel { display:none; }
+  .solapa-panel.active { display:block; }
+
   /* GRILLA PAGOS ESTILO EXCEL */
   .grid-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
   .grid-table th { background:var(--ink); color:var(--cream); padding:7px 8px; text-align:left; font-size:0.68rem; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; position:sticky; top:0; z-index:2; }
@@ -1127,7 +1135,6 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
   const p = mesInfo?.pago || null;
   const c = DB.contratos.find(x=>x.id===contratoId);
 
-  // Load extras for this pago
   let extrasDelMes = [];
   if (p) {
     try { extrasDelMes = await sbGet('pagos_extras', `pago_id=eq.${p.id}&order=id.asc`); } catch(e) {}
@@ -1135,16 +1142,18 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
 
   const extrasInq = extrasDelMes.filter(e => e.a_cargo_de !== 'propietario');
   const extrasProp = extrasDelMes.filter(e => e.a_cargo_de === 'propietario');
-
-  // Calculate totals
-  const calcExtrasImporte = (exts) => exts.reduce((s,e) => s + ((e.tipo==='credito'?1:-1)*(e.importe||0)), 0);
   const alq = p?.importe_alquiler||0;
   const comisionMonto = alq * (comisionPct/100);
 
   document.getElementById('gp-contenido').innerHTML = `
-    <!-- SECCIÓN 1: IMPORTES -->
-    <div style="background:white;border-radius:10px;padding:1.2rem;margin-bottom:1rem;border:1px solid var(--border)">
-      <div class="section-title" style="margin-bottom:1rem">📋 Importes del mes</div>
+    <div class="solapas">
+      <button class="solapa-btn active" onclick="mostrarSolapa('s1',this)">📋 Cargar / Modificar</button>
+      <button class="solapa-btn" onclick="mostrarSolapa('s2',this)">💰 Ingresar Pago</button>
+      <button class="solapa-btn" onclick="mostrarSolapa('s3',this)">📄 Recibo Propietario</button>
+    </div>
+
+    <!-- SOLAPA 1: CARGAR/MODIFICAR -->
+    <div id="s1" class="solapa-panel active">
       <div class="form-grid">
         <div class="form-group"><label>Fecha vencimiento</label><input id="gp-vence" type="date" value="${p?.fecha_pago_hasta?.substring(0,10)||''}"></div>
         <div class="form-group"><label>Alquiler</label><input id="gp-alquiler" type="number" value="${p?.importe_alquiler||''}" placeholder="0" oninput="recalcGP(${comisionPct})"></div>
@@ -1152,15 +1161,12 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
         <div class="form-group"><label>Agua</label><input id="gp-agua" type="number" value="${p?.monto_agua||''}" placeholder="0"></div>
         <div class="form-group"><label>TGIU</label><input id="gp-tgiu" type="number" value="${p?.monto_tgiu||''}" placeholder="0"></div>
         <div class="form-group"><label>Seguro</label><input id="gp-seguro" type="number" value="${p?.monto_seguro||''}" placeholder="0"></div>
-        <div class="form-group"><label>Comisión (${comisionPct}%)</label><input id="gp-comision" type="number" value="${comisionMonto.toFixed(2)||''}" placeholder="0" readonly style="background:#f5f5f5"></div>
+        <div class="form-group"><label>Comisión (${comisionPct}%)</label><input id="gp-comision" type="number" value="${comisionMonto.toFixed(2)}" placeholder="0" readonly style="background:#f5f5f5"></div>
       </div>
-    </div>
 
-    <!-- SECCIÓN 2: EXTRAS -->
-    <div style="background:white;border-radius:10px;padding:1.2rem;margin-bottom:1rem;border:1px solid var(--border)">
-      <div class="section-title" style="margin-bottom:1rem">➕ Conceptos extras</div>
+      <div class="section-title" style="margin:1rem 0 0.75rem">Conceptos extras</div>
       <div id="gp-extras-list">
-        ${extrasDelMes.map((e,i) => `
+        ${extrasDelMes.map(e => `
           <div class="extra-item" id="gp-extra-${e.id}" style="flex-wrap:wrap;gap:6px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #f0ece4">
             <input type="text" id="gpe-concepto-${e.id}" value="${e.concepto||''}" placeholder="Concepto" style="flex:2;min-width:120px" onchange="guardarExtraGP(${e.id})">
             <input type="number" id="gpe-importe-${e.id}" value="${e.importe||''}" placeholder="$" style="width:90px" onchange="guardarExtraGP(${e.id})">
@@ -1169,58 +1175,67 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
               <option value="propietario" ${e.a_cargo_de==='propietario'?'selected':''}>Propietario</option>
             </select>
             <select id="gpe-tipo-${e.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="guardarExtraGP(${e.id})">
-              <option value="debito" ${e.tipo!=='credito'?'selected':''}>Débito (resta)</option>
-              <option value="credito" ${e.tipo==='credito'?'selected':''}>Crédito (suma)</option>
+              <option value="debito" ${e.tipo!=='credito'?'selected':''}>Débito</option>
+              <option value="credito" ${e.tipo==='credito'?'selected':''}>Crédito</option>
             </select>
             <button class="grid-btn grid-btn-red" onclick="eliminarExtraGP(${e.id},'${hoja}',${contratoId},'${mesKey}',${comisionPct})">✕</button>
           </div>
         `).join('')}
       </div>
-      <button class="btn btn-secondary" style="font-size:0.82rem;margin-top:0.5rem" onclick="agregarExtraGP('${hoja}',${contratoId},'${mesKey}',${p?.id||0},${comisionPct})">+ Agregar concepto</button>
+      <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarExtraGP('${hoja}',${contratoId},'${mesKey}',${p?.id||0},${comisionPct})">+ Agregar concepto</button>
+      <div style="font-size:0.78rem;color:#888;background:#faf7f2;padding:0.6rem 1rem;border-radius:8px;margin-bottom:1rem">
+        <strong>Inquilino:</strong> Débito suma a lo que paga · Crédito resta<br>
+        <strong>Propietario:</strong> Débito resta a lo que cobra · Crédito suma
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="guardarImportesYExtras('${hoja}',${contratoId},'${mesKey}',${comisionPct})">💾 Guardar</button>
+      </div>
     </div>
 
-    <!-- SECCIÓN 3: COBRO AL INQUILINO -->
-    <div style="background:white;border-radius:10px;padding:1.2rem;margin-bottom:1rem;border:1px solid var(--border)">
-      <div class="section-title" style="margin-bottom:1rem">💰 Cobro al inquilino</div>
-      <div id="gp-cobro-items">
-        ${generarItemsCobro(p, extrasInq)}
-      </div>
-      <div style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)">
+    <!-- SOLAPA 2: INGRESAR PAGO -->
+    <div id="s2" class="solapa-panel">
+      ${!p || !p.total ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
+      <div id="gp-cobro-items">${generarItemsCobro(p, extrasInq)}</div>
+      <div style="margin-top:0.75rem;padding:0.75rem;background:var(--cream);border-radius:8px">
         <div class="form-group">
           <label>Pago a cuenta (importe libre)</label>
-          <input id="gp-acuenta" type="number" placeholder="0" oninput="recalcCobro()">
+          <input id="gp-acuenta" type="number" placeholder="0" style="margin-top:4px" oninput="recalcCobro()">
           <input id="gp-acuenta-concepto" type="text" placeholder="Concepto (ej: A cuenta mayo 26)" style="margin-top:4px">
         </div>
       </div>
-      <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem">
+      <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem;font-size:1rem">
         <span>Total a cobrar:</span>
         <span id="gp-total-cobro" style="color:var(--green)">—</span>
       </div>
-      <div class="form-actions" style="padding-top:0.75rem">
-        <button class="btn btn-secondary" onclick="guardarImportesYExtras('${hoja}',${contratoId},'${mesKey}',${comisionPct})">💾 Guardar importes</button>
-        <button class="btn btn-green" onclick="confirmarCobroInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct})">✓ Confirmar cobro + Recibo</button>
-      </div>
+      <div class="form-actions">
+        <button class="btn btn-green" onclick="confirmarCobroInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct})">✓ Confirmar cobro + Imprimir recibo</button>
+      </div>`}
     </div>
 
-    <!-- SECCIÓN 4: RENDICIÓN AL PROPIETARIO -->
-    <div style="background:white;border-radius:10px;padding:1.2rem;border:1px solid var(--border)">
-      <div class="section-title" style="margin-bottom:1rem">📄 Rendición al propietario</div>
-      <div id="gp-prop-items">
-        ${generarItemsPropietario(p, extrasProp, comisionPct)}
-      </div>
-      <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem">
+    <!-- SOLAPA 3: RECIBO PROPIETARIO -->
+    <div id="s3" class="solapa-panel">
+      ${!p || !p.total ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
+      <div id="gp-prop-items">${generarItemsPropietario(p, extrasProp, comisionPct)}</div>
+      <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem;font-size:1rem">
         <span>Total a rendir:</span>
         <span id="gp-total-prop" style="color:var(--green)">—</span>
       </div>
-      <div class="form-actions" style="padding-top:0.75rem">
+      <div class="form-actions">
         <button class="btn btn-secondary" onclick="imprimirReciboPropGP('${hoja}',${contratoId},'${mesKey}',${comisionPct})">🖨️ Generar recibo propietario</button>
-      </div>
+      </div>`}
     </div>
   `;
 
   recalcGP(comisionPct);
   recalcCobro();
   recalcProp();
+}
+
+function mostrarSolapa(id, btn) {
+  document.querySelectorAll('.solapa-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.solapa-panel').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(id)?.classList.add('active');
 }
 
 function generarItemsCobro(p, extrasInq) {
@@ -1236,19 +1251,22 @@ function generarItemsCobro(p, extrasInq) {
   return items.map(it => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
-        <input type="checkbox" id="cobro-chk-${it.id}" value="${it.val}" checked onchange="recalcCobro()" style="width:15px;height:15px">
+        <input type="checkbox" id="cobro-chk-${it.id}" value="${it.val}" data-signo="1" checked onchange="recalcCobro()" style="width:15px;height:15px">
         ${it.label}
       </label>
       <span style="font-weight:600">${formatMoney(it.val)}</span>
     </div>
   `).join('') + extrasInq.map(e => {
-    const signo = e.tipo==='credito' ? 1 : -1;
+    // Inquilino: débito SUMA (+), crédito RESTA (-)
+    const signo = e.tipo==='credito' ? -1 : 1;
+    const color = e.tipo==='credito' ? 'var(--green)' : 'var(--accent)';
+    const signoLabel = e.tipo==='credito' ? '−' : '+';
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
         <input type="checkbox" id="cobro-chk-extra-${e.id}" value="${Math.abs(e.importe||0)}" data-signo="${signo}" checked onchange="recalcCobro()" style="width:15px;height:15px">
-        ${e.concepto||'Extra'} <span style="font-size:0.72rem;color:${e.tipo==='credito'?'var(--green)':'var(--accent)'}">(${e.tipo==='credito'?'crédito':'débito'})</span>
+        ${e.concepto||'Extra'} <span style="font-size:0.72rem;color:${color}">(${e.tipo==='credito'?'crédito - resta':'débito - suma'})</span>
       </label>
-      <span style="font-weight:600;color:${e.tipo==='credito'?'var(--green)':'var(--accent)'}">${e.tipo==='credito'?'+':'−'} ${formatMoney(Math.abs(e.importe||0))}</span>
+      <span style="font-weight:600;color:${color}">${signoLabel} ${formatMoney(Math.abs(e.importe||0))}</span>
     </div>`;
   }).join('');
 }
@@ -1273,13 +1291,16 @@ function generarItemsPropietario(p, extrasProp, comisionPct) {
       <span style="font-weight:600;color:var(--accent)">− ${formatMoney(comision)}</span>
     </div>
     ${extrasProp.map(e => {
+      // Propietario: débito RESTA (-), crédito SUMA (+)
       const signo = e.tipo==='credito' ? 1 : -1;
+      const color = e.tipo==='credito' ? 'var(--green)' : 'var(--accent)';
+      const signoLabel = e.tipo==='credito' ? '+' : '−';
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
           <input type="checkbox" id="prop-chk-extra-${e.id}" value="${Math.abs(e.importe||0)}" data-signo="${signo}" checked onchange="recalcProp()" style="width:15px;height:15px">
-          ${e.concepto||'Extra'} <span style="font-size:0.72rem;color:${e.tipo==='credito'?'var(--green)':'var(--accent)'}">(${e.tipo==='credito'?'crédito':'débito'})</span>
+          ${e.concepto||'Extra'} <span style="font-size:0.72rem;color:${color}">(${e.tipo==='credito'?'crédito - suma':'débito - resta'})</span>
         </label>
-        <span style="font-weight:600;color:${e.tipo==='credito'?'var(--green)':'var(--accent)'}">${e.tipo==='credito'?'+':'−'} ${formatMoney(Math.abs(e.importe||0))}</span>
+        <span style="font-weight:600;color:${color}">${signoLabel} ${formatMoney(Math.abs(e.importe||0))}</span>
       </div>`;
     }).join('')}
   `;
