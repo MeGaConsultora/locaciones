@@ -850,13 +850,19 @@ async function recargarGrilla(c) {
     const totalAlq = pagosActuales.reduce((s,p)=>s+(p.importe_alquiler||0),0);
     const totalPend = pagosActuales.filter(p=>p.saldo&&p.saldo>0&&p.mes&&p.mes.substring(0,7)<=TODAY.substring(0,7)).reduce((s,p)=>s+p.saldo,0);
 
-    document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · ${pagosActuales.length} meses`;
-    document.getElementById('detail-total-alq').innerHTML = `<label>Total acumulado</label><span style="font-weight:700">${formatMoney(totalAlq)}</span>`;
-    document.getElementById('detail-saldo').innerHTML = `<label>Saldo pendiente</label><span class="${totalPend>0?'saldo-pendiente':'saldo-ok'}" style="font-weight:700">${totalPend>0?formatMoney(totalPend):'✓ Al día'}</span>`;
+    const subtitleEl = document.getElementById('modal-subtitle');
+    const totalAlqEl = document.getElementById('detail-total-alq');
+    const saldoEl = document.getElementById('detail-saldo');
+    if (subtitleEl) subtitleEl.textContent = `${normTipo(c.tipo_inmueble)} · ${pagosActuales.length} meses`;
+    if (totalAlqEl) totalAlqEl.innerHTML = `<label>Total acumulado</label><span style="font-weight:700">${formatMoney(totalAlq)}</span>`;
+    if (saldoEl) saldoEl.innerHTML = `<label>Saldo pendiente</label><span class="${totalPend>0?'saldo-pendiente':'saldo-ok'}" style="font-weight:700">${totalPend>0?formatMoney(totalPend):'✓ Al día'}</span>`;
 
-    renderGrilla(c);
+    const grillaEl = document.getElementById('grilla-container');
+    if (grillaEl) renderGrilla(c);
   } catch(e) {
-    document.getElementById('grilla-container').innerHTML = `<div class="empty-state"><p>Error: ${e.message}</p></div>`;
+    const grillaEl = document.getElementById('grilla-container');
+    if (grillaEl) grillaEl.innerHTML = `<div class="empty-state"><p>Error: ${e.message}</p></div>`;
+    console.error('recargarGrilla error:', e);
   }
 }
 
