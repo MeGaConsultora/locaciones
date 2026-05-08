@@ -1154,9 +1154,16 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
 
 async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, solapaInicial='s1') {
   if (!mesKey) { document.getElementById('gp-contenido').innerHTML=''; return; }
-  const mesInfo = meses.find(m=>m.key===mesKey);
-  const p = mesInfo?.pago || null;
   const c = DB.contratos.find(x=>x.id===contratoId);
+
+  // Always fetch fresh from Supabase to avoid stale data
+  let p = null;
+  try {
+    const hojaEncoded = encodeURIComponent(hoja);
+    const mes = mesKey+'-01';
+    const pagosDelMes = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
+    p = pagosDelMes.length > 0 ? pagosDelMes[0] : null;
+  } catch(e) {}
 
   let extrasDelMes = [];
   if (p) {
