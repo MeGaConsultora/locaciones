@@ -2504,7 +2504,22 @@ function imprimirRecibo(data) {
     <meta charset="UTF-8">
     <title>Recibo Nº ${String(data.nroMes).padStart(4,'0')}</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>${A4_PRINT_CSS}</style>
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; padding:16px; gap:0; }
+      .no-print { text-align:center; padding:12px 0; width:100%; }
+      .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; font-family:'DM Sans',sans-serif; font-weight:600; }
+      .no-print button:hover { background:#c8483a; }
+      .recibo-wrap { background:white; width:100%; max-width:190mm; }
+      .separador { width:100%;max-width:190mm;text-align:center;padding:4px 0;font-size:0.7rem;color:#aaa;border-top:2px dashed #bbb;border-bottom:2px dashed #bbb;margin:0;background:white; }
+      @page { size: A4; margin: 10mm; }
+      @media print {
+        html, body { width:210mm; }
+        body { background:white; padding:0; }
+        .no-print { display:none; }
+        .recibo-wrap { max-width:100%; box-shadow:none; }
+        .separador { border-color:#999; }
+      }</style>
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
     <div class="recibo-wrap"><div style="padding:16px 20px 12px">${recibo}</div></div>
