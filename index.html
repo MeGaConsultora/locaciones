@@ -1333,9 +1333,18 @@ function recalcCobro() {
   const checks = document.querySelectorAll('[id^="cobro-chk-"]');
   let total = 0;
   checks.forEach(c => {
+    const signo = parseFloat(c.dataset.signo || '1');
+    const val = parseFloat(c.value)||0;
     if (c.checked) {
-      const signo = parseFloat(c.dataset.signo || '1');
-      total += signo * (parseFloat(c.value)||0);
+      total += signo * val;
+    }
+    // Show/hide amount based on checked state
+    const amountEl = document.getElementById('cobro-lbl-' + c.id.replace('cobro-chk-',''));
+    if (amountEl) amountEl.style.display = c.checked ? '' : 'none';
+    // For extras, find sibling span
+    if (c.id.startsWith('cobro-chk-extra-')) {
+      const span = c.closest('div')?.querySelector('span:last-child');
+      if (span && !span.classList.contains('badge')) span.style.display = c.checked ? '' : 'none';
     }
   });
   const acuenta = parseFloat(document.getElementById('gp-acuenta')?.value)||0;
@@ -1348,10 +1357,12 @@ function recalcProp() {
   const checks = document.querySelectorAll('[id^="prop-chk-"]');
   let total = 0;
   checks.forEach(c => {
-    if (c.checked) {
-      const signo = parseFloat(c.dataset.signo || '1');
-      total += signo * (parseFloat(c.value)||0);
-    }
+    const signo = parseFloat(c.dataset.signo || '1');
+    const val = parseFloat(c.value)||0;
+    if (c.checked) total += signo * val;
+    // Show/hide amount span
+    const span = c.closest('div')?.querySelector('span:last-child');
+    if (span) span.style.display = c.checked ? '' : 'none';
   });
   const el = document.getElementById('gp-total-prop');
   if (el) el.textContent = formatMoney(total);
@@ -1461,12 +1472,11 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
         meses.push({ key, label: formatDate(key+'-01'), pago });
         cur.setMonth(cur.getMonth()+1);
       }
-      // Small delay to let DOM settle before updating tabs
       setTimeout(async () => {
         await cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, 's1');
-      }, 100);
+        await loadAll();
+      }, 150);
     }
-    await loadAll();
   } catch(e) { toast('Error al guardar: '+e.message,'error'); }
 }
 
