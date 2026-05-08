@@ -472,9 +472,35 @@ function updateAuthHeaders(token) {
   HEADERS['Authorization'] = `Bearer ${token || SB_KEY}`;
 }
 
+async function refreshAdminToken() {
+  const refreshTk = localStorage.getItem('sb_refresh_token');
+  if (!refreshTk) return false;
+  try {
+    const r = await fetch(`${SB_AUTH_URL}/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshTk })
+    });
+    if (!r.ok) return false;
+    const data = await r.json();
+    currentUser.token = data.access_token;
+    localStorage.setItem('sb_token', data.access_token);
+    if (data.refresh_token) localStorage.setItem('sb_refresh_token', data.refresh_token);
+    updateAuthHeaders(data.access_token);
+    return true;
+  } catch(e) { return false; }
+}
+
 async function sbGet(table, params='') {
   const headers = { ...HEADERS, 'Range': '0-9999', 'Prefer': 'count=none' };
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers });
+  let r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers });
+  if (r.status === 401 || r.status === 403) {
+    const ok = await refreshAdminToken();
+    if (ok) {
+      const headers2 = { ...HEADERS, 'Range': '0-9999', 'Prefer': 'count=none' };
+      r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers: headers2 });
+    }
+  }
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -500,12 +526,20 @@ async function sbGetAll(table, params='') {
   return all;
 }
 async function sbPost(table, body) {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}`, { method:'POST', headers: HEADERS, body: JSON.stringify(body) });
+  let r = await fetch(`${SB_URL}/rest/v1/${table}`, { method:'POST', headers: HEADERS, body: JSON.stringify(body) });
+  if (r.status === 401 || r.status === 403) {
+    await refreshAdminToken();
+    r = await fetch(`${SB_URL}/rest/v1/${table}`, { method:'POST', headers: HEADERS, body: JSON.stringify(body) });
+  }
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
 async function sbPatch(table, id, body) {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'PATCH', headers: HEADERS, body: JSON.stringify(body) });
+  let r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'PATCH', headers: HEADERS, body: JSON.stringify(body) });
+  if (r.status === 401 || r.status === 403) {
+    await refreshAdminToken();
+    r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'PATCH', headers: HEADERS, body: JSON.stringify(body) });
+  }
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -2090,13 +2124,14 @@ async function guardarContrato() {
 function openEditContrato(id) {
   const c = DB.contratos.find(x=>x.id===id);
   if (!c) return;
+  const propietarios = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === id && x.rol === 'propietario');
+  const inquilinos = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === id && x.rol === 'inquilino');
+
   document.getElementById('modal-title').textContent = 'Editar Contrato';
   document.getElementById('modal-subtitle').textContent = c.titulo;
   document.getElementById('modal-body').innerHTML = `
     <div class="form-grid">
       <div class="form-group" style="grid-column:1/-1"><label>Título</label><input id="f-titulo" type="text" value="${c.titulo||''}"></div>
-      <div class="form-group"><label>Locador</label><input id="f-locador" type="text" value="${c.locador||''}"></div>
-      <div class="form-group"><label>Locatario</label><input id="f-locatario" type="text" value="${c.locatario||''}"></div>
       <div class="form-group"><label>Vigencia desde</label><input id="f-desde" type="date" value="${c.vigencia_desde?.substring(0,10)||''}"></div>
       <div class="form-group"><label>Vigencia hasta</label><input id="f-hasta" type="date" value="${c.vigencia_hasta?.substring(0,10)||''}"></div>
       <div class="form-group"><label>Tipo de inmueble</label>
@@ -2110,10 +2145,41 @@ function openEditContrato(id) {
           <option ${c.modalidad_pago==='VENCIDO'?'selected':''}>VENCIDO</option>
         </select>
       </div>
-      <div class="form-group"><label>% Comisión inmobiliaria</label>
+      <div class="form-group"><label>% Comisión</label>
         <input id="f-comision-pct" type="number" value="${c.comision_porcentaje||8}" min="0" max="100">
       </div>
     </div>
+
+    <div class="section-title" style="margin:1rem 0 0.75rem">Propietario/s</div>
+    <div id="lista-propietarios">
+      ${propietarios.map((cp,i) => {
+        const p = cp.personas || DB_PERSONAS.find(x=>x.id===cp.persona_id);
+        const nombre = p ? `${p.apellido||''}, ${p.nombre||''}`.trim() : '—';
+        return `<div data-rol="propietario" data-persona-id="${cp.persona_id}" style="background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">
+          <input type="text" value="${nombre}" style="flex:1;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem" oninput="buscarPersonaEnLinea(this,'propietario',${i})">
+          <div id="sug-propietario-${i}" style="position:fixed;background:white;border:1px solid var(--border);border-radius:8px;display:none;max-height:150px;overflow-y:auto;z-index:300;min-width:300px"></div>
+          <span style="font-size:0.85rem;color:var(--green);font-weight:600">✓</span>
+          <button onclick="this.closest('[data-rol]').remove()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
+        </div>`;
+      }).join('')}
+    </div>
+    <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarPersonaRol('propietario')">+ Agregar propietario</button>
+
+    <div class="section-title" style="margin:1rem 0 0.75rem">Inquilino/s</div>
+    <div id="lista-inquilinos">
+      ${inquilinos.map((cp,i) => {
+        const p = cp.personas || DB_PERSONAS.find(x=>x.id===cp.persona_id);
+        const nombre = p ? `${p.apellido||''}, ${p.nombre||''}`.trim() : '—';
+        return `<div data-rol="inquilino" data-persona-id="${cp.persona_id}" style="background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">
+          <input type="text" value="${nombre}" style="flex:1;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem" oninput="buscarPersonaEnLinea(this,'inquilino',${i})">
+          <div id="sug-inquilino-${i}" style="position:fixed;background:white;border:1px solid var(--border);border-radius:8px;display:none;max-height:150px;overflow-y:auto;z-index:300;min-width:300px"></div>
+          <span style="font-size:0.85rem;color:var(--green);font-weight:600">✓</span>
+          <button onclick="this.closest('[data-rol]').remove()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
+        </div>`;
+      }).join('')}
+    </div>
+    <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarPersonaRol('inquilino')">+ Agregar inquilino</button>
+
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="openContrato(${id})">← Volver</button>
       <button class="btn btn-primary" onclick="actualizarContrato(${id})">Guardar cambios</button>
@@ -2122,18 +2188,39 @@ function openEditContrato(id) {
 }
 
 async function actualizarContrato(id) {
+  const propItems = document.querySelectorAll('[data-rol="propietario"]');
+  const inqItems = document.querySelectorAll('[data-rol="inquilino"]');
+  const propIds = [...propItems].map(x => parseInt(x.dataset.personaId)).filter(Boolean);
+  const inqIds = [...inqItems].map(x => parseInt(x.dataset.personaId)).filter(Boolean);
+
+  const propPersonas = propIds.map(pid => DB_PERSONAS.find(p=>p.id===pid)).filter(Boolean);
+  const inqPersonas = inqIds.map(pid => DB_PERSONAS.find(p=>p.id===pid)).filter(Boolean);
+
   const body = {
     titulo: document.getElementById('f-titulo').value.trim(),
-    locador: document.getElementById('f-locador').value.trim(),
-    locatario: document.getElementById('f-locatario').value.trim(),
+    locador: propPersonas.length ? formatPersonasFromCP(propPersonas.map((p,i)=>({personas:p,orden:i+1}))) : undefined,
+    locatario: inqPersonas.length ? formatPersonasFromCP(inqPersonas.map((p,i)=>({personas:p,orden:i+1}))) : undefined,
     vigencia_desde: document.getElementById('f-desde').value||null,
     vigencia_hasta: document.getElementById('f-hasta').value||null,
     tipo_inmueble: document.getElementById('f-tipo').value,
     modalidad_pago: document.getElementById('f-modalidad').value,
     comision_porcentaje: parseFloat(document.getElementById('f-comision-pct').value)||8,
+    propietario_id: propIds[0]||null,
+    inquilino_id: inqIds[0]||null,
   };
+  // Remove undefined keys
+  Object.keys(body).forEach(k => body[k] === undefined && delete body[k]);
+
   try {
     await sbPatch('contratos', id, body);
+    // Update contrato_personas - delete old and insert new
+    await fetch(`${SB_URL}/rest/v1/contrato_personas?contrato_id=eq.${id}`, {method:'DELETE', headers:HEADERS});
+    for (let i=0; i<propIds.length; i++) {
+      await sbPost('contrato_personas', {contrato_id:id, persona_id:propIds[i], rol:'propietario', orden:i+1});
+    }
+    for (let i=0; i<inqIds.length; i++) {
+      await sbPost('contrato_personas', {contrato_id:id, persona_id:inqIds[i], rol:'inquilino', orden:i+1});
+    }
     toast('Contrato actualizado ✓');
     await loadAll();
     openContrato(id);
@@ -3047,6 +3134,9 @@ async function darDeBaja(id, email) {
     loadUsuarios();
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
+
+// Auto-refresh token every 45 minutes
+setInterval(refreshAdminToken, 45 * 60 * 1000);
 
 // ============================================================
 // START
