@@ -480,18 +480,20 @@ async function sbGet(table, params='') {
 }
 
 async function sbGetAll(table, params='') {
-  // Fetches all records using pagination
+  // Fetch all using limit/offset to avoid Range header issues
   let all = [];
-  let from = 0;
+  let offset = 0;
   const pageSize = 1000;
   while (true) {
-    const headers = { ...HEADERS, 'Range': `${from}-${from+pageSize-1}`, 'Prefer': 'count=none' };
-    const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers });
+    const sep = params.includes('?') ? '&' : '&';
+    const url = `${SB_URL}/rest/v1/${table}?${params}&limit=${pageSize}&offset=${offset}`;
+    const headers = { ...HEADERS, 'Prefer': 'count=none' };
+    const r = await fetch(url, { headers });
     if (!r.ok) throw new Error(await r.text());
     const data = await r.json();
     all = all.concat(data);
     if (data.length < pageSize) break;
-    from += pageSize;
+    offset += pageSize;
   }
   return all;
 }
