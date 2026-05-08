@@ -1120,13 +1120,20 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
   const c = DB.contratos.find(x=>x.hoja===hoja);
   if (!c?.vigencia_desde || !c?.vigencia_hasta) { toast('El contrato no tiene vigencia definida','error'); return; }
 
+  // Fetch fresh pagos from Supabase for this contract
+  let pagosContrato = [];
+  try {
+    const hojaEncoded = encodeURIComponent(hoja);
+    pagosContrato = await sbGet('pagos', `hoja=eq.${hojaEncoded}&select=id,mes,total,saldo&order=mes.asc&limit=500`);
+  } catch(e) {}
+
   const meses = [];
   const start = new Date(c.vigencia_desde.substring(0,7)+'-01');
   const end = new Date(c.vigencia_hasta.substring(0,7)+'-01');
   const cur = new Date(start);
   while (cur <= end) {
     const key = cur.toISOString().substring(0,7);
-    const pago = pagosActuales.find(p => p.mes && p.mes.startsWith(key));
+    const pago = pagosContrato.find(p => p.mes && p.mes.startsWith(key));
     meses.push({ key, label: formatDate(key+'-01'), pago });
     cur.setMonth(cur.getMonth()+1);
   }
