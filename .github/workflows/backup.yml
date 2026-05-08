@@ -21,124 +21,55 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
           mkdir -p backups
-          
-          curl -s "$SUPABASE_URL/rest/v1/contratos?select=*&limit=10000"             -H "apikey: $SUPABASE_KEY"             -H "Authorization: Bearer $SUPABASE_KEY"             -o backups/backup_contratos.json
-          
-          curl -s "$SUPABASE_URL/rest/v1/pagos?select=*&limit=50000"             -H "apikey: $SUPABASE_KEY"             -H "Authorization: Bearer $SUPABASE_KEY"             -o backups/backup_pagos.json
-          
-          curl -s "$SUPABASE_URL/rest/v1/usuarios?select=*&limit=1000"             -H "apikey: $SUPABASE_KEY"             -H "Authorization: Bearer $SUPABASE_KEY"             -o backups/backup_usuarios.json
-          
+          curl -s "$SUPABASE_URL/rest/v1/contratos?select=*&limit=10000" -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY" -o backups/backup_contratos.json
+          curl -s "$SUPABASE_URL/rest/v1/pagos?select=*&limit=50000" -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY" -o backups/backup_pagos.json
+          curl -s "$SUPABASE_URL/rest/v1/usuarios?select=*&limit=1000" -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY" -o backups/backup_usuarios.json
+          curl -s "$SUPABASE_URL/rest/v1/personas?select=*&limit=5000" -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY" -o backups/backup_personas.json
+          curl -s "$SUPABASE_URL/rest/v1/pagos_extras?select=*&limit=10000" -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY" -o backups/backup_pagos_extras.json
           echo "Exportacion completada"
 
-      - name: Consolidar backup y guardar esquema
+      - name: Consolidar backup
         run: |
-          python3 - << PYEOF
-          import json, os
+          python3 - <<PYEOF
+          import json, os, glob
           from datetime import datetime, timedelta
-          import glob
-
           fecha = datetime.now().strftime("%Y-%m-%d")
           fecha_hora = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
-
-          with open("backups/backup_contratos.json") as f:
-            contratos = json.load(f)
-          with open("backups/backup_pagos.json") as f:
-            pagos = json.load(f)
-          with open("backups/backup_usuarios.json") as f:
-            usuarios = json.load(f)
-          with open("backups/backup_personas.json") as f:
-            personas = json.load(f)
-          with open("backups/backup_pagos_extras.json") as f:
-            pagos_extras = json.load(f)
-
-          backup = {
-            "fecha_backup": fecha_hora,
-            "resumen": {
-              "contratos": len(contratos),
-              "pagos": len(pagos),
-              "usuarios": len(usuarios),
-              "personas": len(personas),
-              "pagos_extras": len(pagos_extras)
-            },
-            "contratos": contratos,
-            "pagos": pagos,
-            "usuarios": usuarios,
-            "personas": personas,
-            "pagos_extras": pagos_extras
-          }
-
+          tables = ["contratos","pagos","usuarios","personas","pagos_extras"]
+          backup = {"fecha_backup": fecha_hora, "resumen": {}, "data": {}}
+          for t in tables:
+              with open(f"backups/backup_{t}.json") as f:
+                  data = json.load(f)
+              backup["resumen"][t] = len(data)
+              backup["data"][t] = data
+              os.remove(f"backups/backup_{t}.json")
           filename = f"backups/backup_{fecha}.json"
           with open(filename, "w", encoding="utf-8") as f:
-            json.dump(backup, f, ensure_ascii=False, indent=2, default=str)
-
+              json.dump(backup, f, ensure_ascii=False, default=str)
           with open("backups/ultimo_backup.json", "w", encoding="utf-8") as f:
-            json.dump(backup, f, ensure_ascii=False, indent=2, default=str)
-
-          # Limpiar backups de mas de 30 dias
+              json.dump(backup, f, ensure_ascii=False, default=str)
           limite = datetime.now() - timedelta(days=30)
-          for archivo in glob.glob("backups/backup_2*.json"):
-            nombre = os.path.basename(archivo).replace("backup_","").replace(".json","")
-            try:
-              fecha_arch = datetime.strptime(nombre, "%Y-%m-%d")
-              if fecha_arch < limite:
-                os.remove(archivo)
-                print(f"Eliminado: {archivo}")
-            except:
-              pass
-
-          # Limpiar archivos temporales
-          for tmp in ["backups/backup_contratos.json","backups/backup_pagos.json","backups/backup_usuarios.json","backups/backup_personas.json","backups/backup_pagos_extras.json"]:
-            if os.path.exists(tmp):
-              os.remove(tmp)
-
-          print(f"Backup guardado: {filename}")
-          print(f"Contratos: {len(contratos)}, Pagos: {len(pagos)}, Usuarios: {len(usuarios)}")
+          for arch in glob.glob("backups/backup_2*.json"):
+              try:
+                  fecha_arch = datetime.strptime(os.path.basename(arch).replace("backup_","").replace(".json",""), "%Y-%m-%d")
+                  if fecha_arch < limite:
+                      os.remove(arch)
+              except:
+                  pass
+          print(f"Backup: {backup['resumen']}")
           PYEOF
 
       - name: Guardar esquema SQL
         run: |
-          python3 - << PYEOF
-          esquema = """-- ESQUEMA COMPLETO MeGa Consultora
--- Ejecutar en SQL Editor de Supabase para restaurar
-
-CREATE TABLE IF NOT EXISTS contratos (
-    id SERIAL PRIMARY KEY,
-    hoja TEXT, titulo TEXT, locador TEXT, locatario TEXT,
-    vigencia_desde DATE, vigencia_hasta DATE,
-    gastos_inicio NUMERIC, gastos_pagado NUMERIC,
-    tipo_inmueble TEXT, modalidad_pago TEXT
-);
-
-CREATE TABLE IF NOT EXISTS pagos (
-    id SERIAL PRIMARY KEY,
-    hoja TEXT, mes DATE, fecha_pago_hasta DATE, corresponde_a_mes DATE,
-    importe_alquiler NUMERIC, impuestos_servicios NUMERIC, total NUMERIC,
-    pagado TEXT, saldo NUMERIC, comision_8 NUMERIC, pago_nro TEXT,
-    monto_epe NUMERIC, monto_agua NUMERIC, monto_tgiu NUMERIC
-);
-
-CREATE TABLE IF NOT EXISTS usuarios (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email TEXT UNIQUE NOT NULL, nombre TEXT,
-    aprobado BOOLEAN DEFAULT FALSE, admin BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-ALTER TABLE contratos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pagos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "public read contratos" ON contratos FOR SELECT USING (true);
-CREATE POLICY "public write contratos" ON contratos FOR ALL USING (true);
-CREATE POLICY "public read pagos" ON pagos FOR SELECT USING (true);
-CREATE POLICY "public write pagos" ON pagos FOR ALL USING (true);
-CREATE POLICY "insertar registro" ON usuarios FOR INSERT WITH CHECK (true);
-CREATE POLICY "leer propio" ON usuarios FOR SELECT USING (true);
-CREATE POLICY "admin gestiona" ON usuarios FOR UPDATE USING (true);
-"""
-          with open("backups/esquema.sql", "w") as f:
-            f.write(esquema)
-          print("Esquema SQL guardado")
-          PYEOF
+          cat > backups/esquema.sql << 'SQLEOF'
+          -- ESQUEMA COMPLETO MeGa Consultora
+          CREATE TABLE IF NOT EXISTS contratos (id SERIAL PRIMARY KEY, hoja TEXT, titulo TEXT, locador TEXT, locatario TEXT, vigencia_desde DATE, vigencia_hasta DATE, gastos_inicio NUMERIC, gastos_pagado NUMERIC, tipo_inmueble TEXT, modalidad_pago TEXT, periodicidad_actualizacion TEXT, indice_actualizacion TEXT, servicios_inquilino TEXT, propietario_id INTEGER, inquilino_id INTEGER, comision_porcentaje NUMERIC DEFAULT 8);
+          CREATE TABLE IF NOT EXISTS pagos (id SERIAL PRIMARY KEY, hoja TEXT, mes DATE, fecha_pago_hasta DATE, corresponde_a_mes DATE, importe_alquiler NUMERIC, impuestos_servicios NUMERIC, total NUMERIC, pagado TEXT, saldo NUMERIC, comision_8 NUMERIC, pago_nro TEXT, monto_epe NUMERIC, monto_agua NUMERIC, monto_tgiu NUMERIC, monto_seguro NUMERIC, monto_otros NUMERIC, concepto_otros TEXT, descuento_propietario NUMERIC);
+          CREATE TABLE IF NOT EXISTS personas (id SERIAL PRIMARY KEY, apellido TEXT, nombre TEXT, dni TEXT, cuit TEXT, domicilio TEXT, telefono TEXT, email TEXT, observaciones TEXT, created_at TIMESTAMP DEFAULT NOW());
+          CREATE TABLE IF NOT EXISTS pagos_extras (id SERIAL PRIMARY KEY, pago_id INTEGER REFERENCES pagos(id) ON DELETE CASCADE, concepto TEXT, importe NUMERIC DEFAULT 0, a_cargo_de TEXT DEFAULT 'inquilino', tipo TEXT DEFAULT 'debito', created_at TIMESTAMP DEFAULT NOW());
+          CREATE TABLE IF NOT EXISTS usuarios (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), email TEXT UNIQUE NOT NULL, nombre TEXT, aprobado BOOLEAN DEFAULT FALSE, admin BOOLEAN DEFAULT FALSE, rol TEXT DEFAULT 'admin', persona_id INTEGER, user_id TEXT, created_at TIMESTAMP DEFAULT NOW());
+          SQLEOF
+          echo "Esquema SQL guardado"
 
       - name: Commit y push
         run: |
