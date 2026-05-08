@@ -2,110 +2,148 @@ name: Backup diario Supabase
 
 on:
   schedule:
-    - cron: '0 3 * * *'  # Todos los días a las 3am UTC (medianoche Argentina)
-  workflow_dispatch:       # También permite ejecutarlo manualmente
+    - cron: '0 3 * * *'
+  workflow_dispatch:
 
 jobs:
   backup:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repositorio
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Exportar contratos desde Supabase
+      - name: Exportar datos desde Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          curl -s "${{ secrets.SUPABASE_URL }}/rest/v1/contratos?select=*&limit=10000" \
-            -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}" \
-            -o backup_contratos.json
-          echo "Contratos exportados: $(cat backup_contratos.json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+          mkdir -p backups
+          
+          curl -s "$SUPABASE_URL/rest/v1/contratos?select=*&limit=10000"             -H "apikey: $SUPABASE_KEY"             -H "Authorization: Bearer $SUPABASE_KEY"             -o backups/backup_contratos.json
+          
+          curl -s "$SUPABASE_URL/rest/v1/pagos?select=*&limit=50000"             -H "apikey: $SUPABASE_KEY"             -H "Authorization: Bearer $SUPABASE_KEY"             -o backups/backup_pagos.json
+          
+          curl -s "$SUPABASE_URL/rest/v1/usuarios?select=*&limit=1000"             -H "apikey: $SUPABASE_KEY"             -H "Authorization: Bearer $SUPABASE_KEY"             -o backups/backup_usuarios.json
+          
+          echo "Exportacion completada"
 
-      - name: Exportar pagos desde Supabase
+      - name: Consolidar backup y guardar esquema
         run: |
-          curl -s "${{ secrets.SUPABASE_URL }}/rest/v1/pagos?select=*&limit=50000" \
-            -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}" \
-            -o backup_pagos.json
-          echo "Pagos exportados: $(cat backup_pagos.json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-
-      - name: Exportar usuarios desde Supabase
-        run: |
-          curl -s "${{ secrets.SUPABASE_URL }}/rest/v1/usuarios?select=*&limit=1000" \
-            -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}" \
-            -o backup_usuarios.json
-
-      - name: Crear archivo de backup consolidado
-        run: |
-          FECHA=$(date '+%Y-%m-%d')
-          python3 << 'EOF'
+          python3 - << PYEOF
           import json, os
-          from datetime import datetime
+          from datetime import datetime, timedelta
+          import glob
 
-          fecha = datetime.now().strftime('%Y-%m-%d %H:%M UTC')
+          fecha = datetime.now().strftime("%Y-%m-%d")
+          fecha_hora = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
 
-          with open('backup_contratos.json') as f:
+          with open("backups/backup_contratos.json") as f:
             contratos = json.load(f)
-          with open('backup_pagos.json') as f:
+          with open("backups/backup_pagos.json") as f:
             pagos = json.load(f)
-          with open('backup_usuarios.json') as f:
+          with open("backups/backup_usuarios.json") as f:
             usuarios = json.load(f)
+          with open("backups/backup_personas.json") as f:
+            personas = json.load(f)
+          with open("backups/backup_pagos_extras.json") as f:
+            pagos_extras = json.load(f)
 
           backup = {
-            'fecha_backup': fecha,
-            'resumen': {
-              'contratos': len(contratos),
-              'pagos': len(pagos),
-              'usuarios': len(usuarios)
+            "fecha_backup": fecha_hora,
+            "resumen": {
+              "contratos": len(contratos),
+              "pagos": len(pagos),
+              "usuarios": len(usuarios),
+              "personas": len(personas),
+              "pagos_extras": len(pagos_extras)
             },
-            'contratos': contratos,
-            'pagos': pagos,
-            'usuarios': usuarios
+            "contratos": contratos,
+            "pagos": pagos,
+            "usuarios": usuarios,
+            "personas": personas,
+            "pagos_extras": pagos_extras
           }
 
-          # Guardar backup con fecha
-          os.makedirs('backups', exist_ok=True)
-          filename = f"backups/backup_{datetime.now().strftime('%Y-%m-%d')}.json"
-          with open(filename, 'w', encoding='utf-8') as f:
+          filename = f"backups/backup_{fecha}.json"
+          with open(filename, "w", encoding="utf-8") as f:
             json.dump(backup, f, ensure_ascii=False, indent=2, default=str)
 
-          # Guardar también como ultimo_backup.json (siempre el más reciente)
-          with open('backups/ultimo_backup.json', 'w', encoding='utf-8') as f:
+          with open("backups/ultimo_backup.json", "w", encoding="utf-8") as f:
             json.dump(backup, f, ensure_ascii=False, indent=2, default=str)
 
-          print(f"Backup guardado: {filename}")
-          print(f"Contratos: {len(contratos)}, Pagos: {len(pagos)}, Usuarios: {len(usuarios)}")
-          EOF
-
-      - name: Limpiar backups viejos (mantener últimos 30 días)
-        run: |
-          python3 << 'EOF'
-          import os, glob
-          from datetime import datetime, timedelta
-
-          archivos = sorted(glob.glob('backups/backup_*.json'))
+          # Limpiar backups de mas de 30 dias
           limite = datetime.now() - timedelta(days=30)
-
-          for archivo in archivos:
-            nombre = os.path.basename(archivo)
+          for archivo in glob.glob("backups/backup_2*.json"):
+            nombre = os.path.basename(archivo).replace("backup_","").replace(".json","")
             try:
-              fecha_str = nombre.replace('backup_','').replace('.json','')
-              fecha = datetime.strptime(fecha_str, '%Y-%m-%d')
-              if fecha < limite:
+              fecha_arch = datetime.strptime(nombre, "%Y-%m-%d")
+              if fecha_arch < limite:
                 os.remove(archivo)
-                print(f"Eliminado backup viejo: {archivo}")
+                print(f"Eliminado: {archivo}")
             except:
               pass
 
-          restantes = glob.glob('backups/backup_*.json')
-          print(f"Backups conservados: {len(restantes)}")
-          EOF
+          # Limpiar archivos temporales
+          for tmp in ["backups/backup_contratos.json","backups/backup_pagos.json","backups/backup_usuarios.json","backups/backup_personas.json","backups/backup_pagos_extras.json"]:
+            if os.path.exists(tmp):
+              os.remove(tmp)
 
-      - name: Commit y push del backup
+          print(f"Backup guardado: {filename}")
+          print(f"Contratos: {len(contratos)}, Pagos: {len(pagos)}, Usuarios: {len(usuarios)}")
+          PYEOF
+
+      - name: Guardar esquema SQL
+        run: |
+          python3 - << PYEOF
+          esquema = """-- ESQUEMA COMPLETO MeGa Consultora
+-- Ejecutar en SQL Editor de Supabase para restaurar
+
+CREATE TABLE IF NOT EXISTS contratos (
+    id SERIAL PRIMARY KEY,
+    hoja TEXT, titulo TEXT, locador TEXT, locatario TEXT,
+    vigencia_desde DATE, vigencia_hasta DATE,
+    gastos_inicio NUMERIC, gastos_pagado NUMERIC,
+    tipo_inmueble TEXT, modalidad_pago TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pagos (
+    id SERIAL PRIMARY KEY,
+    hoja TEXT, mes DATE, fecha_pago_hasta DATE, corresponde_a_mes DATE,
+    importe_alquiler NUMERIC, impuestos_servicios NUMERIC, total NUMERIC,
+    pagado TEXT, saldo NUMERIC, comision_8 NUMERIC, pago_nro TEXT,
+    monto_epe NUMERIC, monto_agua NUMERIC, monto_tgiu NUMERIC
+);
+
+CREATE TABLE IF NOT EXISTS usuarios (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email TEXT UNIQUE NOT NULL, nombre TEXT,
+    aprobado BOOLEAN DEFAULT FALSE, admin BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE contratos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pagos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "public read contratos" ON contratos FOR SELECT USING (true);
+CREATE POLICY "public write contratos" ON contratos FOR ALL USING (true);
+CREATE POLICY "public read pagos" ON pagos FOR SELECT USING (true);
+CREATE POLICY "public write pagos" ON pagos FOR ALL USING (true);
+CREATE POLICY "insertar registro" ON usuarios FOR INSERT WITH CHECK (true);
+CREATE POLICY "leer propio" ON usuarios FOR SELECT USING (true);
+CREATE POLICY "admin gestiona" ON usuarios FOR UPDATE USING (true);
+"""
+          with open("backups/esquema.sql", "w") as f:
+            f.write(esquema)
+          print("Esquema SQL guardado")
+          PYEOF
+
+      - name: Commit y push
         run: |
           git config user.name "Backup Bot"
           git config user.email "backup@megaconsultora.com"
           git add backups/
-          git diff --staged --quiet || git commit -m "Backup automático $(date '+%Y-%m-%d')"
+          git diff --staged --quiet || git commit -m "Backup automatico $(date +%Y-%m-%d)"
           git push
