@@ -1128,14 +1128,17 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
   } catch(e) {}
 
   const meses = [];
-  const start = new Date(c.vigencia_desde.substring(0,7)+'-01');
-  const end = new Date(c.vigencia_hasta.substring(0,7)+'-01');
-  const cur = new Date(start);
-  while (cur <= end) {
-    const key = cur.toISOString().substring(0,7);
+  // Parse dates as YYYY-MM to avoid timezone issues
+  const startKey = c.vigencia_desde.substring(0,7);
+  const endKey = c.vigencia_hasta.substring(0,7);
+  let [sy, sm] = startKey.split('-').map(Number);
+  const [ey, em] = endKey.split('-').map(Number);
+  while (sy < ey || (sy === ey && sm <= em)) {
+    const key = `${sy}-${String(sm).padStart(2,'0')}`;
     const pago = pagosContrato.find(p => p.mes && p.mes.startsWith(key));
     meses.push({ key, label: formatDate(key+'-01'), pago });
-    cur.setMonth(cur.getMonth()+1);
+    sm++;
+    if (sm > 12) { sm = 1; sy++; }
   }
 
   // Store meses globally to avoid passing large JSON through HTML attributes
@@ -1516,14 +1519,14 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       await recargarGrilla(c);
       // Rebuild the meses list and reopen with updated data
       const meses = [];
-      const start = new Date(c.vigencia_desde.substring(0,7)+'-01');
-      const end = new Date(c.vigencia_hasta.substring(0,7)+'-01');
-      const cur = new Date(start);
-      while (cur <= end) {
-        const key = cur.toISOString().substring(0,7);
+      let [rsy, rsm] = c.vigencia_desde.substring(0,7).split('-').map(Number);
+      const [rey, rem] = c.vigencia_hasta.substring(0,7).split('-').map(Number);
+      while (rsy < rey || (rsy === rey && rsm <= rem)) {
+        const key = `${rsy}-${String(rsm).padStart(2,'0')}`;
         const pago = pagosActuales.find(p => p.mes && p.mes.startsWith(key));
         meses.push({ key, label: formatDate(key+'-01'), pago });
-        cur.setMonth(cur.getMonth()+1);
+        rsm++;
+        if (rsm > 12) { rsm = 1; rsy++; }
       }
       setTimeout(async () => {
         await cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, 's1');
@@ -1551,14 +1554,14 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
     if (c) {
       await recargarGrilla(c);
       const meses = [];
-      const start = new Date(c.vigencia_desde.substring(0,7)+'-01');
-      const end = new Date(c.vigencia_hasta.substring(0,7)+'-01');
-      const cur = new Date(start);
-      while (cur <= end) {
-        const key = cur.toISOString().substring(0,7);
+      let [rsy, rsm] = c.vigencia_desde.substring(0,7).split('-').map(Number);
+      const [rey, rem] = c.vigencia_hasta.substring(0,7).split('-').map(Number);
+      while (rsy < rey || (rsy === rey && rsm <= rem)) {
+        const key = `${rsy}-${String(rsm).padStart(2,'0')}`;
         const pago = pagosActuales.find(p => p.mes && p.mes.startsWith(key));
         meses.push({ key, label: formatDate(key+'-01'), pago });
-        cur.setMonth(cur.getMonth()+1);
+        rsm++;
+        if (rsm > 12) { rsm = 1; rsy++; }
       }
       setTimeout(async () => {
         await cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, 's2');
@@ -2237,20 +2240,21 @@ async function guardarContrato() {
     // Auto-generate all months in vigencia as empty pagos
     if (vigDesde && vigHasta && nuevoContrato) {
       const mesesGenerados = [];
-      const start = new Date(vigDesde.substring(0,7)+'-01');
-      const end = new Date(vigHasta.substring(0,7)+'-01');
-      const cur = new Date(start);
-      while (cur <= end) {
+      let [gsy, gsm] = vigDesde.substring(0,7).split('-').map(Number);
+      const [gey, gem] = vigHasta.substring(0,7).split('-').map(Number);
+      while (gsy < gey || (gsy === gey && gsm <= gem)) {
+        const mesStr = `${gsy}-${String(gsm).padStart(2,'0')}-01`;
         mesesGenerados.push({
           hoja: titulo,
-          mes: cur.toISOString().substring(0,10),
-          corresponde_a_mes: cur.toISOString().substring(0,10),
+          mes: mesStr,
+          corresponde_a_mes: mesStr,
           importe_alquiler: 0,
           total: 0,
           saldo: 0,
           pagado: '0'
         });
-        cur.setMonth(cur.getMonth()+1);
+        gsm++;
+        if (gsm > 12) { gsm = 1; gsy++; }
       }
       // Insert in batches of 50
       for (let i=0; i<mesesGenerados.length; i+=50) {
