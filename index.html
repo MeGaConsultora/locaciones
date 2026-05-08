@@ -480,20 +480,22 @@ async function sbGet(table, params='') {
 }
 
 async function sbGetAll(table, params='') {
-  // Fetch all using limit/offset to avoid Range header issues
+  // Paginate by id to avoid missing records at page boundaries
   let all = [];
-  let offset = 0;
+  let lastId = 0;
   const pageSize = 1000;
   while (true) {
-    const sep = params.includes('?') ? '&' : '&';
-    const url = `${SB_URL}/rest/v1/${table}?${params}&limit=${pageSize}&offset=${offset}`;
+    // Remove any existing order from params and use id-based pagination
+    const baseParams = params.replace(/&?order=[^&]*/g, '');
+    const url = `${SB_URL}/rest/v1/${table}?${baseParams}&id=gt.${lastId}&order=id.asc&limit=${pageSize}`;
     const headers = { ...HEADERS, 'Prefer': 'count=none' };
     const r = await fetch(url, { headers });
     if (!r.ok) throw new Error(await r.text());
     const data = await r.json();
+    if (!data.length) break;
     all = all.concat(data);
+    lastId = data[data.length-1].id;
     if (data.length < pageSize) break;
-    offset += pageSize;
   }
   return all;
 }
