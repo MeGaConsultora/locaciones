@@ -529,6 +529,8 @@ let vencFiltro = '30';
 async function loadAll() {
   document.getElementById('sync-status').textContent = 'Actualizando...';
   try {
+    // Refresh token if needed before loading
+    if (currentUser?.token) updateAuthHeaders(currentUser.token);
     const [contratos, pagos] = await Promise.all([
       sbGet('contratos', 'select=*&order=titulo.asc&limit=1000'),
       sbGetAll('pagos', 'select=*&order=mes.desc')
@@ -543,8 +545,13 @@ async function loadAll() {
     renderVencimientos();
     renderClientes();
   } catch(e) {
-    document.getElementById('sync-status').textContent = 'Error de conexión';
-    toast('Error al conectar con la base de datos', 'error');
+    document.getElementById('sync-status').textContent = '⚠ Error de conexión';
+    toast('Error al conectar. Verificá tu conexión a internet.', 'error');
+    // If JWT error, logout
+    if (e.message && (e.message.includes('JWT') || e.message.includes('expired'))) {
+      toast('Sesión expirada. Volvé a iniciar sesión.', 'error');
+      setTimeout(doLogout, 2000);
+    }
   }
 }
 
@@ -656,22 +663,42 @@ function renderContratos() {
   const q = document.getElementById('search-contratos').value.toLowerCase();
   const estado = document.getElementById('filter-estado').value;
   const tipo = document.getElementById('filter-tipo').value;
+  const pagadoFiltro = document.getElementById('filter-pagado')?.value || '';
+
+  // Pendientes stats
+  const todosPend = DB.pagos.filter(p => p.saldo && p.saldo > 0 && p.mes && p.mes.substring(0,7) <= TODAY.substring(0,7));
+  const totalSaldo = todosPend.reduce((s,p) => s+(p.saldo||0), 0);
+  const statsEl = document.getElementById('stats-pendientes');
+  if (statsEl) statsEl.innerHTML = `
+    <div class="stat-card accent"><div class="stat-label">Total pendiente</div><div class="stat-val" style="font-size:1.3rem">${formatMoney(totalSaldo)}</div></div>
+    <div class="stat-card warn"><div class="stat-label">Cuotas sin cobrar</div><div class="stat-val">${todosPend.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Contratos afectados</div><div class="stat-val">${new Set(todosPend.map(p=>p.hoja)).size}</div></div>
+    <div class="stat-card green"><div class="stat-label">Contratos vigentes</div><div class="stat-val">${DB.contratos.filter(c=>getEstado(c)==='vigente').length}</div></div>
+  `;
 
   contratosFiltrados = DB.contratos.filter(c => {
     if (q && !c.titulo?.toLowerCase().includes(q) && !c.locador?.toLowerCase().includes(q) && !c.locatario?.toLowerCase().includes(q)) return false;
     if (estado && getEstado(c) !== estado) return false;
     if (tipo && normTipo(c.tipo_inmueble) !== tipo) return false;
+    if (pagadoFiltro === 'pendiente') {
+      const tiene = DB.pagos.some(p => p.hoja===c.hoja && p.saldo>0 && p.mes && p.mes.substring(0,7)<=TODAY.substring(0,7));
+      if (!tiene) return false;
+    }
+    if (pagadoFiltro === 'pagado') {
+      const tiene = DB.pagos.some(p => p.hoja===c.hoja && p.saldo>0 && p.mes && p.mes.substring(0,7)<=TODAY.substring(0,7));
+      if (tiene) return false;
+    }
     return true;
   });
 
   const {col,dir} = sortState.contratos;
   contratosFiltrados.sort((a,b) => { const va=(a[col]||'').toString(); const vb=(b[col]||'').toString(); return dir==='asc'?va.localeCompare(vb):vb.localeCompare(va); });
 
-  document.getElementById('count-contratos').textContent = `${contratosFiltrados.length} resultado${contratosFiltrados.length!==1?'s':''}`;
+  document.getElementById('count-contratos').textContent = `${contratosFiltrados.length} contrato${contratosFiltrados.length!==1?'s':''}`;
   const slice = contratosFiltrados.slice((PG.contratos-1)*PER_PAGE, PG.contratos*PER_PAGE);
 
   document.getElementById('tbody-contratos').innerHTML = slice.length === 0
-    ? `<tr><td colspan="6"><div class="empty-state"><div class="icon">🔍</div><p>Sin resultados</p></div></td></tr>`
+    ? `<tr><td colspan="8"><div class="empty-state"><div class="icon">🔍</div><p>Sin resultados</p></div></td></tr>`
     : slice.map(c => {
         const est = getEstado(c);
         const d = c.vigencia_hasta ? daysDiff(c.vigencia_hasta, TODAY) : null;
@@ -698,67 +725,6 @@ function sortBy(table, col) {
 // ============================================================
 // PAGOS
 // ============================================================
-let pagosFiltrados = [];
-
-function onChangePagadoFiltro() {
-  PG.contratos = 1;
-  renderContratos();
-}
-
-function renderPagos() {
-  const q = document.getElementById('search-pagos').value.toLowerCase();
-  const pagado = document.getElementById('filter-pagado').value;
-  const anio = document.getElementById('filter-anio').value;
-
-  // Pendientes stats
-  const todosPend = DB.pagos.filter(p => p.saldo && p.saldo > 0 && p.mes && p.mes.substring(0,7) <= TODAY.substring(0,7));
-  const totalSaldo = todosPend.reduce((s,p) => s+(p.saldo||0), 0);
-  const statsEl = document.getElementById('stats-pendientes');
-  if (statsEl) statsEl.innerHTML = `
-    <div class="stat-card accent"><div class="stat-label">Total pendiente</div><div class="stat-val" style="font-size:1.3rem">${formatMoney(totalSaldo)}</div></div>
-    <div class="stat-card warn"><div class="stat-label">Cuotas sin cobrar</div><div class="stat-val">${todosPend.length}</div></div>
-    <div class="stat-card"><div class="stat-label">Contratos afectados</div><div class="stat-val">${new Set(todosPend.map(p=>p.hoja)).size}</div></div>
-  `;
-
-  pagosFiltrados = DB.pagos.filter(p => {
-    if (q && !p.hoja?.toLowerCase().includes(q)) return false;
-    if (anio && !p.mes?.startsWith(anio)) return false;
-    if (pagado==='pendiente') {
-      if (!(p.saldo && p.saldo > 0)) return false;
-      if (!p.mes) return false;
-      if (p.mes.substring(0,7) > TODAY.substring(0,7)) return false;
-    }
-    if (pagado==='pagado' && (p.saldo&&p.saldo>0)) return false;
-    return true;
-  });
-
-  const {col,dir} = sortState.pagos;
-  pagosFiltrados.sort((a,b) => { const va=(a[col]||'').toString(); const vb=(b[col]||'').toString(); return dir==='asc'?va.localeCompare(vb):vb.localeCompare(va); });
-
-  document.getElementById('count-pagos').textContent = `${pagosFiltrados.length} registro${pagosFiltrados.length!==1?'s':''}`;
-  const slice = pagosFiltrados.slice((PG.pagos-1)*PER_PAGE, PG.pagos*PER_PAGE);
-
-  document.getElementById('tbody-pagos').innerHTML = slice.length === 0
-    ? `<tr><td colspan="8"><div class="empty-state"><div class="icon">💳</div><p>Sin registros</p></div></td></tr>`
-    : slice.map(p => {
-        const pend = p.saldo&&p.saldo>0;
-        return `<tr onclick="openContrato(${DB.contratos.find(c=>c.hoja===p.hoja)?.id})">
-          <td>${p.hoja}</td><td>${formatDate(p.mes)}</td><td>${formatDate(p.fecha_pago_hasta, true)}</td>
-          <td class="num">${formatMoney(p.importe_alquiler)}</td>
-          <td class="num">${p.monto_epe>0?formatMoney(p.monto_epe):'—'}</td>
-          <td class="num">${p.monto_agua>0?formatMoney(p.monto_agua):'—'}</td>
-          <td class="num">${p.monto_tgiu>0?formatMoney(p.monto_tgiu):'—'}</td>
-          <td class="num">${p.monto_seguro>0?formatMoney(p.monto_seguro):'—'}</td>
-          <td class="num" title="${p.concepto_otros||''}">${p.monto_otros>0?formatMoney(p.monto_otros)+(p.concepto_otros?' ('+p.concepto_otros+')':''):'—'}</td>
-          <td class="num"><strong>${formatMoney(p.total)}</strong></td>
-          <td class="num ${pend?'saldo-pendiente':'saldo-ok'}">${pend?formatMoney(p.saldo):'✓'}</td>
-          <td><span class="badge ${pend?'badge-red':'badge-green'}">${pend?'Pendiente':'Pagado'}</span></td>
-        </tr>`;
-      }).join('');
-
-  renderPagination('pg-pagos', pagosFiltrados.length, PG.pagos, n => { PG.pagos=n; renderPagos(); });
-}
-
 // ============================================================
 // VENCIMIENTOS
 // ============================================================
@@ -1694,55 +1660,6 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
   ventana.document.close();
 }
 
-function cargarDatosMes(hoja, contratoId, mesKey, meses) {
-  if (!mesKey) { document.getElementById('nm-form').style.display='none'; return; }
-  const mesInfo = meses.find(m => m.key === mesKey);
-  const p = mesInfo?.pago;
-  const form = document.getElementById('nm-form');
-  form.style.display = 'block';
-
-  document.getElementById('nm-vence').value = p?.fecha_pago_hasta?.substring(0,10)||'';
-  document.getElementById('nm-alquiler').value = p?.importe_alquiler||'';
-  document.getElementById('nm-epe').value = p?.monto_epe||'';
-  document.getElementById('nm-agua').value = p?.monto_agua||'';
-  document.getElementById('nm-tgiu').value = p?.monto_tgiu||'';
-  document.getElementById('nm-seguro').value = p?.monto_seguro||'';
-
-  // Load existing extras
-  const extrasDiv = document.getElementById('nm-extras');
-  extrasDiv.innerHTML = '';
-  if (p && extrasActuales[p.id]) {
-    extrasActuales[p.id].forEach((e,i) => {
-      const el = document.createElement('div');
-      el.className = 'extra-item';
-      el.id = `nm-extra-${i}`;
-      el.innerHTML = `
-        <input type="text" id="nm-extra-concepto-${i}" value="${e.concepto||''}" placeholder="Concepto" style="flex:1">
-        <input type="number" id="nm-extra-importe-${i}" value="${e.importe||''}" placeholder="$" style="width:90px">
-        <button class="grid-btn grid-btn-red" onclick="this.closest('.extra-item').remove()">✕</button>
-      `;
-      extrasDiv.appendChild(el);
-    });
-  }
-
-  const btn = document.getElementById('nm-guardar');
-  if (btn) btn.textContent = p ? 'Actualizar mes' : 'Guardar mes';
-}
-
-function agregarExtraNuevoMes() {
-  const div = document.getElementById('nm-extras');
-  const idx = div.children.length;
-  const el = document.createElement('div');
-  el.className = 'extra-item';
-  el.id = `nm-extra-${idx}`;
-  el.innerHTML = `
-    <input type="text" id="nm-extra-concepto-${idx}" placeholder="Concepto (ej: Plomería)" style="flex:1">
-    <input type="number" id="nm-extra-importe-${idx}" placeholder="$" style="width:90px">
-    <button class="grid-btn grid-btn-red" onclick="this.closest('.extra-item').remove()">✕</button>
-  `;
-  div.appendChild(el);
-}
-
 async function guardarNuevoMes(hoja, contratoId) {
   const mesVal = document.getElementById('nm-mes-sel').value;
   if (!mesVal) { toast('El mes es obligatorio','error'); return; }
@@ -1871,151 +1788,6 @@ async function imprimirHistorial(contratoId) {
     </div>
   </body></html>`);
   ventana.document.close();
-}
-
-// ============================================================
-// RECIBO AL PROPIETARIO
-// ============================================================
-async function openReciboPropietario(hojaStr) {
-  const c = DB.contratos.find(x => x.hoja === hojaStr);
-  if (!c) return;
-  const hojaEncoded = encodeURIComponent(hojaStr);
-  const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.desc&limit=500`);
-  const pagados = pagos.filter(p => p.pagado === 'SI' || (p.saldo === 0 && p.total > 0));
-
-  document.getElementById('modal-title').textContent = 'Recibo al Propietario';
-  document.getElementById('modal-subtitle').textContent = c.titulo;
-  document.getElementById('modal-body').innerHTML = `
-    <div class="form-group" style="margin-bottom:1rem">
-      <label>Seleccioná el mes a rendir</label>
-      <select id="sel-mes-prop" class="filter-select" style="width:100%;margin-top:4px" onchange="cargarRendicion('${hojaStr}', this.value, ${JSON.stringify(pagados).replace(/"/g,'&quot;')})">
-        <option value="">-- Elegí un mes --</option>
-        ${pagados.map(p => `<option value="${p.id}">${formatDate(p.mes)} — ${formatMoney(p.total)}</option>`).join('')}
-      </select>
-    </div>
-    <div id="rendicion-container"></div>
-  `;
-  document.getElementById('modal-overlay').classList.add('open');
-}
-
-function cargarRendicion(hoja, pagoId, pagados) {
-  if (!pagoId) { document.getElementById('rendicion-container').innerHTML = ''; return; }
-  const p = pagados.find(x => x.id == pagoId);
-  if (!p) return;
-  const c = DB.contratos.find(x => x.hoja === hoja);
-
-  document.getElementById('rendicion-container').innerHTML = `
-    <div class="section-title" style="margin-bottom:1rem">Rendición — ${formatDate(p.mes)}</div>
-    <div style="background:var(--cream);border-radius:10px;padding:1rem;margin-bottom:1rem">
-      <div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)">
-        <span>Alquiler cobrado</span><span style="font-weight:600">${formatMoney(p.importe_alquiler)}</span>
-      </div>
-      ${p.monto_epe>0?`<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span>EPE</span><span>${formatMoney(p.monto_epe)}</span></div>`:''}
-      ${p.monto_agua>0?`<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span>Agua</span><span>${formatMoney(p.monto_agua)}</span></div>`:''}
-      ${p.monto_tgiu>0?`<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span>TGIU</span><span>${formatMoney(p.monto_tgiu)}</span></div>`:''}
-      ${p.monto_seguro>0?`<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span>Seguro</span><span>${formatMoney(p.monto_seguro)}</span></div>`:''}
-      ${p.monto_otros>0?`<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span>Otros</span><span>${formatMoney(p.monto_otros)}</span></div>`:''}
-      <div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border);color:var(--accent)">
-        <span>Comisión 8%</span><span>- ${formatMoney(p.comision_8)}</span>
-      </div>
-      <div class="form-group" style="padding:0.5rem 0">
-        <label>Descuentos adicionales al propietario</label>
-        <input id="descuento-prop" type="number" placeholder="0" value="${p.descuento_propietario||0}" oninput="recalcRendicion(${p.importe_alquiler||0},${p.comision_8||0})">
-      </div>
-      <div style="display:flex;justify-content:space-between;padding:0.75rem 0 0;font-weight:700;font-size:1rem;border-top:2px solid var(--ink)">
-        <span>Total a rendir al propietario:</span>
-        <span id="total-rendir" style="color:var(--green)">${formatMoney((p.importe_alquiler||0)-(p.comision_8||0)-(p.descuento_propietario||0))}</span>
-      </div>
-    </div>
-    <div class="form-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="generarReciboPropietario(${p.id},'${hoja}')">🖨️ Generar recibo</button>
-    </div>
-  `;
-}
-
-function recalcRendicion(alquiler, comision) {
-  const desc = parseFloat(document.getElementById('descuento-prop').value)||0;
-  const total = alquiler - comision - desc;
-  document.getElementById('total-rendir').textContent = formatMoney(total);
-}
-
-async function generarReciboPropietario(pagoId, hoja) {
-  const c = DB.contratos.find(x => x.hoja === hoja);
-  const hojaEncoded = encodeURIComponent(hoja);
-  const pagos = await sbGet('pagos', `id=eq.${pagoId}&limit=1`);
-  const p = pagos[0];
-  if (!p) return;
-
-  const descuento = parseFloat(document.getElementById('descuento-prop').value)||0;
-  const totalRendir = (p.importe_alquiler||0) - (p.comision_8||0) - descuento;
-
-  // Save descuento
-  await sbPatch('pagos', pagoId, { descuento_propietario: descuento });
-
-  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  const fechaMes = p.mes ? (() => { const [y,m]=p.mes.split('-'); return `${meses[parseInt(m)-1]} ${y}`; })() : '';
-  const fechaHoy = (() => { const [y,m,d]=TODAY.split('-'); return `${d}/${m}/${y}`; })();
-
-  const ventana = window.open('', '_blank', 'width=780,height=600');
-  ventana.document.write(`<!DOCTYPE html><html><head>
-    <meta charset="UTF-8"><title>Recibo Propietario</title>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
-    <style>
-      * { margin:0; padding:0; box-sizing:border-box; }
-      body { font-family:'DM Sans',Arial,sans-serif; background:#f5f0e8; padding:20px; display:flex; flex-direction:column; align-items:center; gap:20px; }
-      .no-print { text-align:center; }
-      .no-print button { background:#1a1a2e; color:white; border:none; padding:10px 28px; border-radius:8px; font-size:1rem; cursor:pointer; }
-      .recibo { background:white; border:2px solid #1a1a2e; border-radius:8px; padding:28px; width:100%; max-width:680px; }
-      .header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #1a1a2e; padding-bottom:12px; margin-bottom:16px; }
-      .empresa { font-family:'DM Serif Display',serif; font-size:1.4rem; color:#1a1a2e; }
-      .tipo-recibo { font-size:0.72rem; color:#888; margin-top:4px; }
-      .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; font-size:0.85rem; }
-      .field label { font-size:0.7rem; text-transform:uppercase; color:#888; letter-spacing:.05em; display:block; }
-      table { width:100%; border-collapse:collapse; margin-bottom:12px; font-size:0.85rem; }
-      th { background:#1a1a2e; color:white; padding:7px 10px; text-align:left; font-size:0.7rem; text-transform:uppercase; }
-      th.r, td.r { text-align:right; }
-      td { padding:7px 10px; border-bottom:1px solid #f0ece4; }
-      .total-row td { font-weight:700; font-size:1rem; border-top:2px solid #1a1a2e; color:#2d7a4f; }
-      .firmas { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:20px; padding-top:16px; border-top:1px dashed #ccc; }
-      .firma { text-align:center; }
-      .firma-line { border-top:1px solid #333; padding-top:6px; font-size:0.78rem; color:#666; margin-top:24px; }
-      .separador { border-top:3px dashed #ccc; padding-top:8px; font-size:0.7rem; color:#aaa; text-align:center; margin:8px 0; }
-      @media print { body { background:white; padding:0; gap:0; } .no-print { display:none; } .recibo { border-radius:0; box-shadow:none; page-break-after:always; } .recibo:last-child { page-break-after:avoid; } }
-    </style>
-  </head><body>
-    <div class="no-print"><button onclick="window.print()">🖨️ Imprimir por duplicado</button></div>
-    ${['','<div class="separador">— DUPLICADO —</div>'].map(sep => `
-    ${sep}
-    <div class="recibo">
-      <div class="header">
-        <div><div class="empresa">MeGa Consultora</div><div class="tipo-recibo">Recibo de Rendición al Propietario</div></div>
-        <div style="text-align:right"><div style="font-size:0.72rem;color:#888">Fecha</div><div style="font-size:1.1rem;font-weight:700">${fechaHoy}</div></div>
-      </div>
-      <div class="grid">
-        <div class="field"><label>Propietario</label>${c?.locador||'—'}</div>
-        <div class="field"><label>Inmueble</label>${c?.titulo||'—'}</div>
-        <div class="field"><label>Inquilino</label>${c?.locatario||'—'}</div>
-        <div class="field"><label>Período</label>${fechaMes}</div>
-      </div>
-      <table>
-        <thead><tr><th>Concepto</th><th class="r">Importe</th></tr></thead>
-        <tbody>
-          <tr><td>Alquiler cobrado</td><td class="r">${formatMoney(p.importe_alquiler)}</td></tr>
-          ${p.comision_8>0?`<tr><td style="color:#c8483a">Comisión 8% (inmobiliaria)</td><td class="r" style="color:#c8483a">- ${formatMoney(p.comision_8)}</td></tr>`:''}
-          ${descuento>0?`<tr><td style="color:#c8483a">Descuentos</td><td class="r" style="color:#c8483a">- ${formatMoney(descuento)}</td></tr>`:''}
-        </tbody>
-        <tfoot><tr class="total-row"><td>TOTAL A RECIBIR</td><td class="r">${formatMoney(totalRendir)}</td></tr></tfoot>
-      </table>
-      <div class="firmas">
-        <div class="firma"><div class="firma-line">Firma propietario</div></div>
-        <div class="firma"><div class="firma-line">Firma inmobiliaria</div></div>
-      </div>
-    </div>`).join('')}
-  </body></html>`);
-  ventana.document.close();
-  toast('Recibo generado ✓');
-  closeModal();
 }
 
 // ============================================================
