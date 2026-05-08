@@ -1896,11 +1896,19 @@ function openNuevoContrato() {
 
     <div class="section-title" style="margin:1.2rem 0 0.75rem">Propietario/s</div>
     <div id="lista-propietarios"></div>
-    <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarPersonaRol('propietario')">+ Agregar propietario</button>
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
+      <button class="btn btn-secondary" style="font-size:0.82rem" onclick="agregarPersonaRol('propietario')">+ Buscar propietario</button>
+      <button class="btn btn-secondary" style="font-size:0.82rem;color:var(--green);border-color:var(--green)" onclick="abrirNuevaPersonaInline('propietario')">+ Nueva persona</button>
+    </div>
 
     <div class="section-title" style="margin:1.2rem 0 0.75rem">Inquilino/s</div>
     <div id="lista-inquilinos"></div>
-    <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarPersonaRol('inquilino')">+ Agregar inquilino</button>
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
+      <button class="btn btn-secondary" style="font-size:0.82rem" onclick="agregarPersonaRol('inquilino')">+ Buscar inquilino</button>
+      <button class="btn btn-secondary" style="font-size:0.82rem;color:var(--green);border-color:var(--green)" onclick="abrirNuevaPersonaInline('inquilino')">+ Nueva persona</button>
+    </div>
+
+    <div id="inline-persona-form"></div>
 
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -1911,6 +1919,71 @@ function openNuevoContrato() {
   // Auto-add one row for each
   agregarPersonaRol('propietario');
   agregarPersonaRol('inquilino');
+}
+
+function abrirNuevaPersonaInline(rol) {
+  const div = document.getElementById('inline-persona-form');
+  if (!div) return;
+  div.innerHTML = `
+    <div style="background:#f0fff4;border:1.5px solid var(--green);border-radius:10px;padding:1.2rem;margin-bottom:1rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+        <strong style="font-size:0.9rem">Nueva persona — ${rol === 'propietario' ? 'Propietario' : 'Inquilino'}</strong>
+        <button onclick="document.getElementById('inline-persona-form').innerHTML=''" style="background:none;border:none;cursor:pointer;color:#999;font-size:1rem">✕</button>
+      </div>
+      <div class="form-grid">
+        <div class="form-group"><label>Apellido/s *</label><input id="ip-apellido" type="text" placeholder="Obligatorio"></div>
+        <div class="form-group"><label>Nombre/s</label><input id="ip-nombre" type="text"></div>
+        <div class="form-group"><label>DNI</label><input id="ip-dni" type="text"></div>
+        <div class="form-group"><label>CUIT</label><input id="ip-cuit" type="text"></div>
+        <div class="form-group"><label>Domicilio</label><input id="ip-domicilio" type="text"></div>
+        <div class="form-group"><label>Teléfono</label><input id="ip-tel" type="text"></div>
+        <div class="form-group"><label>Email</label><input id="ip-email" type="email"></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:0.75rem">
+        <button class="btn btn-green" onclick="guardarPersonaInline('${rol}')">✓ Guardar y agregar al contrato</button>
+      </div>
+    </div>
+  `;
+  // Scroll to form
+  div.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function guardarPersonaInline(rol) {
+  const apellido = document.getElementById('ip-apellido')?.value.trim();
+  if (!apellido) { toast('El apellido es obligatorio','error'); return; }
+  const body = {
+    apellido,
+    nombre: document.getElementById('ip-nombre')?.value.trim()||null,
+    dni: document.getElementById('ip-dni')?.value.trim()||null,
+    cuit: document.getElementById('ip-cuit')?.value.trim()||null,
+    domicilio: document.getElementById('ip-domicilio')?.value.trim()||null,
+    telefono: document.getElementById('ip-tel')?.value.trim()||null,
+    email: document.getElementById('ip-email')?.value.trim()||null,
+  };
+  try {
+    const r = await sbPost('personas', body);
+    const nuevaPersona = r[0];
+    if (nuevaPersona) {
+      DB_PERSONAS.push(nuevaPersona);
+      // Add to the contract form
+      const contenedor = document.getElementById(`lista-${rol === 'propietario' ? 'propietarios' : 'inquilinos'}`);
+      if (contenedor) {
+        const idx = contenedor.children.length;
+        const divP = document.createElement('div');
+        divP.dataset.rol = rol;
+        divP.dataset.personaId = nuevaPersona.id;
+        divP.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem';
+        divP.innerHTML = `
+          <input type="text" value="${nuevaPersona.apellido}, ${nuevaPersona.nombre||''}" style="flex:1;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem" readonly>
+          <span style="font-size:0.85rem;color:var(--green);font-weight:600">✓ Nueva</span>
+          <button onclick="this.closest('[data-rol]').remove()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
+        `;
+        contenedor.appendChild(divP);
+      }
+    }
+    document.getElementById('inline-persona-form').innerHTML = '';
+    toast(`${apellido} agregado/a ✓`);
+  } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
 function agregarPersonaRol(rol) {
@@ -2163,7 +2236,10 @@ function openEditContrato(id) {
         </div>`;
       }).join('')}
     </div>
-    <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarPersonaRol('propietario')">+ Agregar propietario</button>
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
+      <button class="btn btn-secondary" style="font-size:0.82rem" onclick="agregarPersonaRol('propietario')">+ Buscar propietario</button>
+      <button class="btn btn-secondary" style="font-size:0.82rem;color:var(--green);border-color:var(--green)" onclick="abrirNuevaPersonaInline('propietario')">+ Nueva persona</button>
+    </div>
 
     <div class="section-title" style="margin:1rem 0 0.75rem">Inquilino/s</div>
     <div id="lista-inquilinos">
@@ -2178,7 +2254,12 @@ function openEditContrato(id) {
         </div>`;
       }).join('')}
     </div>
-    <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarPersonaRol('inquilino')">+ Agregar inquilino</button>
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
+      <button class="btn btn-secondary" style="font-size:0.82rem" onclick="agregarPersonaRol('inquilino')">+ Buscar inquilino</button>
+      <button class="btn btn-secondary" style="font-size:0.82rem;color:var(--green);border-color:var(--green)" onclick="abrirNuevaPersonaInline('inquilino')">+ Nueva persona</button>
+    </div>
+
+    <div id="inline-persona-form"></div>
 
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="openContrato(${id})">← Volver</button>
