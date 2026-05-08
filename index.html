@@ -1155,7 +1155,11 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
   document.getElementById('modal-overlay').classList.add('open');
 
   if (mesPreseleccionado) {
-    setTimeout(() => cargarPantallaGestionPago(hoja, c.id, mesPreseleccionado, meses, c.comision_porcentaje||8, solapaInicial), 50);
+    setTimeout(() => {
+      const sel = document.getElementById('gp-mes-sel');
+      if (sel) sel.value = mesPreseleccionado;
+      cargarPantallaGestionPago(hoja, c.id, mesPreseleccionado, meses, c.comision_porcentaje||8, solapaInicial);
+    }, 50);
   }
 }
 
