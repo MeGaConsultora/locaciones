@@ -1860,43 +1860,13 @@ function openNuevoContrato() {
       ).join('')}
     </div>
 
-    <div class="section-title" style="margin-bottom:1rem">Propietario</div>
-    <div class="form-grid" style="margin-bottom:0.5rem">
-      <div class="form-group" style="grid-column:1/-1">
-        <label>Buscar propietario existente</label>
-        <input id="busca-prop" type="text" placeholder="Apellido o DNI..." oninput="buscarPersona('prop',this.value)">
-        <div id="sugerencias-prop" style="background:white;border:1px solid var(--border);border-radius:8px;margin-top:4px;display:none;max-height:150px;overflow-y:auto"></div>
-      </div>
-    </div>
-    <div class="form-grid" id="form-prop">
-      <div class="form-group"><label>Apellido/s</label><input id="prop-apellido" type="text"></div>
-      <div class="form-group"><label>Nombre/s</label><input id="prop-nombre" type="text"></div>
-      <div class="form-group"><label>DNI</label><input id="prop-dni" type="text"></div>
-      <div class="form-group"><label>CUIT</label><input id="prop-cuit" type="text"></div>
-      <div class="form-group"><label>Domicilio</label><input id="prop-domicilio" type="text"></div>
-      <div class="form-group"><label>Teléfono</label><input id="prop-tel" type="text"></div>
-      <div class="form-group"><label>Email</label><input id="prop-email" type="email"></div>
-    </div>
-    <input type="hidden" id="prop-id" value="">
+    <div class="section-title" style="margin:1.2rem 0 0.75rem">Propietario/s</div>
+    <div id="lista-propietarios"></div>
+    <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarPersonaRol('propietario')">+ Agregar propietario</button>
 
-    <div class="section-title" style="margin:1.2rem 0 1rem">Inquilino</div>
-    <div class="form-grid" style="margin-bottom:0.5rem">
-      <div class="form-group" style="grid-column:1/-1">
-        <label>Buscar inquilino existente</label>
-        <input id="busca-inq" type="text" placeholder="Apellido o DNI..." oninput="buscarPersona('inq',this.value)">
-        <div id="sugerencias-inq" style="background:white;border:1px solid var(--border);border-radius:8px;margin-top:4px;display:none;max-height:150px;overflow-y:auto"></div>
-      </div>
-    </div>
-    <div class="form-grid" id="form-inq">
-      <div class="form-group"><label>Apellido/s</label><input id="inq-apellido" type="text"></div>
-      <div class="form-group"><label>Nombre/s</label><input id="inq-nombre" type="text"></div>
-      <div class="form-group"><label>DNI</label><input id="inq-dni" type="text"></div>
-      <div class="form-group"><label>CUIT</label><input id="inq-cuit" type="text"></div>
-      <div class="form-group"><label>Domicilio</label><input id="inq-domicilio" type="text"></div>
-      <div class="form-group"><label>Teléfono</label><input id="inq-tel" type="text"></div>
-      <div class="form-group"><label>Email</label><input id="inq-email" type="email"></div>
-    </div>
-    <input type="hidden" id="inq-id" value="">
+    <div class="section-title" style="margin:1.2rem 0 0.75rem">Inquilino/s</div>
+    <div id="lista-inquilinos"></div>
+    <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarPersonaRol('inquilino')">+ Agregar inquilino</button>
 
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -1904,6 +1874,9 @@ function openNuevoContrato() {
     </div>
   `;
   document.getElementById('modal-overlay').classList.add('open');
+  // Auto-add one row for each
+  agregarPersonaRol('propietario');
+  agregarPersonaRol('inquilino');
 }
 
 function agregarPersonaRol(rol) {
