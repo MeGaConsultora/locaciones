@@ -1150,7 +1150,7 @@ async function abrirInvitarInquilino(contratoId, hoja) {
     </p>
     <div class="form-group" style="margin-bottom:1rem">
       <label>Email del inquilino</label>
-      <input id="inv-email" type="email" placeholder="email@ejemplo.com" style="margin-top:4px" oninput="filtrarEmailsSugeridos(this.value)">
+      <input id="inv-email" type="email" placeholder="email@ejemplo.com" style="margin-top:4px" >
       ${emailsSugeridos.length ? `
         <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
           ${emailsSugeridos.map(e => `
@@ -1185,26 +1185,25 @@ async function enviarInvitacion(contratoId, hoja) {
   if (!email) { toast('Ingresá el email del inquilino','error'); return; }
 
   try {
-    // 1. Send magic link (OTP) - works without admin permissions
-    const r = await fetch(`${SB_URL}/auth/v1/otp`, {
+    // 1. Create user with random password, then send reset email
+    const tempPass = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2).toUpperCase() + '!1';
+    
+    const signupR = await fetch(`${SB_URL}/auth/v1/signup`, {
       method: 'POST',
-      headers: {
-        'apikey': SB_KEY,
-        'Authorization': `Bearer ${SB_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ 
-        email,
-        create_user: true,
-        options: {
-          email_redirect_to: 'https://megaconsultora.github.io/inquilinos'
-        }
-      })
+      headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: tempPass })
     });
+    // Ignore errors if user already exists
 
-    if (!r.ok) {
-      const err = await r.json();
-      if (!err.message?.includes('already')) throw new Error(err.message || 'Error al enviar invitación');
+    // Send password reset email
+    const resetR = await fetch(`${SB_URL}/auth/v1/recover`, {
+      method: 'POST',
+      headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    if (!resetR.ok) {
+      const err = await resetR.json();
+      throw new Error(err.message || 'Error al enviar el email');
     }
 
     // 2. Create or update usuario record
