@@ -3157,7 +3157,8 @@ function buscarPersonaVinc(q) {
     return `
     <div style="padding:10px 12px;cursor:pointer;border-bottom:1px solid #f0ece4"
       onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background='white'"
-      onclick="selPersonaVinc(${p.id},'${(p.apellido||'').replace(/'/g,"\'")}','${(p.nombre||'').replace(/'/g,"\'")}')">
+      data-pid="${p.id}" data-apellido="${(p.apellido||'').replace(/"/g,'&quot;')}" data-nombre="${(p.nombre||'').replace(/"/g,'&quot;')}"
+      onclick="selPersonaVinc(this.dataset.pid, this.dataset.apellido, this.dataset.nombre)">
       <div style="font-weight:600;font-size:0.88rem">${p.apellido||'—'}, ${p.nombre||'—'}</div>
       <div style="font-size:0.75rem;color:#666;margin-top:2px;display:flex;gap:1rem;flex-wrap:wrap">
         <span>DNI: <strong>${p.dni||'sin DNI'}</strong></span>
