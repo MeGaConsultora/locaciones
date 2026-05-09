@@ -1185,17 +1185,26 @@ async function enviarInvitacion(contratoId, hoja) {
   if (!email) { toast('Ingresá el email del inquilino','error'); return; }
 
   try {
-    // 1. Create user with random password, then send reset email
-    const tempPass = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2).toUpperCase() + '!1';
+    // Check if user already exists in our usuarios table
+    const existingUsuario = await sbGet('usuarios', `email=eq.${encodeURIComponent(email)}&limit=1`);
     
-    const signupR = await fetch(`${SB_URL}/auth/v1/signup`, {
-      method: 'POST',
-      headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: tempPass })
-    });
-    // Ignore errors if user already exists
+    if (existingUsuario.length === 0) {
+      // New user - create with signup
+      const tempPass = Math.random().toString(36).slice(2) + Math.random().toString(36).toUpperCase() + '!1Ab';
+      const signupR = await fetch(`${SB_URL}/auth/v1/signup`, {
+        method: 'POST',
+        headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: tempPass })
+      });
+      if (!signupR.ok) {
+        const err = await signupR.json();
+        if (!err.message?.includes('already registered')) {
+          throw new Error(err.message || 'Error al crear el usuario');
+        }
+      }
+    }
 
-    // Send password reset email
+    // Send password reset/set email
     const resetR = await fetch(`${SB_URL}/auth/v1/recover`, {
       method: 'POST',
       headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
