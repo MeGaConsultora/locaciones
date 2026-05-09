@@ -2025,6 +2025,22 @@ async function buscarPersonaEnLinea(input, rol, idx) {
   `).join('');
 }
 
+function selPersonaEnLineaIdx(rol, idx, pidx) {
+  const p = window[`_sug_${rol}_${idx}`]?.[pidx];
+  if (!p) return;
+  const nombre = formatNombrePersona(p);
+  const parent = document.getElementById(`lista-${rol === 'propietario' ? 'propietarios' : 'inquilinos'}`)?.children[idx];
+  if (parent) {
+    parent.dataset.personaId = p.id;
+    const sp = document.getElementById(`sel-${rol}-${idx}`);
+    if (sp) sp.textContent = `✓ ${nombre}`;
+    const inp = parent.querySelector('input[type="text"]');
+    if (inp) inp.value = nombre;
+    const sugDiv = document.getElementById(`sug-${rol}-${idx}`);
+    if (sugDiv) sugDiv.style.display='none';
+  }
+}
+
 function selPersonaEnLinea(el, rol, idx, personaId, apellido, nombre) {
   const sugDiv = document.getElementById(`sug-${rol}-${idx}`);
   const selSpan = document.getElementById(`sel-${rol}-${idx}`);
@@ -2742,12 +2758,20 @@ async function loadContratosPersonas() {
 
 function formatPersonasFromCP(lista) {
   if (!lista.length) return '—';
-  const primera = lista[0].personas;
+  const primera = lista[0].personas || DB_PERSONAS.find(p=>p.id===lista[0].persona_id);
   if (!primera) return '—';
-  const nombre = `${primera.apellido||''}${primera.nombre?', '+primera.nombre:''}`.trim();
+  const nombre = formatNombrePersona(primera);
   if (lista.length === 1) return nombre;
   if (lista.length === 2) return `${nombre} y otro`;
   return `${nombre} y otros`;
+}
+
+function formatNombrePersona(p) {
+  if (!p) return '—';
+  const apellido = p.apellido||'';
+  const nombre = p.nombre||'';
+  if (apellido && nombre) return `${apellido}, ${nombre}`;
+  return apellido || nombre || '—';
 }
 
 function getRolPersona(p) {
@@ -2791,7 +2815,7 @@ function renderClientes() {
         const rol = getRolPersona(p);
         const contratos = DB.contratos.filter(c => c.propietario_id == p.id || c.inquilino_id == p.id);
         return `<tr onclick="openPersona(${p.id})">
-          <td><strong>${p.apellido||''}, ${p.nombre||''}</strong></td>
+          <td><strong>${formatNombrePersona(p)}</strong></td>
           <td>${p.dni||'—'}</td>
           <td>${p.telefono||'—'}</td>
           <td>${p.email||'—'}</td>
@@ -2809,7 +2833,7 @@ function openPersona(id) {
   const contratos = DB.contratos.filter(c => c.propietario_id == id || c.inquilino_id == id);
   const rol = getRolPersona(p);
 
-  document.getElementById('modal-title').textContent = `${p.apellido||''}, ${p.nombre||''}`;
+  document.getElementById('modal-title').textContent = formatNombrePersona(p);
   document.getElementById('modal-subtitle').textContent = getRolPersona(p) === '—' ? 'Sin contratos activos' : `${contratos.length} contrato${contratos.length!==1?'s':''}`;
   document.getElementById('modal-body').innerHTML = `
     <div style="display:flex;gap:0.75rem;margin-bottom:1.5rem">
@@ -3158,7 +3182,7 @@ function buscarPersonaVinc(q) {
     return `
     <div style="padding:10px 12px;cursor:pointer;border-bottom:1px solid #f0ece4"
       onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background='white'"
-      onclick="selPersonaVincIdx(${idx})">
+      onmousedown="event.preventDefault(); selPersonaVincIdx(${idx})">
       <div style="font-weight:600;font-size:0.88rem">${p.apellido||'—'}, ${p.nombre||'—'}</div>
       <div style="font-size:0.75rem;color:#666;margin-top:2px;display:flex;gap:1rem;flex-wrap:wrap">
         <span>DNI: <strong>${p.dni||'sin DNI'}</strong></span>
