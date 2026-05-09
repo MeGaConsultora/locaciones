@@ -3141,27 +3141,43 @@ function abrirVincularPersona(usuarioId, rolActual) {
 function buscarPersonaVinc(q) {
   if (q.length < 2) { document.getElementById('vinc-sugerencias').style.display='none'; return; }
   const res = DB_PERSONAS.filter(p =>
-    `${p.apellido} ${p.nombre} ${p.dni||''}`.toLowerCase().includes(q.toLowerCase())
-  ).slice(0,8);
+    `${p.apellido||''} ${p.nombre||''} ${p.dni||''} ${p.cuit||''}`.toLowerCase().includes(q.toLowerCase())
+  ).slice(0,10);
   const div = document.getElementById('vinc-sugerencias');
   if (!res.length) { div.style.display='none'; return; }
   div.style.display='block';
-  div.innerHTML = res.map(p => `
-    <div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0ece4;font-size:0.85rem"
+  div.innerHTML = res.map(p => {
+    // Get contracts for this person
+    const contratos = DB.contratos.filter(c => c.inquilino_id === p.id || c.propietario_id === p.id);
+    const cpContratos = DB_CONTRATO_PERSONAS.filter(x => x.persona_id === p.id);
+    const todosContratos = [...new Set([...contratos.map(c=>c.titulo), ...cpContratos.map(x => {
+      const c = DB.contratos.find(cc=>cc.id===x.contrato_id);
+      return c?.titulo||'';
+    })])].filter(Boolean);
+    return `
+    <div style="padding:10px 12px;cursor:pointer;border-bottom:1px solid #f0ece4"
       onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background='white'"
-      onclick="selPersonaVinc(${p.id},'${p.apellido}, ${p.nombre}')">
-      <strong>${p.apellido}, ${p.nombre}</strong> — DNI: ${p.dni||'—'}
-    </div>
-  `).join('');
+      onclick="selPersonaVinc(${p.id},'${(p.apellido||'').replace(/'/g,"\'")}','${(p.nombre||'').replace(/'/g,"\'")}')">
+      <div style="font-weight:600;font-size:0.88rem">${p.apellido||'—'}, ${p.nombre||'—'}</div>
+      <div style="font-size:0.75rem;color:#666;margin-top:2px;display:flex;gap:1rem;flex-wrap:wrap">
+        <span>DNI: <strong>${p.dni||'sin DNI'}</strong></span>
+        ${p.cuit ? `<span>CUIT: ${p.cuit}</span>` : ''}
+        ${p.telefono ? `<span>📞 ${p.telefono}</span>` : ''}
+        ${todosContratos.length ? `<span style="color:var(--green)">📋 ${todosContratos.slice(0,2).join(', ')}${todosContratos.length>2?' y más':''}</span>` : '<span style="color:#aaa">Sin contratos</span>'}
+      </div>
+    </div>`;
+  }).join('');
 }
 
-function selPersonaVinc(id, nombre) {
+function selPersonaVinc(id, apellido, nombre) {
   document.getElementById('vinc-persona-id').value = id;
-  document.getElementById('vinc-nombre').textContent = '✓ ' + nombre;
+  document.getElementById('vinc-nombre').textContent = '✓ ' + apellido + ', ' + nombre;
   document.getElementById('vinc-seleccionado').style.display='block';
   document.getElementById('vinc-sugerencias').style.display='none';
-  document.getElementById('vinc-busca').value = nombre;
+  document.getElementById('vinc-busca').value = apellido + ', ' + nombre;
 }
+
+
 
 async function guardarVinculacion(usuarioId) {
   const personaId = document.getElementById('vinc-persona-id').value;
