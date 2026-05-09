@@ -827,6 +827,7 @@ async function openContrato(id) {
     <div style="display:flex;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="openEditContrato(${c.id})">✏️ Editar contrato</button>
       <button class="btn btn-secondary" style="font-size:0.78rem" onclick="imprimirHistorial(${c.id})">🖨️ Imprimir historial</button>
+      <button class="btn btn-secondary" style="font-size:0.78rem;color:var(--green);border-color:var(--green)" onclick="abrirInvitarInquilino(${c.id},'${c.hoja}')">✉️ Invitar inquilino</button>
     </div>
     <p style="font-size:0.78rem;color:#999;margin-bottom:0.75rem">💡 Clic en un mes para editarlo o registrar cobro</p>
     <div class="detail-grid" style="margin-bottom:1rem">
@@ -1124,6 +1125,119 @@ async function eliminarMes(pagoId, hoja) {
     if (c) renderGrilla(c);
     toast('Mes eliminado ✓');
   } catch(e) { toast('Error: '+e.message,'error'); }
+}
+
+// INVITAR INQUILINO
+async function abrirInvitarInquilino(contratoId, hoja) {
+  const c = DB.contratos.find(x => x.id === contratoId);
+  
+  // Get inquilinos from contrato_personas
+  const inquilinos = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === contratoId && x.rol === 'inquilino');
+  
+  // Get emails from personas
+  const emailsSugeridos = inquilinos
+    .map(x => {
+      const p = x.personas || DB_PERSONAS.find(pp => pp.id === x.persona_id);
+      return p?.email ? { email: p.email, nombre: formatNombrePersona(p) } : null;
+    })
+    .filter(Boolean);
+
+  document.getElementById('modal-title').textContent = 'Invitar inquilino al portal';
+  document.getElementById('modal-subtitle').textContent = hoja;
+  document.getElementById('modal-body').innerHTML = `
+    <p style="font-size:0.85rem;color:#666;margin-bottom:1.2rem">
+      Se enviará un email de invitación al inquilino. Al hacer clic en el link, podrá crear su contraseña y acceder al portal directamente.
+    </p>
+    <div class="form-group" style="margin-bottom:1rem">
+      <label>Email del inquilino</label>
+      <input id="inv-email" type="email" placeholder="email@ejemplo.com" style="margin-top:4px" oninput="filtrarEmailsSugeridos(this.value)">
+      ${emailsSugeridos.length ? `
+        <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
+          ${emailsSugeridos.map(e => `
+            <button onclick="document.getElementById('inv-email').value='${e.email}'" 
+              style="background:#f0fff4;border:1px solid var(--green);border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer;color:var(--green)">
+              ${e.nombre} — ${e.email}
+            </button>
+          `).join('')}
+        </div>
+      ` : ''}
+    </div>
+    <div class="form-group" style="margin-bottom:1rem">
+      <label>Nombre del inquilino (para el email)</label>
+      <input id="inv-nombre" type="text" placeholder="Nombre que aparece en el email" value="${c?._locatario||c?.locatario||''}" style="margin-top:4px">
+    </div>
+    <div style="background:#f0fff4;border:1px solid var(--green);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.82rem;color:#155724">
+      <strong>El inquilino recibirá:</strong><br>
+      Un email de MeGa Consultora con un link para crear su contraseña y acceder al portal de inquilinos en: <strong>megaconsultora.github.io/inquilinos</strong>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="openContrato(${contratoId})">← Volver</button>
+      <button class="btn btn-green" onclick="enviarInvitacion(${contratoId},'${hoja}')">✉️ Enviar invitación</button>
+    </div>
+  `;
+  document.getElementById('modal-overlay').dataset.contratoId = '';
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function enviarInvitacion(contratoId, hoja) {
+  const email = document.getElementById('inv-email').value.trim();
+  const nombre = document.getElementById('inv-nombre').value.trim();
+  if (!email) { toast('Ingresá el email del inquilino','error'); return; }
+
+  try {
+    // 1. Send Supabase invite
+    const r = await fetch(`${SB_URL}/auth/v1/invite`, {
+      method: 'POST',
+      headers: {
+        'apikey': SB_KEY,
+        'Authorization': `Bearer ${currentUser.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email })
+    });
+
+    if (!r.ok) {
+      const err = await r.json();
+      // If user already exists, that's ok
+      if (!err.message?.includes('already')) throw new Error(err.message || 'Error al enviar invitación');
+    }
+
+    // 2. Create or update usuario record
+    const existing = await sbGet('usuarios', `email=eq.${encodeURIComponent(email)}&limit=1`);
+    
+    // Get persona_id from contrato
+    const inquilinos = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === contratoId && x.rol === 'inquilino');
+    const personaId = inquilinos[0]?.persona_id || null;
+
+    if (existing.length > 0) {
+      // Update existing user - link to persona if not already linked
+      if (!existing[0].persona_id && personaId) {
+        await sbPatch('usuarios', existing[0].id, { persona_id: personaId, aprobado: true, rol: 'inquilino' });
+      }
+      toast(`Invitación enviada a ${email} ✓`);
+    } else {
+      // Create new usuario
+      await sbPost('usuarios', {
+        email,
+        nombre: nombre || email,
+        aprobado: true,
+        admin: false,
+        rol: 'inquilino',
+        persona_id: personaId || null
+      });
+      toast(`Invitación enviada a ${email} ✓`);
+    }
+
+    // Update persona email if we have it
+    if (personaId) {
+      await sbPatch('personas', personaId, { email });
+    }
+
+    await loadAll();
+    openContrato(contratoId);
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+  }
 }
 
 // NUEVO MES
