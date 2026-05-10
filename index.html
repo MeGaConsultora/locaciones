@@ -827,7 +827,7 @@ async function openContrato(id) {
     <div style="display:flex;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="openEditContrato(${c.id})">✏️ Editar contrato</button>
       <button class="btn btn-secondary" style="font-size:0.78rem" onclick="imprimirHistorial(${c.id})">🖨️ Imprimir historial</button>
-      <button class="btn btn-secondary" style="font-size:0.78rem;color:var(--green);border-color:var(--green)" onclick="abrirCrearAcceso(${c.id},'${c.hoja}')">🔑 Crear acceso inquilino</button>
+      <button class="btn btn-secondary" style="font-size:0.78rem;color:var(--green);border-color:var(--green)" onclick="abrirCrearAcceso(${c.id},'${c.hoja}')">🔑 Acceso inquilino</button>
     </div>
     <p style="font-size:0.78rem;color:#999;margin-bottom:0.75rem">💡 Clic en un mes para editarlo o registrar cobro</p>
     <div class="detail-grid" style="margin-bottom:1rem">
@@ -1146,14 +1146,18 @@ async function abrirCrearAcceso(contratoId, hoja) {
   document.getElementById('modal-title').textContent = 'Acceso al portal';
   document.getElementById('modal-subtitle').textContent = hoja;
 
-  // Check if user already exists
+  // Check if user already exists - search by persona_id first, then email
   let usuarioExistente = null;
-  if (emailInq) {
-    try {
-      const existing = await sbGet('usuarios', `email=eq.${encodeURIComponent(emailInq)}&limit=1`);
-      if (existing.length > 0 && existing[0].aprobado) usuarioExistente = existing[0];
-    } catch(e) {}
-  }
+  try {
+    if (personaId) {
+      const byPersona = await sbGet('usuarios', `persona_id=eq.${personaId}&limit=1`);
+      if (byPersona.length > 0) usuarioExistente = byPersona[0];
+    }
+    if (!usuarioExistente && emailInq) {
+      const byEmail = await sbGet('usuarios', `email=eq.${encodeURIComponent(emailInq)}&limit=1`);
+      if (byEmail.length > 0) usuarioExistente = byEmail[0];
+    }
+  } catch(e) {}
 
   document.getElementById('modal-body').innerHTML = usuarioExistente ? `
     <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:10px;padding:1rem;margin-bottom:1rem">
@@ -1255,7 +1259,9 @@ async function crearAccesoInquilino(contratoId, hoja) {
       body: JSON.stringify({ email, password: tempPass })
     });
     const signupData = await signupR.json();
+    // User may already exist - that's ok, we still have the tempPass to share
     const authUserId = signupData?.user?.id || signupData?.id || null;
+    const userAlreadyExisted = signupR.status === 400 || signupR.status === 422 || signupR.status === 404;
 
     // 2. Check if already in usuarios table
     const existing = await sbGet('usuarios', `email=eq.${encodeURIComponent(email)}&limit=1`);
@@ -1316,7 +1322,7 @@ Te recomendamos cambiarla una vez que ingreses usando la opción "¿Olvidaste tu
         </div>
       </div>
     `;
-    toast('Acceso creado ✓');
+    toast(userAlreadyExisted ? 'Acceso actualizado ✓ (usuario ya existía)' : 'Acceso creado ✓');
     await loadAll();
   } catch(e) {
     toast('Error: ' + e.message, 'error');
