@@ -1221,7 +1221,10 @@ async function crearAccesoInquilino(contratoId, hoja) {
     const mensaje = `Hola ${nombre||''}! Te damos acceso a tu portal de inquilino en MeGa Consultora. Entrá a https://megaconsultora.github.io/inquilinos con tu email *${email}* y usá "¿Olvidaste tu contraseña?" para crear tu clave de acceso.`;
     const msgEncoded = encodeURIComponent(mensaje);
 
+    window._mensajeAcceso = mensaje;
     document.getElementById('acc-resultado').style.display = 'block';
+    // Hide the create button after success
+    document.querySelector('[onclick^="crearAccesoInquilino"]')?.style.setProperty('display','none');
     document.getElementById('acc-resultado').innerHTML = `
       <div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:10px;padding:1rem">
         <div style="font-weight:600;color:#155724;margin-bottom:0.5rem">✓ Acceso creado correctamente</div>
@@ -1230,7 +1233,7 @@ async function crearAccesoInquilino(contratoId, hoja) {
           ${mensaje}
         </div>
         <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-          <button class="btn btn-green" style="font-size:0.82rem" onclick="navigator.clipboard.writeText(\`${mensaje.replace(/`/g,"'")}\`).then(()=>toast('Mensaje copiado ✓'))">📋 Copiar mensaje</button>
+          <button class="btn btn-green" style="font-size:0.82rem" onclick="copiarMensajeAcceso()">📋 Copiar mensaje</button>
           <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none">💬 Enviar por WhatsApp</a>
         </div>
       </div>
@@ -1242,6 +1245,11 @@ async function crearAccesoInquilino(contratoId, hoja) {
   }
 }
 
+
+function copiarMensajeAcceso() {
+  if (!window._mensajeAcceso) return;
+  navigator.clipboard.writeText(window._mensajeAcceso).then(() => toast('Mensaje copiado ✓'));
+}
 
 // NUEVO MES
 async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
