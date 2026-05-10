@@ -1243,7 +1243,12 @@ async function crearAccesoInquilino(contratoId, hoja) {
 
   try {
     // 1. Create user in Supabase Auth with random password
-    const tempPass = Math.random().toString(36).slice(2,10) + 'Aa1!';
+    // Generate readable temp password
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let tempPass = '';
+    for (let i=0; i<8; i++) tempPass += chars[Math.floor(Math.random()*chars.length)];
+    tempPass += '!1';
+    
     const signupR = await fetch(`${SB_URL}/auth/v1/signup`, {
       method: 'POST',
       headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
@@ -1285,7 +1290,13 @@ async function crearAccesoInquilino(contratoId, hoja) {
     }
 
     // 4. Show success with WhatsApp message
-    const mensaje = `Hola ${nombre||''}! Te damos acceso a tu portal de inquilino en MeGa Consultora. Entrá a https://megaconsultora.github.io/inquilinos con tu email *${email}* y usá "¿Olvidaste tu contraseña?" para crear tu clave de acceso.`;
+    const mensaje = `Hola ${nombre||''}! Te damos acceso a tu portal de inquilino en MeGa Consultora.
+
+🌐 Portal: https://megaconsultora.github.io/inquilinos
+📧 Email: ${email}
+🔑 Contraseña temporal: ${tempPass}
+
+Te recomendamos cambiarla una vez que ingreses usando la opción "¿Olvidaste tu contraseña?".`;
     const msgEncoded = encodeURIComponent(mensaje);
 
     window._mensajeAcceso = mensaje;
