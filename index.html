@@ -1131,7 +1131,15 @@ async function eliminarMes(pagoId, hoja) {
 async function abrirCrearAcceso(contratoId, hoja) {
   const c = DB.contratos.find(x => x.id === contratoId);
   const inquilinos = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === contratoId && x.rol === 'inquilino');
-  const primerInquilino = inquilinos[0]?.personas || DB_PERSONAS.find(p => p.id === inquilinos[0]?.persona_id);
+  const personaId = inquilinos[0]?.persona_id;
+  // Always fetch fresh persona data to get correct email
+  let primerInquilino = DB_PERSONAS.find(p => p.id === personaId) || null;
+  if (personaId && !primerInquilino?.email) {
+    try {
+      const fresh = await sbGet('personas', `id=eq.${personaId}&select=*&limit=1`);
+      if (fresh.length) primerInquilino = fresh[0];
+    } catch(e) {}
+  }
   const nombreInq = primerInquilino ? formatNombrePersona(primerInquilino) : '';
   const emailInq = primerInquilino?.email || '';
 
