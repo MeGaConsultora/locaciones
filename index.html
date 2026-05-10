@@ -1143,9 +1143,39 @@ async function abrirCrearAcceso(contratoId, hoja) {
   const nombreInq = primerInquilino ? formatNombrePersona(primerInquilino) : '';
   const emailInq = primerInquilino?.email || '';
 
-  document.getElementById('modal-title').textContent = 'Crear acceso al portal';
+  document.getElementById('modal-title').textContent = 'Acceso al portal';
   document.getElementById('modal-subtitle').textContent = hoja;
-  document.getElementById('modal-body').innerHTML = `
+
+  // Check if user already exists
+  let usuarioExistente = null;
+  if (emailInq) {
+    try {
+      const existing = await sbGet('usuarios', `email=eq.${encodeURIComponent(emailInq)}&limit=1`);
+      if (existing.length > 0 && existing[0].aprobado) usuarioExistente = existing[0];
+    } catch(e) {}
+  }
+
+  document.getElementById('modal-body').innerHTML = usuarioExistente ? `
+    <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:10px;padding:1rem;margin-bottom:1rem">
+      <div style="font-weight:600;color:#856404;margin-bottom:0.4rem">⚠ Este inquilino ya tiene acceso creado</div>
+      <p style="font-size:0.82rem;color:#856404">Email: <strong>${usuarioExistente.email}</strong></p>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Email</label>
+        <input id="acc-email" type="email" value="${usuarioExistente.email}" style="margin-top:4px">
+      </div>
+      <div class="form-group">
+        <label>Nombre (para el mensaje)</label>
+        <input id="acc-nombre" type="text" value="${nombreInq}" style="margin-top:4px">
+      </div>
+    </div>
+    <div id="acc-resultado" style="display:none;margin-top:1rem"></div>
+    <div class="form-actions" style="margin-top:1rem">
+      <button class="btn btn-secondary" onclick="openContrato(${contratoId})">← Volver</button>
+      <button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="modificarAccesoInquilino(${contratoId},'${hoja}')">✏️ Modificar acceso</button>
+    </div>
+  ` : `
     <p style="font-size:0.85rem;color:#666;margin-bottom:1.2rem">
       Creá el usuario para que el inquilino pueda acceder al portal. Después avisale por WhatsApp o email que entre con su email y use "¿Olvidaste tu contraseña?" para crear su clave.
     </p>
@@ -1167,6 +1197,43 @@ async function abrirCrearAcceso(contratoId, hoja) {
   `;
   document.getElementById('modal-overlay').dataset.contratoId = '';
   document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function modificarAccesoInquilino(contratoId, hoja) {
+  const email = document.getElementById('acc-email').value.trim();
+  const nombre = document.getElementById('acc-nombre').value.trim();
+  if (!email) { toast('Ingresá el email','error'); return; }
+
+  try {
+    const existing = await sbGet('usuarios', `email=eq.${encodeURIComponent(email)}&limit=1`);
+    if (!existing.length) { toast('Usuario no encontrado','error'); return; }
+
+    const inquilinos = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === contratoId && x.rol === 'inquilino');
+    const personaId = inquilinos[0]?.persona_id || null;
+
+    await sbPatch('usuarios', existing[0].id, {
+      nombre: nombre || existing[0].nombre,
+      persona_id: personaId || existing[0].persona_id
+    });
+
+    const mensaje = `Hola ${nombre||''}! Recordá que podés acceder a tu portal de inquilino en MeGa Consultora. Entrá a https://megaconsultora.github.io/inquilinos con tu email *${email}* y usá "¿Olvidaste tu contraseña?" si no recordás tu clave.`;
+    const msgEncoded = encodeURIComponent(mensaje);
+    window._mensajeAcceso = mensaje;
+
+    document.getElementById('acc-resultado').style.display = 'block';
+    document.getElementById('acc-resultado').innerHTML = `
+      <div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:10px;padding:1rem">
+        <div style="font-weight:600;color:#155724;margin-bottom:0.5rem">✓ Acceso actualizado</div>
+        <div style="background:white;border-radius:8px;padding:0.75rem;font-size:0.82rem;color:#333;margin-bottom:0.75rem;border:1px solid #c3e6cb">${mensaje}</div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+          <button class="btn btn-green" style="font-size:0.82rem" onclick="copiarMensajeAcceso()">📋 Copiar mensaje</button>
+          <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none">💬 Enviar por WhatsApp</a>
+        </div>
+      </div>
+    `;
+    toast('Acceso modificado ✓');
+    await loadAll();
+  } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
 async function crearAccesoInquilino(contratoId, hoja) {
