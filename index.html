@@ -3029,10 +3029,20 @@ function closeModal(e) {
 function toggleInformesMenu(e) {
   e.stopPropagation();
   const menu = document.getElementById('informes-menu');
+  const btn = document.querySelector('#dropdown-informes .tab-btn');
   const isOpen = menu.style.display !== 'none';
-  // Close all other menus first
   document.querySelectorAll('.tab-dropdown-menu').forEach(m => m.style.display='none');
-  menu.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) {
+    // Position relative to button using getBoundingClientRect
+    const rect = btn.getBoundingClientRect();
+    menu.style.display = 'block';
+    menu.style.position = 'fixed';
+    menu.style.top = rect.bottom + 'px';
+    menu.style.left = rect.left + 'px';
+    menu.style.zIndex = '99999';
+    // Move to body to escape overflow clipping
+    document.body.appendChild(menu);
+  }
 }
 
 function selectInforme(tipo) {
