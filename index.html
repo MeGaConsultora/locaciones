@@ -49,6 +49,11 @@
   }
   .tab-btn:hover { color:var(--cream); }
   .tab-btn.active { color:var(--cream); border-bottom-color:var(--accent); }
+  .tab-dropdown { position:relative; height:100%; display:flex; align-items:center; }
+  .tab-dropdown-menu { position:absolute; top:100%; left:0; background:var(--ink2); border-radius:0 0 10px 10px; min-width:200px; z-index:200; box-shadow:0 8px 24px rgba(0,0,0,0.3); overflow:hidden; }
+  .tab-dropdown-menu button { display:block; width:100%; text-align:left; background:none; border:none; color:rgba(255,255,255,0.85); padding:0.75rem 1.2rem; font-family:'DM Sans',sans-serif; font-size:0.85rem; cursor:pointer; transition:background 0.15s; }
+  .tab-dropdown-menu button:hover { background:rgba(255,255,255,0.1); color:white; }
+  .tab-dropdown.active > .tab-btn { color:var(--cream); border-bottom-color:var(--accent); }
 
   main { padding:2rem; max-width:1400px; margin:0 auto; }
   .panel { display:none; }
@@ -306,8 +311,13 @@
   <button class="tab-btn active" onclick="showTab('dashboard',this)">📊 Dashboard</button>
   <button class="tab-btn" onclick="showTab('contratos',this)">📋 Contratos</button>
   <button class="tab-btn" onclick="showTab('vencimientos',this)">📅 Vencimientos</button>
+  <div class="tab-dropdown" id="dropdown-informes">
+    <button class="tab-btn" onclick="toggleInformesMenu(event)">📊 Informes ▾</button>
+    <div class="tab-dropdown-menu" id="informes-menu" style="display:none">
+      <button onclick="selectInforme('mensual')">📅 Resultados mensuales</button>
+    </div>
+  </div>
   <button class="tab-btn" onclick="showTab('clientes',this)">🧑‍🤝‍🧑 Clientes</button>
-  <button class="tab-btn" onclick="showTab('informes',this)">📊 Informes</button>
   <button class="tab-btn" id="tab-admin" onclick="showTab('admin',this)" style="display:none;margin-left:auto">👥 Usuarios</button>
 </nav>
 
