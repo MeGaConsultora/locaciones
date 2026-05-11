@@ -3016,6 +3016,34 @@ function closeModal(e) {
 // ============================================================
 // TABS
 // ============================================================
+function toggleInformesMenu(e) {
+  e.stopPropagation();
+  const menu = document.getElementById('informes-menu');
+  const isOpen = menu.style.display !== 'none';
+  // Close all other menus first
+  document.querySelectorAll('.tab-dropdown-menu').forEach(m => m.style.display='none');
+  menu.style.display = isOpen ? 'none' : 'block';
+}
+
+function selectInforme(tipo) {
+  // Close menu
+  document.getElementById('informes-menu').style.display = 'none';
+  // Activate dropdown button visually
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('#dropdown-informes .tab-btn').classList.add('active');
+  document.querySelector('#dropdown-informes').classList.add('active');
+  // Show panel
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-informes').classList.add('active');
+  populateInformeAnios();
+  renderInforme();
+}
+
+// Close dropdown on outside click
+document.addEventListener('click', () => {
+  document.querySelectorAll('.tab-dropdown-menu').forEach(m => m.style.display='none');
+});
+
 function showTab(name, btn) {
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
