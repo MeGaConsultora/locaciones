@@ -1792,7 +1792,22 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
   const seguro = parseFloat(document.getElementById('gp-seguro')?.value)||0;
   const vence = document.getElementById('gp-vence')?.value||null;
   const comision = alq * (comisionPct/100);
-  const total = alq+epe+agua+tgiu+seguro;
+  
+  // Get current extras for inquilino to include in total
+  let extrasInqTotal = 0;
+  try {
+    const hojaEncoded = encodeURIComponent(hoja);
+    const mes = mesKey+'-01';
+    const existingForExtras = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
+    if (existingForExtras.length > 0) {
+      const extrasDelPago = await sbGet('pagos_extras', `pago_id=eq.${existingForExtras[0].id}&order=id.asc`);
+      extrasInqTotal = extrasDelPago
+        .filter(e => e.a_cargo_de !== 'propietario')
+        .reduce((s,e) => s + ((e.tipo==='credito' ? -1 : 1) * (e.importe||0)), 0);
+    }
+  } catch(e) {}
+  
+  const total = alq+epe+agua+tgiu+seguro+extrasInqTotal;
 
   try {
     const hojaEncoded = encodeURIComponent(hoja);
@@ -1965,17 +1980,20 @@ async function renderInforme() {
   const rows = pagosMes.map(p => {
     const c = DB.contratos.find(x => x.hoja === p.hoja);
     const extrasInq = extras.filter(e => e.pago_id === p.id && e.a_cargo_de !== 'propietario');
-    const extrasInqTotal = extrasInq.reduce((s,e) => s + ((e.tipo==='debito'?1:-1)*(e.importe||0)), 0);
+    // Inquilino: débito suma (+), crédito resta (-)
+    const extrasInqTotal = extrasInq.reduce((s,e) => s + ((e.tipo==='credito'?-1:1)*(e.importe||0)), 0);
     const extrasUnicos = extras.filter(e => e.pago_id === p.id);
-    const abonado = (p.total||0) - (p.saldo||0);
+    // Recalculate total including extras
+    const totalReal = (p.importe_alquiler||0) + (p.monto_epe||0) + (p.monto_agua||0) + (p.monto_tgiu||0) + (p.monto_seguro||0) + extrasInqTotal;
+    const abonado = totalReal - (p.saldo||0);
     const saldo = p.saldo||0;
     const comision = p.comision_8||0;
     const rowColor = saldo <= 0 ? '#e8f5e9' : abonado > 0 ? '#fff8e1' : '#ffebee';
-    return { p, c, extrasInq, extrasInqTotal, extrasUnicos, abonado, saldo, comision, rowColor };
+    return { p, c, extrasInq, extrasInqTotal, extrasUnicos, abonado, saldo, comision, rowColor, totalReal };
   }).sort((a,b) => (a.p.hoja||'').localeCompare(b.p.hoja||''));
 
   // Totals
-  const totTotal = rows.reduce((s,r) => s+(r.p.total||0), 0);
+  const totTotal = rows.reduce((s,r) => s+(r.totalReal||0), 0);
   const totAbonado = rows.reduce((s,r) => s+r.abonado, 0);
   const totSaldo = rows.reduce((s,r) => s+r.saldo, 0);
   const totComision = rows.reduce((s,r) => s+r.comision, 0);
@@ -2020,7 +2038,7 @@ async function renderInforme() {
           ${rows.map(r => `
             <tr style="background:${r.rowColor};cursor:pointer" onclick="openContrato(${r.c?.id||0})">
               <td><strong>${r.p.hoja}</strong></td>
-              <td class="r">${formatMoney(r.p.total)}</td>
+              <td class="r">${formatMoney(r.totalReal)}</td>
               <td class="r" style="color:var(--green)">${r.abonado>0?formatMoney(r.abonado):'—'}</td>
               <td class="r" style="color:${r.saldo>0?'var(--accent)':'var(--green)'}">${r.saldo>0?formatMoney(r.saldo):'✓'}</td>
               <td class="r">${r.comision>0?formatMoney(r.comision):'—'}</td>
