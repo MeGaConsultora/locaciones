@@ -852,7 +852,7 @@ async function openContrato(id) {
       <button class="btn btn-secondary" onclick="openEditContrato(${c.id})">✏️ Editar contrato</button>
       <button class="btn btn-secondary" style="font-size:0.78rem" onclick="imprimirHistorial(${c.id})">🖨️ Imprimir historial</button>
       <button class="btn btn-secondary" style="font-size:0.78rem;color:var(--green);border-color:var(--green)" onclick="abrirCrearAcceso(${c.id},'${c.hoja}')">🔑 Acceso inquilino</button>
-      ${!c.fecha_rescision ? `<button class="btn btn-secondary" style="font-size:0.78rem;color:var(--accent);border-color:var(--accent)" onclick="abrirRescision(${c.id},'${c.hoja}')">✂ Rescindir contrato</button>` : `<span class="badge badge-red" style="font-size:0.78rem">Rescindido ${formatDate(c.fecha_rescision,true)}</span>`}
+      ${!c.fecha_rescision ? '<button class="btn btn-secondary" style="font-size:0.78rem;color:var(--accent);border-color:var(--accent)" onclick="abrirRescision('+c.id+',\''+c.hoja+'\')">✂ Rescindir contrato</button>' : '<span class="badge badge-red" style="font-size:0.78rem">Rescindido '+formatDate(c.fecha_rescision,true)+'</span>'}
     </div>
     <p style="font-size:0.78rem;color:#999;margin-bottom:0.75rem">💡 Clic en un mes para editarlo o registrar cobro</p>
     <div class="detail-grid" style="margin-bottom:1rem">
