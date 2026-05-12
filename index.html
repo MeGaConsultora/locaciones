@@ -1864,7 +1864,10 @@ async function cargarListaServicios() {
     });
 
     panel.innerHTML = `
-      <p style="font-size:0.82rem;color:#888;margin-bottom:0.75rem">${contratos.length} contrato/s · ${sinCargar} sin cargar · ${contratos.length-sinCargar} ya cargados (borde verde)</p>
+      <p style="font-size:0.82rem;color:#888;margin-bottom:0.5rem">
+      ${contratos.length} contrato/s · <strong>${sinCargar}</strong> sin cargar · ${contratos.length-sinCargar} ya cargados
+      ${contratos.length-sinCargar > 0 ? `<button onclick="toggleYaCargados('${srv}')" id="btn-ya-cargados-${srv}" style="background:none;border:none;color:var(--accent);font-size:0.78rem;cursor:pointer;text-decoration:underline;margin-left:8px">▶ Ver/Modificar ya cargados</button>` : ''}
+    </p>
       ${pctWarnings.length ? `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.75rem;font-size:0.82rem">
         ${pctWarnings.map(w => `<div style="margin-bottom:4px">⚠ ${w.msg} 
           ${w.ids.map(id => `<button onclick="openModal2ForContrato(${id})" style="background:none;border:none;color:#856404;text-decoration:underline;cursor:pointer;font-size:0.82rem;padding:0">→ Editar</button>`).join(' ')}
@@ -1896,7 +1899,10 @@ async function cargarListaServicios() {
             </div>`;
         }
         
-        return `<div style="background:var(--cream);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem">
+        const yaCargado = pago && pago[campo] > 0;
+        const totalBoleta = yaCargado ? Math.round(pago[campo] * 100 / (c['pct_'+srv]||100)) : '';
+        const cardClass = yaCargado ? 'ya-cargado-${srv}' : 'sin-cargar-${srv}';
+        return `<div class="${cardClass}" style="${yaCargado?'display:none;':''} background:${yaCargado?'#f0fff4':'var(--cream)'};border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem;border:1.5px solid ${yaCargado?'var(--green)':'transparent'}">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;flex-wrap:wrap">
             <div>
               <strong style="font-size:0.88rem">${c.titulo||c.hoja}</strong>
@@ -1905,10 +1911,10 @@ async function cargarListaServicios() {
             <div>
             <input type="number" id="srv-${srv}-${c.id}" data-hoja="${c.hoja}" data-pago-id="${pago?.id||''}" 
               data-pct="${c['pct_'+srv]||100}"
-              value="${pago && pago[campo] > 0 ? Math.round(pago[campo] * 100 / (c['pct_'+srv]||100)) : ''}"
-              placeholder="$ importe" style="width:130px;padding:5px 8px;border:1.5px solid ${pago&&pago[campo]>0?'var(--green)':'var(--border)'};border-radius:6px;font-size:0.85rem">
+              value="${totalBoleta}"
+              placeholder="$ total boleta" style="width:140px;padding:5px 8px;border:1.5px solid ${yaCargado?'var(--green)':'var(--border)'};border-radius:6px;font-size:0.85rem">
             ${(c['pct_'+srv]||100) < 100 ? `<div style="font-size:0.72rem;color:#856404;margin-top:3px">Total boleta → se guarda el ${c['pct_'+srv]}%</div>` : ''}
-            ${pago&&pago[campo]>0 ? `<div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Cargado: ${formatMoney(pago[campo])}</div>` : ''}
+            ${yaCargado ? `<div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Guardado: ${formatMoney(pago[campo])}</div>` : ''}
           </div>
           </div>
           ${epeExtra}
@@ -2051,6 +2057,15 @@ function actualizarTotalPct(srv) {
   }
 }
 
+function toggleYaCargados(srv) {
+  const btn = document.getElementById(`btn-ya-cargados-${srv}`);
+  const cards = document.querySelectorAll(`.ya-cargado-${srv}`);
+  const visible = cards.length > 0 && cards[0].style.display !== 'none';
+  cards.forEach(c => c.style.display = visible ? 'none' : 'block');
+  if (btn) btn.textContent = visible ? '▶ Ver/Modificar ya cargados' : '▼ Ocultar ya cargados';
+  // Hide by default on load
+}
+
 function copiarMensajeAcceso() {
   if (!window._mensajeAcceso) return;
   navigator.clipboard.writeText(window._mensajeAcceso).then(() => toast('Mensaje copiado ✓'));
@@ -2155,7 +2170,8 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
             const pct = c?.['pct_'+srv] ?? 100;
             const hint = (pct > 0 && pct < 100) ? `<div style="font-size:0.72rem;color:#856404;margin-top:2px">Ingresá el total de la boleta</div>` : '';
             const onInput = `onchange="recalcGP(window._gpComision||8)"`;
-            return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" ${onInput}>${hint}</div>`;
+            const disabledHint = `<div style="font-size:0.72rem;color:#aaa;margin-top:2px">Modificar desde Cargar servicios del mes</div>`;
+            return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" ${onInput} style="background:#f5f5f5;color:#999;cursor:not-allowed" readonly title="Modificar desde Cargar servicios del mes">${disabledHint}</div>`;
           };
           const servs = (c?.servicios_inquilino||'').toLowerCase();
           let fields = '';
@@ -3615,56 +3631,54 @@ async function actualizarContrato(id) {
       const hoja = oldContrato?.hoja || oldContrato?.titulo;
       if (hoja) {
         try {
-          // Find all contracts sharing same nro for each changed service
-          const contratosARecalcular = new Set([hoja]);
+          // Find other contracts sharing same nro (for warning only)
+          const otrosContratos = [];
           for (const srv of pctCambiados) {
-            const nroCampo = `nro_${srv}`;
-            const nro = body[nroCampo] || oldContrato?.[nroCampo];
+            const nro = body[`nro_${srv}`] || oldContrato?.[`nro_${srv}`];
             if (nro) {
-              DB.contratos.filter(c => c[nroCampo] === nro && c.hoja !== hoja)
-                .forEach(c => contratosARecalcular.add(c.hoja));
+              DB.contratos.filter(c => c[`nro_${srv}`] === nro && c.hoja !== hoja)
+                .forEach(c => { if (!otrosContratos.find(x=>x.id===c.id)) otrosContratos.push(c); });
             }
           }
 
-          for (const hojaR of contratosARecalcular) {
-            const cR = DB.contratos.find(x => x.hoja === hojaR);
-            const hojaEncoded = encodeURIComponent(hojaR);
-            const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=gte.${TODAY.substring(0,7)}-01&order=mes.asc&limit=24`);
-            for (const p of pagos) {
-              if (p.pagado && p.pagado !== '0') continue;
-              const updates = {};
-              let changed = false;
-              for (const srv of pctCambiados) {
-                const nroCampo = `nro_${srv}`;
-                const nro = body[nroCampo] || oldContrato?.[nroCampo];
-                if (!nro || cR?.[nroCampo] !== nro) continue; // only if same nro
-                const oldPct = hojaR === hoja ? (oldContrato?.['pct_'+srv] ?? 100) : (cR?.['pct_'+srv] ?? 100);
-                const currentMonto = p['monto_'+srv] || 0;
-                if (currentMonto > 0 && oldPct > 0) {
-                  const totalBill = Math.round(currentMonto * 100 / oldPct);
-                  const newPct = hojaR === hoja ? (body['pct_'+srv] ?? oldPct) : oldPct;
-                  const newMonto = Math.round(totalBill * newPct / 100);
-                  updates['monto_'+srv] = newMonto;
-                  changed = true;
-                }
-              }
-              if (changed) {
-                const alq = p.importe_alquiler || 0;
-                const epe = updates.monto_epe ?? p.monto_epe ?? 0;
-                const agua = updates.monto_agua ?? p.monto_agua ?? 0;
-                const tgiu = updates.monto_tgiu ?? p.monto_tgiu ?? 0;
-                const seguro = updates.monto_seguro ?? p.monto_seguro ?? 0;
-                const internet = updates.monto_internet ?? p.monto_internet ?? 0;
-                const expensas = updates.monto_expensas ?? p.monto_expensas ?? 0;
-                const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
-                const yaAbonado = (p.total||0) - (p.saldo||0);
-                updates.total = newTotal;
-                updates.saldo = Math.max(0, newTotal - yaAbonado);
-                await sbPatch('pagos', p.id, updates);
+          // Only recalculate THIS contract
+          const hojaEncoded = encodeURIComponent(hoja);
+          const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=gte.${TODAY.substring(0,7)}-01&order=mes.asc&limit=24`);
+          for (const p of pagos) {
+            if (p.pagado && p.pagado !== '0') continue;
+            const updates = {};
+            let changed = false;
+            for (const srv of pctCambiados) {
+              const oldPct = oldContrato?.['pct_'+srv] ?? 100;
+              const newPct = body['pct_'+srv] ?? oldPct;
+              const currentMonto = p['monto_'+srv] || 0;
+              if (currentMonto > 0 && oldPct > 0) {
+                const totalBill = Math.round(currentMonto * 100 / oldPct);
+                updates['monto_'+srv] = Math.round(totalBill * newPct / 100);
+                changed = true;
               }
             }
+            if (changed) {
+              const alq = p.importe_alquiler || 0;
+              const epe = updates.monto_epe ?? p.monto_epe ?? 0;
+              const agua = updates.monto_agua ?? p.monto_agua ?? 0;
+              const tgiu = updates.monto_tgiu ?? p.monto_tgiu ?? 0;
+              const seguro = updates.monto_seguro ?? p.monto_seguro ?? 0;
+              const internet = updates.monto_internet ?? p.monto_internet ?? 0;
+              const expensas = updates.monto_expensas ?? p.monto_expensas ?? 0;
+              const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
+              const yaAbonado = (p.total||0) - (p.saldo||0);
+              updates.total = newTotal;
+              updates.saldo = Math.max(0, newTotal - yaAbonado);
+              await sbPatch('pagos', p.id, updates);
+            }
           }
-          toast(`Importes recalculados para ${pctCambiados.map(s=>s.toUpperCase()).join(', ')} ✓`);
+
+          let msg = `Importes recalculados para ${pctCambiados.map(s=>s.toUpperCase()).join(', ')} ✓`;
+          if (otrosContratos.length > 0) {
+            msg += ` — Recordá actualizar también: ${otrosContratos.map(c=>c.titulo||c.hoja).join(', ')}`;
+          }
+          toast(msg, otrosContratos.length ? 'warn' : '');
         } catch(e) { console.error('Error recalculando:', e); }
       }
     }
@@ -3679,10 +3693,20 @@ async function actualizarContrato(id) {
     toast('Contrato actualizado ✓');
     // If editing from services screen, reopen services after save
     if (window._volverAServicios) {
+      const solapaVolver = window._solapaServicios || '';
       window._volverAServicios = false;
+      window._solapaServicios = '';
       await loadAll();
       document.getElementById('modal-overlay').classList.remove('open');
-      setTimeout(abrirCargarServicios, 100);
+      setTimeout(() => {
+        abrirCargarServicios();
+        if (solapaVolver) {
+          setTimeout(() => {
+            const btns = document.querySelectorAll('#modal-body .solapa-btn');
+            btns.forEach(b => { if (b.textContent.trim() === solapaVolver) b.click(); });
+          }, 300);
+        }
+      }, 100);
       return;
     }
 
@@ -3997,8 +4021,18 @@ function closeModal(e) {
     overlay.classList.remove('open');
     overlay.dataset.contratoId = '';
     if (window._volverAServicios) {
+      const solapaVolver = window._solapaServicios || '';
       window._volverAServicios = false;
-      setTimeout(abrirCargarServicios, 100);
+      window._solapaServicios = '';
+      setTimeout(() => {
+        abrirCargarServicios();
+        if (solapaVolver) {
+          setTimeout(() => {
+            const btns = document.querySelectorAll('#modal-body .solapa-btn');
+            btns.forEach(b => { if (b.textContent.trim() === solapaVolver) b.click(); });
+          }, 300);
+        }
+      }, 100);
     } else if (contratoId) {
       openContrato(parseInt(contratoId));
     }
@@ -4011,9 +4045,10 @@ function closeModal2() {
 }
 
 async function openModal2ForContrato(contratoId) {
-  // Mark that we came from services screen
+  // Remember active service tab
+  const tabActiva = document.querySelector('#modal-body .solapa-btn.active')?.textContent?.trim() || '';
   window._volverAServicios = true;
-  // Just open normal edit modal
+  window._solapaServicios = tabActiva;
   openEditContrato(contratoId);
 }
 
