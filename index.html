@@ -1866,7 +1866,10 @@ async function cargarListaServicios() {
               <div style="font-size:0.75rem;color:#888">${c._locatario||c.locatario||'—'}${nro?' · Cta: '+nro:''}</div>
             </div>
             <input type="number" id="srv-${srv}-${c.id}" data-hoja="${c.hoja}" data-pago-id="${pago?.id||''}" 
-              placeholder="$ importe" style="width:120px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem">
+            data-pct="${c['pct_'+srv]??100}"
+            placeholder="$ importe" style="width:120px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem"
+            oninput="this.title='Importe calculado al ${c['pct_'+srv]??100}% = $'+(Math.round(parseFloat(this.value||0)*(${c['pct_'+srv]??100}/100)))">
+          <span style="font-size:0.75rem;color:#888">${(c['pct_'+srv]??100) < 100 ? '('+( c['pct_'+srv]??100)+'%)' : ''}</span>
           </div>
           ${epeExtra}
         </div>`;
@@ -1934,12 +1937,18 @@ async function guardarServicios() {
   // Now update each pago with all changes + recalculate total
   for (const [pagoId, {pago, changes}] of Object.entries(cambiosPorPago)) {
     const alq = pago.importe_alquiler || 0;
-    const epe = changes.monto_epe ?? pago.monto_epe ?? 0;
-    const agua = changes.monto_agua ?? pago.monto_agua ?? 0;
-    const tgiu = changes.monto_tgiu ?? pago.monto_tgiu ?? 0;
-    const seguro = changes.monto_seguro ?? pago.monto_seguro ?? 0;
-    const internet = changes.monto_internet ?? pago.monto_internet ?? 0;
-    const expensas = changes.monto_expensas ?? pago.monto_expensas ?? 0;
+    // Apply pct to services (use stored pct from contrato)
+    const cPago = DB.contratos.find(x => x.hoja === pago.hoja);
+    const applyPct = (val, srv) => {
+      const pct = cPago?.['pct_'+srv] ?? 100;
+      return Math.round(val * (pct / 100) * 100) / 100;
+    };
+    const epe = changes.monto_epe != null ? applyPct(changes.monto_epe, 'epe') : (pago.monto_epe ?? 0);
+    const agua = changes.monto_agua != null ? applyPct(changes.monto_agua, 'agua') : (pago.monto_agua ?? 0);
+    const tgiu = changes.monto_tgiu != null ? applyPct(changes.monto_tgiu, 'tgiu') : (pago.monto_tgiu ?? 0);
+    const seguro = changes.monto_seguro != null ? applyPct(changes.monto_seguro, 'seguro') : (pago.monto_seguro ?? 0);
+    const internet = changes.monto_internet != null ? applyPct(changes.monto_internet, 'internet') : (pago.monto_internet ?? 0);
+    const expensas = changes.monto_expensas != null ? applyPct(changes.monto_expensas, 'expensas') : (pago.monto_expensas ?? 0);
     const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
     const yaAbonado = (pago.total||0) - (pago.saldo||0);
     const nuevoSaldo = Math.max(0, newTotal - yaAbonado);
@@ -1950,6 +1959,18 @@ async function guardarServicios() {
   toast(`${guardados} servicio/s guardados ✓`);
   await loadAll();
   cargarListaServicios();
+}
+
+function actualizarTotalPct(srv) {
+  const inq = parseFloat(document.getElementById(`f-pct-${srv}`)?.value)||0;
+  const prop = parseFloat(document.getElementById(`f-pct-prop-${srv}`)?.value)||0;
+  const total = inq + prop;
+  const el = document.getElementById(`pct-total-${srv}`);
+  if (el) {
+    el.textContent = total + '%';
+    el.style.color = total === 100 ? 'var(--green)' : 'var(--accent)';
+    el.closest('tr').style.background = total === 100 ? '' : '#fff3cd';
+  }
 }
 
 function copiarMensajeAcceso() {
@@ -2977,6 +2998,60 @@ function _abrirFormularioContrato(c, esNuevo) {
       <div class="form-group"><label>N° cuenta Expensas</label><input id="f-nro-expensas" type="text" value="${c.nro_expensas||''}" placeholder="Opcional"></div>
     </div>
 
+    <div class="section-title" style="margin:1rem 0 0.75rem">Servicios que abona el propietario</div>
+    <div style="display:flex;flex-wrap:wrap;gap:0.75rem;background:#f0f4ff;padding:1rem;border-radius:10px;margin-bottom:1rem">
+      ${['EPE','Agua','TGIU','Internet','Expensas','Seguro'].map(s => {
+        const checked = c.servicios_propietario?.includes(s) ? 'checked' : '';
+        return `<label style="display:flex;align-items:center;gap:6px;font-size:0.88rem;cursor:pointer">
+          <input type="checkbox" class="serv-prop-chk" value="${s}" ${checked} style="width:15px;height:15px"> ${s}
+        </label>`;
+      }).join('')}
+    </div>
+
+    <div class="section-title" style="margin:1rem 0 0.75rem">Porcentajes de suministros compartidos</div>
+    <p style="font-size:0.78rem;color:#888;margin-bottom:0.75rem">Si un suministro es compartido entre varios contratos, indicá el % que corresponde a este contrato. Por defecto 100%.</p>
+    <div style="overflow-x:auto;margin-bottom:1rem">
+      <table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+        <thead><tr style="background:var(--ink2);color:white">
+          <th style="padding:6px 10px;text-align:left">Servicio</th>
+          <th style="padding:6px 10px;text-align:center">% Inquilino</th>
+          <th style="padding:6px 10px;text-align:center">% Propietario</th>
+          <th style="padding:6px 10px;text-align:center">Total</th>
+          <th style="padding:6px 10px;text-align:center">¿Se rinde?</th>
+        </tr></thead>
+        <tbody>
+          ${['epe','agua','tgiu','seguro','internet','expensas'].map(s => {
+            const label = s.charAt(0).toUpperCase()+s.slice(1);
+            const pctInq = c['pct_'+s] ?? 100;
+            const pctProp = c['pct_prop_'+s] ?? 0;
+            const total = pctInq + pctProp;
+            const color = total === 100 ? '' : 'background:#fff3cd';
+            const seRinde = c.servicios_rendir_propietario?.includes(label) || false;
+            return `<tr style="border-bottom:1px solid #eee;${color}">
+              <td style="padding:6px 10px;font-weight:600">${label}</td>
+              <td style="padding:6px 10px;text-align:center">
+                <input type="number" id="f-pct-${s}" min="0" max="100" value="${pctInq}" 
+                  style="width:70px;padding:4px;border:1.5px solid var(--border);border-radius:6px;text-align:center;font-size:0.82rem"
+                  oninput="actualizarTotalPct('${s}')">%
+              </td>
+              <td style="padding:6px 10px;text-align:center">
+                <input type="number" id="f-pct-prop-${s}" min="0" max="100" value="${pctProp}" 
+                  style="width:70px;padding:4px;border:1.5px solid var(--border);border-radius:6px;text-align:center;font-size:0.82rem"
+                  oninput="actualizarTotalPct('${s}')">%
+              </td>
+              <td style="padding:6px 10px;text-align:center;font-weight:700" id="pct-total-${s}">${total}%</td>
+              <td style="padding:6px 10px;text-align:center">
+                <label style="display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;font-size:0.8rem">
+                  <input type="checkbox" class="rinde-chk" value="${label}" ${seRinde?'checked':''} style="width:14px;height:14px">
+                  Sí
+                </label>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
     <div class="section-title" style="margin:1.2rem 0 0.75rem">Propietario/s</div>
     <div id="lista-propietarios"></div>
     <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
@@ -3260,6 +3335,20 @@ async function guardarContrato() {
     nro_seguro: document.getElementById('f-nro-seguro')?.value.trim()||null,
     nro_internet: document.getElementById('f-nro-internet')?.value.trim()||null,
     nro_expensas: document.getElementById('f-nro-expensas')?.value.trim()||null,
+    servicios_propietario: [...document.querySelectorAll('.serv-prop-chk:checked')].map(x=>x.value).join(', ')||null,
+    servicios_rendir_propietario: [...document.querySelectorAll('.rinde-chk:checked')].map(x=>x.value).join(', ')||null,
+    pct_epe: parseFloat(document.getElementById('f-pct-epe')?.value)||100,
+    pct_agua: parseFloat(document.getElementById('f-pct-agua')?.value)||100,
+    pct_tgiu: parseFloat(document.getElementById('f-pct-tgiu')?.value)||100,
+    pct_seguro: parseFloat(document.getElementById('f-pct-seguro')?.value)||100,
+    pct_internet: parseFloat(document.getElementById('f-pct-internet')?.value)||100,
+    pct_expensas: parseFloat(document.getElementById('f-pct-expensas')?.value)||100,
+    pct_prop_epe: parseFloat(document.getElementById('f-pct-prop-epe')?.value)||0,
+    pct_prop_agua: parseFloat(document.getElementById('f-pct-prop-agua')?.value)||0,
+    pct_prop_tgiu: parseFloat(document.getElementById('f-pct-prop-tgiu')?.value)||0,
+    pct_prop_seguro: parseFloat(document.getElementById('f-pct-prop-seguro')?.value)||0,
+    pct_prop_internet: parseFloat(document.getElementById('f-pct-prop-internet')?.value)||0,
+    pct_prop_expensas: parseFloat(document.getElementById('f-pct-prop-expensas')?.value)||0,
   };
 
   try {
@@ -3346,6 +3435,20 @@ async function actualizarContrato(id) {
     nro_seguro: document.getElementById('f-nro-seguro')?.value.trim()||null,
     nro_internet: document.getElementById('f-nro-internet')?.value.trim()||null,
     nro_expensas: document.getElementById('f-nro-expensas')?.value.trim()||null,
+    servicios_propietario: [...document.querySelectorAll('.serv-prop-chk:checked')].map(x=>x.value).join(', ')||null,
+    servicios_rendir_propietario: [...document.querySelectorAll('.rinde-chk:checked')].map(x=>x.value).join(', ')||null,
+    pct_epe: parseFloat(document.getElementById('f-pct-epe')?.value)||100,
+    pct_agua: parseFloat(document.getElementById('f-pct-agua')?.value)||100,
+    pct_tgiu: parseFloat(document.getElementById('f-pct-tgiu')?.value)||100,
+    pct_seguro: parseFloat(document.getElementById('f-pct-seguro')?.value)||100,
+    pct_internet: parseFloat(document.getElementById('f-pct-internet')?.value)||100,
+    pct_expensas: parseFloat(document.getElementById('f-pct-expensas')?.value)||100,
+    pct_prop_epe: parseFloat(document.getElementById('f-pct-prop-epe')?.value)||0,
+    pct_prop_agua: parseFloat(document.getElementById('f-pct-prop-agua')?.value)||0,
+    pct_prop_tgiu: parseFloat(document.getElementById('f-pct-prop-tgiu')?.value)||0,
+    pct_prop_seguro: parseFloat(document.getElementById('f-pct-prop-seguro')?.value)||0,
+    pct_prop_internet: parseFloat(document.getElementById('f-pct-prop-internet')?.value)||0,
+    pct_prop_expensas: parseFloat(document.getElementById('f-pct-prop-expensas')?.value)||0,
     propietario_id: propIds[0]||null,
     inquilino_id: inqIds[0]||null,
   };
