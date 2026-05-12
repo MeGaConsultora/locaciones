@@ -1501,90 +1501,110 @@ async function proyectarPeriodo(hoja, desdeKey, importe, periodicidad, diaVenc, 
   return count;
 }
 
-async function abrirActualizacionAlquileres() {
-  // Get contracts that update this month
-  const hoy = TODAY.substring(0,7); // YYYY-MM
-  const [y, m] = hoy.split('-').map(Number);
+function filtrarContratosActualizar() {
+  const mesKey = document.getElementById('act-mes')?.value || TODAY.substring(0,7);
+  const filtroPerio = document.getElementById('act-filtro-perio')?.value || '';
+  const filtroIndice = document.getElementById('act-filtro-indice')?.value || '';
+  const [y, m] = mesKey.split('-').map(Number);
 
-  // Find contracts whose next update falls this month
   const contratos = DB.contratos.filter(c => {
     if (!c.vigencia_desde || !c.periodicidad_actualizacion || c.periodicidad_actualizacion === 'Sin actualización') return false;
     if (c.fecha_rescision) return false;
-    const mesesPeriodo = {
-      'Mensual': 1, 'Bimestral': 2, 'Trimestral': 3,
-      'Cuatrimestral': 4, 'Semestral': 6, 'Anual': 12
-    }[c.periodicidad_actualizacion] || 0;
+    if (getEstado(c) !== 'vigente') return false;
+    if (filtroPerio && c.periodicidad_actualizacion !== filtroPerio) return false;
+    if (filtroIndice && c.indice_actualizacion !== filtroIndice) return false;
+    const mesesPeriodo = {'Mensual':1,'Bimestral':2,'Trimestral':3,'Cuatrimestral':4,'Semestral':6,'Anual':12}[c.periodicidad_actualizacion]||0;
     if (!mesesPeriodo) return false;
-
-    // Check if this month is an update month
     const [sy, sm] = c.vigencia_desde.substring(0,7).split('-').map(Number);
     const mesesTranscurridos = (y - sy) * 12 + (m - sm);
     return mesesTranscurridos > 0 && mesesTranscurridos % mesesPeriodo === 0;
   });
 
+  window._contratosActualizar = contratos;
+  const lista = document.getElementById('act-lista');
+  const count = document.getElementById('act-count');
+  if (count) count.textContent = `${contratos.length} contrato/s`;
+  if (!lista) return;
+
   if (!contratos.length) {
-    toast('No hay contratos que actualicen este mes', 'error');
+    lista.innerHTML = '<div class="empty-state"><p>Sin contratos que actualicen en ese mes con esos filtros</p></div>';
     return;
   }
 
+  const pct = parseFloat(document.getElementById('act-pct')?.value)||0;
+  lista.innerHTML = contratos.map(c => {
+    const ultimoPago = DB.pagos.filter(p => p.hoja===c.hoja && p.importe_alquiler>0).slice(-1)[0];
+    const alqActual = ultimoPago?.importe_alquiler || 0;
+    const nuevo = pct > 0 ? Math.round(alqActual * (1 + pct/100)) : alqActual;
+    return `<div style="background:var(--cream);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem;display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:1rem;flex-wrap:wrap">
+      <div>
+        <strong style="font-size:0.88rem">${c.titulo||c.hoja}</strong>
+        <div style="font-size:0.75rem;color:#888">${c.periodicidad_actualizacion} · ${c.indice_actualizacion||'—'}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:0.72rem;color:#888">Actual</div>
+        <div style="font-weight:700">${formatMoney(alqActual)}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:0.72rem;color:#888">Nuevo</div>
+        <div id="nuevo-${c.id}" style="font-weight:700;color:var(--green)">${pct>0?formatMoney(nuevo):'—'}</div>
+      </div>
+      <input type="number" id="importe-${c.id}" data-hoja="${c.hoja}" data-original="${alqActual}" 
+        value="${nuevo}" style="width:110px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem">
+    </div>`;
+  }).join('');
+}
+
+async function abrirActualizacionAlquileres() {
+  // Get unique periodicidades and indices from active contracts
+  const periodicidades = [...new Set(DB.contratos.filter(c=>c.periodicidad_actualizacion&&c.periodicidad_actualizacion!=='Sin actualización'&&!c.fecha_rescision).map(c=>c.periodicidad_actualizacion))].sort();
+  const indices = [...new Set(DB.contratos.filter(c=>c.indice_actualizacion&&!c.fecha_rescision).map(c=>c.indice_actualizacion))].sort();
+
   document.getElementById('modal-title').textContent = '🔄 Actualización de alquileres';
-  document.getElementById('modal-subtitle').textContent = `${contratos.length} contrato/s actualizan ${hoy.replace('-','/')}`;
+  document.getElementById('modal-subtitle').textContent = 'Proyectá el próximo período';
   document.getElementById('modal-overlay').dataset.contratoId = '';
 
   document.getElementById('modal-body').innerHTML = `
     <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem">
-      <strong>¿Cómo funciona?</strong> Ingresá el % de actualización del índice. El sistema calculará el nuevo alquiler y completará los próximos meses de cada contrato.
+      Seleccioná el mes de actualización, filtrá por periodicidad e índice, ingresá el % y proyectá.
     </div>
     <div class="form-grid" style="margin-bottom:1rem">
       <div class="form-group">
-        <label>% de actualización del índice</label>
+        <label>Mes de actualización</label>
+        <input id="act-mes" type="month" value="${TODAY.substring(0,7)}" style="margin-top:4px" onchange="filtrarContratosActualizar()">
+      </div>
+      <div class="form-group">
+        <label>% de actualización</label>
         <input id="act-pct" type="number" step="0.01" placeholder="Ej: 8.5" style="margin-top:4px" oninput="previsualizarActualizacion()">
       </div>
+      <div class="form-group">
+        <label>Periodicidad</label>
+        <select id="act-filtro-perio" style="margin-top:4px" onchange="filtrarContratosActualizar()">
+          <option value="">Todas</option>
+          ${periodicidades.map(p=>`<option value="${p}">${p}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Índice</label>
+        <select id="act-filtro-indice" style="margin-top:4px" onchange="filtrarContratosActualizar()">
+          <option value="">Todos</option>
+          ${indices.map(i=>`<option value="${i}">${i}</option>`).join('')}
+        </select>
+      </div>
     </div>
-    <div id="act-lista" style="max-height:400px;overflow-y:auto">
-      ${contratos.map(c => {
-        const ultimoPago = DB.pagos.filter(p => p.hoja===c.hoja && p.importe_alquiler>0).slice(-1)[0];
-        const alqActual = ultimoPago?.importe_alquiler || 0;
-        return `<div style="background:var(--cream);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
-          <div>
-            <strong style="font-size:0.88rem">${c.titulo||c.hoja}</strong>
-            <div style="font-size:0.75rem;color:#888">${c.periodicidad_actualizacion} · ${c.indice_actualizacion||'—'}</div>
-          </div>
-          <div style="text-align:right">
-            <div style="font-size:0.78rem;color:#888">Alquiler actual</div>
-            <div style="font-weight:700">${formatMoney(alqActual)}</div>
-          </div>
-          <div style="text-align:right">
-            <div style="font-size:0.78rem;color:#888">Nuevo alquiler</div>
-            <div id="nuevo-${c.id}" style="font-weight:700;color:var(--green)">—</div>
-          </div>
-          <input type="number" id="importe-${c.id}" data-hoja="${c.hoja}" data-original="${alqActual}" 
-            value="${alqActual}" style="width:120px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem">
-        </div>`;
-      }).join('')}
-    </div>
+    <div style="font-size:0.82rem;color:#888;margin-bottom:0.5rem"><span id="act-count">—</span> que actualizan ese mes</div>
+    <div id="act-lista" style="max-height:350px;overflow-y:auto"></div>
     <div class="form-actions" style="margin-top:1rem">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="confirmarActualizacion()">✓ Actualizar y proyectar</button>
     </div>
   `;
   document.getElementById('modal-overlay').classList.add('open');
-  window._contratosActualizar = contratos;
+  setTimeout(filtrarContratosActualizar, 50);
 }
 
 function previsualizarActualizacion() {
-  const pct = parseFloat(document.getElementById('act-pct')?.value)||0;
-  const contratos = window._contratosActualizar || [];
-  contratos.forEach(c => {
-    const input = document.getElementById(`importe-${c.id}`);
-    const nuevoEl = document.getElementById(`nuevo-${c.id}`);
-    if (input && nuevoEl) {
-      const original = parseFloat(input.dataset.original)||0;
-      const nuevo = Math.round(original * (1 + pct/100));
-      input.value = nuevo;
-      nuevoEl.textContent = formatMoney(nuevo);
-    }
-  });
+  filtrarContratosActualizar();
 }
 
 async function confirmarActualizacion() {
@@ -3006,6 +3026,10 @@ function openEditContrato(id) {
       <div class="form-group"><label>Interés punitorio diario (%)</label>
         <input id="f-interes" type="number" min="0" step="0.001" value="${c.interes_punitorio||0}">
       </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Importe alquiler vigente <span style="font-size:0.75rem;color:#888">(opcional — si lo modificás, se re-proyectan los meses del período actual)</span></label>
+        <input id="f-importe-inicial" type="number" value="${(() => { const up = DB.pagos.filter(p=>p.hoja===c.hoja&&p.importe_alquiler>0).slice(-1)[0]; return up?.importe_alquiler||''; })()||''}" placeholder="0" style="border-color:var(--green);margin-top:4px">
+      </div>
     </div>
 
     <div class="section-title" style="margin:1rem 0 0.75rem">Servicios e impuestos a cargo del inquilino</div>
@@ -3106,6 +3130,14 @@ async function actualizarContrato(id) {
       await sbPost('contrato_personas', {contrato_id:id, persona_id:inqIds[i], rol:'inquilino', orden:i+1});
     }
     toast('Contrato actualizado ✓');
+
+    // Re-project if importe was changed
+    const nuevoImporte = parseFloat(document.getElementById('f-importe-inicial')?.value)||0;
+    if (nuevoImporte > 0) {
+      const cActualizado = { ...DB.contratos.find(x=>x.id===id), ...body };
+      await proyectarPeriodo(cActualizado.hoja||cActualizado.titulo, TODAY.substring(0,7), nuevoImporte, cActualizado.periodicidad_actualizacion, cActualizado.dia_vencimiento||10, cActualizado.modalidad_pago||'ADELANTADO');
+      toast('Alquiler re-proyectado ✓');
+    }
     
     // Check for months outside new vigencia
     const nuevaDesde = document.getElementById('f-desde').value;
