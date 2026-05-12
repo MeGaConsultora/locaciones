@@ -1797,6 +1797,7 @@ function toggleCuota2Option(contratoId, cuota) {
 
 async function cargarListaServicios() {
   const mesKey = document.getElementById('srv-mes')?.value;
+  console.log('cargarListaServicios called, mesKey:', mesKey, 'srv-epe exists:', !!document.getElementById('srv-epe'));
   if (!mesKey) return;
   // Check if panels exist yet
   if (!document.getElementById('srv-epe')) {
@@ -1878,6 +1879,47 @@ async function cargarListaServicios() {
       }
     });
 
+    // Build sinCargar HTML - grouped by nro
+    const agruparSinCargar = (lista) => {
+      const grupos = {};
+      lista.forEach(c => {
+        const nro = c[`nro_${srv}`] || `_solo_${c.id}`;
+        if (!grupos[nro]) grupos[nro] = { nro: c[`nro_${srv}`]||'', contratos: [] };
+        grupos[nro].contratos.push(c);
+      });
+      return Object.values(grupos).map(g => {
+        const totalPct = g.contratos.reduce((s,c) => s+(c['pct_'+srv]||100)+(c['pct_prop_'+srv]||0), 0);
+        const pctOk = Math.abs(totalPct - 100) < 1;
+        const detalle = g.contratos.map(c => `${c.titulo||c.hoja} (${c['pct_'+srv]||100}%)`).join(', ');
+        const hojas = g.contratos.map(c => c.hoja).join('|');
+        const ids = g.contratos.map(c => c.id).join(',');
+        let epeExtra = '';
+        if (srv === 'epe' && g.contratos.length > 0) {
+          const c0 = g.contratos[0];
+          const venceAntesMes = c0.vigencia_hasta && c0.vigencia_hasta < mesNext + '-01';
+          epeExtra = `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:6px">
+            <select id="srv-epe-cuota-${c0.id}" style="padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.8rem" onchange="toggleCuota2Option(${c0.id},this.value)">
+              <option value="1">Cuota 1</option><option value="2">Cuota 2</option>
+            </select>
+            ${!venceAntesMes ? `<div id="srv-epe-cuota2-wrap-${c0.id}" style="display:flex"><label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;cursor:pointer"><input type="checkbox" id="srv-epe-cuota2-${c0.id}" data-hoja="${hojas}" data-next="${mesNext}" style="width:14px;height:14px"> Cargar cuota 2 en ${mesNext.replace('-','/')}</label></div>` : `<span style="font-size:0.78rem;color:var(--accent)">⚠ Contrato vence antes de ${mesNext.replace('-','/')}</span>`}
+          </div>`;
+        }
+        return `<div style="background:${pctOk?'var(--cream)':'#fff8e1'};border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;flex-wrap:wrap">
+            <div style="flex:1">
+              <strong style="font-size:0.88rem">${g.nro ? 'Cta: '+g.nro : g.contratos[0].titulo||g.contratos[0].hoja}</strong>
+              <div style="font-size:0.75rem;color:#666;margin-top:2px">${detalle}</div>
+              ${!pctOk ? `<div style="font-size:0.72rem;color:var(--accent);margin-top:2px">⚠ Los % suman ${totalPct}% — deben ser 100%</div>` : ''}
+            </div>
+            <div><input type="number" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}" placeholder="$ total boleta" style="width:150px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem" ${!pctOk ? 'disabled title="Corregí los porcentajes primero"' : ''}></div>
+          </div>
+          ${epeExtra}
+        </div>`;
+      }).join('');
+    };
+
+
+
     // Build cargados HTML
     const cargadosHtml = cargados.map(c => {
       const pago = pagosPorHoja[c.hoja];
@@ -1910,7 +1952,7 @@ async function cargarListaServicios() {
         </div>`).join('')}
       </div>` : ''}
       ${cargadosHtml}
-      ${sinCargarHtml}
+      ${agruparSinCargar(contratos)}
     `;
   }
 }
