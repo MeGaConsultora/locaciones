@@ -1832,23 +1832,34 @@ async function cargarListaServicios() {
       return `${ny}-${String(nm).padStart(2,'0')}`;
     })();
 
-    // Check pct sum - always must equal 100%
+    // Check pct sum - use ALL contracts with same nro (not just current list)
     const nroCampo = `nro_${srv}`;
     const pctWarnings = [];
     const nrosVistos = {};
-    // Group by nro
-    contratos.forEach(c => {
-      const nro = c[nroCampo] || `_solo_${c.id}`;
-      if (!nrosVistos[nro]) nrosVistos[nro] = { contratos: [], totalPct: 0, shared: !!c[nroCampo] };
+    // Use ALL DB contracts for shared nro validation
+    const todosContratos = DB.contratos.filter(c => c[nroCampo]);
+    todosContratos.forEach(c => {
+      const nro = c[nroCampo];
+      if (!nrosVistos[nro]) nrosVistos[nro] = { contratos: [], totalPct: 0 };
       nrosVistos[nro].contratos.push(c);
       nrosVistos[nro].totalPct += (c['pct_'+srv]??100) + (c['pct_prop_'+srv]??0);
     });
-    // Check each group
+    // Check shared nros
     Object.entries(nrosVistos).forEach(([nro, data]) => {
       if (Math.abs(data.totalPct - 100) > 0.5) {
-        const label = data.shared ? `Nro ${nro}` : data.contratos[0].titulo||data.contratos[0].hoja;
-        const ids = data.contratos.map(c=>c.id);
-        pctWarnings.push({ msg: `${label}: suma ${data.totalPct}% (debería ser 100%)`, ids });
+        // Only warn if at least one contract from this nro is in the current list
+        const enLista = data.contratos.some(c => contratos.find(x=>x.id===c.id));
+        if (enLista) {
+          const ids = data.contratos.map(c=>c.id);
+          pctWarnings.push({ msg: `Nro ${nro} (${data.contratos.map(c=>c.titulo||c.hoja).join(', ')}): suman ${data.totalPct}% (debería ser 100%)`, ids });
+        }
+      }
+    });
+    // Individual contracts without nro
+    contratos.filter(c => !c[nroCampo]).forEach(c => {
+      const total = (c['pct_'+srv]??100) + (c['pct_prop_'+srv]??0);
+      if (Math.abs(total - 100) > 0.5) {
+        pctWarnings.push({ msg: `${c.titulo||c.hoja}: suma ${total}% (debería ser 100%)`, ids: [c.id] });
       }
     });
 
@@ -3926,7 +3937,9 @@ function closeModal2() {
   const el = document.getElementById('modal2-overlay');
   if (el) el.style.display = 'none';
   // Refresh services list if services modal is still open
-  if (document.getElementById('modal-overlay').classList.contains('open')) {
+  const servicesOpen = document.getElementById('modal-overlay').classList.contains('open') &&
+    document.querySelector('#modal-overlay .modal-title')?.textContent?.includes('Cargar servicios');
+  if (servicesOpen) {
     setTimeout(cargarListaServicios, 200);
   }
 }
@@ -4694,7 +4707,7 @@ setInterval(async () => {
 </script>
 
   <!-- MODAL2 for editing contracts from services screen -->
-  <div id="modal2-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:1100;display:none;align-items:flex-start;justify-content:center;padding:2rem 1rem;overflow-y:auto">
+  <div id="modal2-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.75) !important;z-index:1100;display:none;align-items:flex-start;justify-content:center;padding:2rem 1rem;overflow-y:auto;backdrop-filter:blur(2px)">
     <div class="modal-box" style="max-height:90vh;overflow-y:auto;width:100%;max-width:860px">
       <div class="modal-header">
         <div>
