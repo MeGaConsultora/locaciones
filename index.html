@@ -3610,10 +3610,13 @@ async function actualizarContrato(id) {
       await sbPost('contrato_personas', {contrato_id:id, persona_id:inqIds[i], rol:'inquilino', orden:i+1});
     }
     toast('Contrato actualizado ✓');
-    // If editing from modal2, close modal2 and refresh services
-    if (document.getElementById('modal2-overlay').classList.contains('open')) {
+    // If editing from modal2, close it and reopen services
+    const modal2El = document.getElementById('modal2-overlay');
+    if (modal2El && modal2El.style.display === 'flex') {
       await loadAll();
-      closeModal2();
+      modal2El.style.display = 'none';
+      document.getElementById('modal-overlay').classList.add('open');
+      setTimeout(cargarListaServicios, 200);
       return;
     }
 
@@ -3936,12 +3939,9 @@ function closeModal(e) {
 function closeModal2() {
   const el = document.getElementById('modal2-overlay');
   if (el) el.style.display = 'none';
-  // Refresh services list if services modal is still open
-  const servicesOpen = document.getElementById('modal-overlay').classList.contains('open') &&
-    document.querySelector('#modal-overlay .modal-title')?.textContent?.includes('Cargar servicios');
-  if (servicesOpen) {
-    setTimeout(cargarListaServicios, 200);
-  }
+  // Reopen services modal and refresh
+  document.getElementById('modal-overlay').classList.add('open');
+  setTimeout(cargarListaServicios, 200);
 }
 
 async function openModal2ForContrato(contratoId) {
@@ -4707,7 +4707,7 @@ setInterval(async () => {
 </script>
 
   <!-- MODAL2 for editing contracts from services screen -->
-  <div id="modal2-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.75) !important;z-index:1100;display:none;align-items:flex-start;justify-content:center;padding:2rem 1rem;overflow-y:auto;backdrop-filter:blur(2px)">
+  <div id="modal2-overlay" style="position:fixed;inset:0;background:#000000cc;z-index:1100;display:none;align-items:flex-start;justify-content:center;padding:2rem 1rem;overflow-y:auto">
     <div class="modal-box" style="max-height:90vh;overflow-y:auto;width:100%;max-width:860px">
       <div class="modal-header">
         <div>
