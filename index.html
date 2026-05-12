@@ -1820,9 +1820,10 @@ async function cargarListaServicios() {
     if (!panel) continue;
 
     if (!contratos.length) {
-      panel.innerHTML = `<div class="empty-state"><div class="icon">✓</div><p>Todos los contratos ya tienen ${label} cargada este mes</p></div>`;
+      panel.innerHTML = `<div class="empty-state"><div class="icon">✓</div><p>No hay contratos con ${label} a cargo del inquilino</p></div>`;
       continue;
     }
+    const sinCargar = contratos.filter(c => { const p = pagosPorHoja[c.hoja]; return !p || !p[campo] || p[campo] === 0; }).length;
 
     const mesNext = (() => {
       const [y, m] = mesKey.split('-').map(Number);
@@ -1832,7 +1833,7 @@ async function cargarListaServicios() {
     })();
 
     panel.innerHTML = `
-      <p style="font-size:0.82rem;color:#888;margin-bottom:0.75rem">${contratos.length} contrato/s sin ${label} cargada</p>
+      <p style="font-size:0.82rem;color:#888;margin-bottom:0.75rem">${contratos.length} contrato/s · ${sinCargar} sin cargar · ${contratos.length-sinCargar} ya cargados (borde verde)</p>
       ${contratos.map(c => {
         const nroMap = { epe: c.nro_epe, agua: c.nro_agua, tgiu: c.nro_tgiu, seguro: c.nro_seguro, internet: c.nro_internet, expensas: c.nro_expensas };
         const nro = nroMap[srv] || '';
@@ -1865,11 +1866,14 @@ async function cargarListaServicios() {
               <strong style="font-size:0.88rem">${c.titulo||c.hoja}</strong>
               <div style="font-size:0.75rem;color:#888">${c._locatario||c.locatario||'—'}${nro?' · Cta: '+nro:''}</div>
             </div>
+            <div>
             <input type="number" id="srv-${srv}-${c.id}" data-hoja="${c.hoja}" data-pago-id="${pago?.id||''}" 
-            data-pct="${c['pct_'+srv]??100}"
-            placeholder="$ importe" style="width:120px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem"
-            oninput="this.title='Importe calculado al ${c['pct_'+srv]??100}% = $'+(Math.round(parseFloat(this.value||0)*(${c['pct_'+srv]??100}/100)))">
-          ${(c['pct_'+srv]??100) < 100 ? `<div style="font-size:0.72rem;color:#856404;margin-top:3px">Ingresá el total de la boleta — se guardará el ${c['pct_'+srv]}%</div>` : ''}
+              data-pct="${c['pct_'+srv]??100}"
+              value="${pago && pago[campo] > 0 ? Math.round(pago[campo] * 100 / (c['pct_'+srv]||100)) : ''}"
+              placeholder="$ importe" style="width:130px;padding:5px 8px;border:1.5px solid ${pago&&pago[campo]>0?'var(--green)':'var(--border)'};border-radius:6px;font-size:0.85rem">
+            ${(c['pct_'+srv]??100) < 100 ? `<div style="font-size:0.72rem;color:#856404;margin-top:3px">Total boleta → se guarda el ${c['pct_'+srv]}%</div>` : ''}
+            ${pago&&pago[campo]>0 ? `<div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Cargado: ${formatMoney(pago[campo])}</div>` : ''}
+          </div>
           </div>
           ${epeExtra}
         </div>`;
@@ -1948,17 +1952,17 @@ async function guardarServicios() {
       const fresh = await sbGet('contratos', `hoja=eq.${encodeURIComponent(pago.hoja)}&select=pct_epe,pct_agua,pct_tgiu,pct_seguro,pct_internet,pct_expensas,pct_prop_epe,pct_prop_agua,pct_prop_tgiu,pct_prop_seguro,pct_prop_internet,pct_prop_expensas&limit=1`);
       if (fresh.length) pctData = { ...cPago, ...fresh[0] };
     } catch(e) {}
-    console.log('DEBUG pctData for', pago.hoja, ':', JSON.stringify({pct_agua: pctData?.pct_agua, pct_epe: pctData?.pct_epe}));
     const applyPct = (val, srv) => {
       const pct = pctData?.['pct_'+srv] ?? 100;
       return Math.round(val * pct / 100);
     };
-    const epe = changes.monto_epe != null ? applyPct(changes.monto_epe, 'epe') : (pago.monto_epe ?? 0);
-    const agua = changes.monto_agua != null ? applyPct(changes.monto_agua, 'agua') : (pago.monto_agua ?? 0);
-    const tgiu = changes.monto_tgiu != null ? applyPct(changes.monto_tgiu, 'tgiu') : (pago.monto_tgiu ?? 0);
-    const seguro = changes.monto_seguro != null ? applyPct(changes.monto_seguro, 'seguro') : (pago.monto_seguro ?? 0);
-    const internet = changes.monto_internet != null ? applyPct(changes.monto_internet, 'internet') : (pago.monto_internet ?? 0);
-    const expensas = changes.monto_expensas != null ? applyPct(changes.monto_expensas, 'expensas') : (pago.monto_expensas ?? 0);
+    // Use 'in' operator to check if key exists in changes (undefined != null is false in JS!)
+    const epe = 'monto_epe' in changes ? applyPct(changes.monto_epe, 'epe') : (pago.monto_epe ?? 0);
+    const agua = 'monto_agua' in changes ? applyPct(changes.monto_agua, 'agua') : (pago.monto_agua ?? 0);
+    const tgiu = 'monto_tgiu' in changes ? applyPct(changes.monto_tgiu, 'tgiu') : (pago.monto_tgiu ?? 0);
+    const seguro = 'monto_seguro' in changes ? applyPct(changes.monto_seguro, 'seguro') : (pago.monto_seguro ?? 0);
+    const internet = 'monto_internet' in changes ? applyPct(changes.monto_internet, 'internet') : (pago.monto_internet ?? 0);
+    const expensas = 'monto_expensas' in changes ? applyPct(changes.monto_expensas, 'expensas') : (pago.monto_expensas ?? 0);
     const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
     const yaAbonado = (pago.total||0) - (pago.saldo||0);
     const nuevoSaldo = Math.max(0, newTotal - yaAbonado);
@@ -2090,12 +2094,23 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       <div class="form-grid">
         <div class="form-group"><label>Fecha vencimiento</label><input id="gp-vence" type="date" value="${p?.fecha_pago_hasta?.substring(0,10) || calcularFechaVencimiento(mesKey, c)}"></div>
         <div class="form-group"><label>Alquiler</label><input id="gp-alquiler" type="number" value="${p?.importe_alquiler||''}" placeholder="0" oninput="recalcGP(${comisionPct})"></div>
-        <div class="form-group"><label>EPE</label><input id="gp-epe" type="number" value="${p?.monto_epe||''}" placeholder="0"></div>
-        <div class="form-group"><label>Agua</label><input id="gp-agua" type="number" value="${p?.monto_agua||''}" placeholder="0"></div>
-        <div class="form-group"><label>TGIU</label><input id="gp-tgiu" type="number" value="${p?.monto_tgiu||''}" placeholder="0"></div>
-        <div class="form-group"><label>Seguro</label><input id="gp-seguro" type="number" value="${p?.monto_seguro||''}" placeholder="0"></div>
-        ${c?.servicios_inquilino?.toLowerCase().includes('internet')?`<div class="form-group"><label>Internet</label><input id="gp-internet" type="number" value="${p?.monto_internet||''}" placeholder="0"></div>`:''}
-        ${c?.servicios_inquilino?.toLowerCase().includes('expensas')?`<div class="form-group"><label>Expensas</label><input id="gp-expensas" type="number" value="${p?.monto_expensas||''}" placeholder="0"></div>`:''}
+        ${(() => {
+          const mkSrvField = (id, label, val, srv) => {
+            const pct = c?.['pct_'+srv] ?? 100;
+            const hint = pct < 100 ? `<div style="font-size:0.72rem;color:#856404;margin-top:2px">Ingresá total boleta — se guardará el ${pct}% = <span id="${id}-calc">?</span></div>` : '';
+            const onInput = pct < 100 ? `onchange="document.getElementById('${id}-calc').textContent=formatMoney(Math.round((parseFloat(this.value)||0)*${pct}/100));recalcGP(window._gpComision||8)"` : `onchange="recalcGP(window._gpComision||8)"`;
+            return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" ${onInput}>${hint}</div>`;
+          };
+          const servs = (c?.servicios_inquilino||'').toLowerCase();
+          let fields = '';
+          fields += mkSrvField('gp-epe','EPE', p?.monto_epe, 'epe');
+          fields += mkSrvField('gp-agua','Agua', p?.monto_agua, 'agua');
+          fields += mkSrvField('gp-tgiu','TGIU', p?.monto_tgiu, 'tgiu');
+          fields += mkSrvField('gp-seguro','Seguro', p?.monto_seguro, 'seguro');
+          if (servs.includes('internet')) fields += mkSrvField('gp-internet','Internet', p?.monto_internet, 'internet');
+          if (servs.includes('expensas')) fields += mkSrvField('gp-expensas','Expensas', p?.monto_expensas, 'expensas');
+          return fields;
+        })()}
         <div class="form-group"><label>Comisión (${comisionPct}%)</label><input id="gp-comision" type="number" value="${comisionMonto.toFixed(2)}" placeholder="0" readonly style="background:#f5f5f5"></div>
       </div>
 
@@ -2409,10 +2424,17 @@ async function eliminarExtraGP(extraId, hoja, contratoId, mesKey, comisionPct) {
 async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
   const mes = mesKey+'-01';
   const alq = parseFloat(document.getElementById('gp-alquiler')?.value)||0;
-  const epe = parseFloat(document.getElementById('gp-epe')?.value)||0;
-  const agua = parseFloat(document.getElementById('gp-agua')?.value)||0;
-  const tgiu = parseFloat(document.getElementById('gp-tgiu')?.value)||0;
-  const seguro = parseFloat(document.getElementById('gp-seguro')?.value)||0;
+  const applyFieldPct = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return 0;
+    const val = parseFloat(el.value)||0;
+    const pct = parseFloat(el.dataset.pct)||100;
+    return Math.round(val * pct / 100);
+  };
+  const epe = applyFieldPct('gp-epe');
+  const agua = applyFieldPct('gp-agua');
+  const tgiu = applyFieldPct('gp-tgiu');
+  const seguro = applyFieldPct('gp-seguro');
   const vence = document.getElementById('gp-vence')?.value||null;
   const comision = alq * (comisionPct/100);
   
@@ -2444,16 +2466,16 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       const totalAnterior = existing[0].total||0;
       const yaAbonado = totalAnterior - saldoActual;
       const nuevoSaldo = Math.max(0, total - yaAbonado);
-      const internetVal = parseFloat(document.getElementById('gp-internet')?.value)||0;
-      const expensasVal = parseFloat(document.getElementById('gp-expensas')?.value)||0;
+      const internetVal = applyFieldPct('gp-internet');
+      const expensasVal = applyFieldPct('gp-expensas');
       await sbPatch('pagos', pagoId, {
         importe_alquiler:alq, monto_epe:epe, monto_agua:agua,
         monto_tgiu:tgiu, monto_seguro:seguro, monto_internet:internetVal, monto_expensas:expensasVal, total,
         comision_8:comision, fecha_pago_hasta:vence, saldo:nuevoSaldo
       });
     } else {
-      const internetNew = parseFloat(document.getElementById('gp-internet')?.value)||0;
-      const expensasNew = parseFloat(document.getElementById('gp-expensas')?.value)||0;
+      const internetNew = applyFieldPct('gp-internet');
+      const expensasNew = applyFieldPct('gp-expensas');
       const r = await sbPost('pagos', {
         hoja, mes, corresponde_a_mes:mes,
         importe_alquiler:alq, monto_epe:epe, monto_agua:agua,
