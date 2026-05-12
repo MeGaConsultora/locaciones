@@ -1961,7 +1961,15 @@ async function guardarServicios() {
     const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
     const yaAbonado = (pago.total||0) - (pago.saldo||0);
     const nuevoSaldo = Math.max(0, newTotal - yaAbonado);
-    await sbPatch('pagos', parseInt(pagoId), { ...changes, total: newTotal, saldo: nuevoSaldo });
+    // Build patch with pct-applied values (NOT ...changes which has original totals)
+    const patch = { total: newTotal, saldo: nuevoSaldo };
+    if (changes.monto_epe != null) patch.monto_epe = epe;
+    if (changes.monto_agua != null) patch.monto_agua = agua;
+    if (changes.monto_tgiu != null) patch.monto_tgiu = tgiu;
+    if (changes.monto_seguro != null) patch.monto_seguro = seguro;
+    if (changes.monto_internet != null) patch.monto_internet = internet;
+    if (changes.monto_expensas != null) patch.monto_expensas = expensas;
+    await sbPatch('pagos', parseInt(pagoId), patch);
     guardados++;
   }
 
