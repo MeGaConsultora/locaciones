@@ -1759,7 +1759,7 @@ async function confirmarProyeccionContrato(contratoId, hoja) {
 
 async function abrirCargarServicios() {
   document.getElementById('modal-title').textContent = '⚡ Cargar servicios del mes';
-  document.getElementById('modal-subtitle').textContent = 'EPE · Agua · TGIU';
+  document.getElementById('modal-subtitle').textContent = '';
   document.getElementById('modal-overlay').dataset.contratoId = '';
 
   document.getElementById('modal-body').innerHTML = `
@@ -1798,12 +1798,8 @@ async function abrirCargarServicios() {
 
 function filtrarServiciosBusqueda() {
   const q = (document.getElementById('srv-buscar')?.value||'').toLowerCase().trim();
-  const cards = document.querySelectorAll('#modal-body [style*="border-radius:8px"][style*="padding:0.75rem"]');
-  cards.forEach(card => {
-    if (!q) { card.style.display = ''; return; }
-    const text = card.textContent.toLowerCase();
-    card.style.display = text.includes(q) ? '' : 'none';
-  });
+  // Re-run cargarListaServicios with filter
+  cargarListaServicios(q);
 }
 
 function toggleCuota2Option(contratoId, cuota) {
@@ -1811,13 +1807,11 @@ function toggleCuota2Option(contratoId, cuota) {
   if (div) div.style.display = cuota === '2' ? 'none' : 'flex';
 }
 
-async function cargarListaServicios() {
+async function cargarListaServicios(filtro='') {
   const mesKey = document.getElementById('srv-mes')?.value;
-  console.log('cargarListaServicios called, mesKey:', mesKey, 'srv-epe exists:', !!document.getElementById('srv-epe'));
   if (!mesKey) return;
-  // Check if panels exist yet
   if (!document.getElementById('srv-epe')) {
-    setTimeout(cargarListaServicios, 200);
+    setTimeout(() => cargarListaServicios(filtro), 200);
     return;
   }
   const mes = mesKey + '-01';
@@ -1840,7 +1834,9 @@ async function cargarListaServicios() {
     const todosConServicio = DB.contratos.filter(c => {
       if (getEstado(c) === 'rescindido') return false;
       const servicios = (c.servicios_inquilino||'').toLowerCase();
-      return servicios.includes(srv);
+      if (!servicios.includes(srv)) return false;
+      if (filtro && !(c.titulo||c.hoja||'').toLowerCase().includes(filtro)) return false;
+      return true;
     });
 
     const panelId = `srv-${srv}`;
@@ -1927,7 +1923,7 @@ async function cargarListaServicios() {
               <div style="font-size:0.75rem;color:#666;margin-top:2px">${detalle}</div>
               ${!pctOk ? `<div style="font-size:0.72rem;color:var(--accent);margin-top:2px">⚠ Los % suman ${totalPct}% — deben ser 100%</div>` : ''}
             </div>
-            <div><input type="number" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}" placeholder="$ importe cuota del mes" style="width:150px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem" ${!pctOk ? 'disabled title="Corregí los porcentajes primero"' : ''}></div>
+            <div><input type="number" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}" placeholder="$ importe cuota" style="width:150px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem" ${!pctOk ? 'disabled title="Corregí los porcentajes primero"' : ''}></div>
           </div>
           ${epeExtra}
         </div>`;
@@ -1950,7 +1946,7 @@ async function cargarListaServicios() {
           <div>
             <input type="number" id="srv-${srv}-${c.id}" data-hoja="${c.hoja}" data-pago-id="${pago?.id||''}"
               data-pct="${c['pct_'+srv]||100}" value="${totalBoleta}"
-              placeholder="$ importe cuota del mes" style="width:140px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem">
+              placeholder="$ importe cuota" style="width:140px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem">
             <div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Guardado: ${formatMoney(pago[campo])}</div>
           </div>
         </div>
