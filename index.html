@@ -3350,6 +3350,17 @@ function openEditContrato(id) {
       }).join('')}
     </div>
 
+    <div class="section-title" style="margin:1rem 0 0.75rem">Números de identificación de servicios</div>
+    <p style="font-size:0.78rem;color:#888;margin-bottom:0.75rem">Solo para servicios que paga el inquilino</p>
+    <div class="form-grid">
+      <div class="form-group"><label>N° cuenta EPE</label><input id="f-nro-epe" type="text" value="${c.nro_epe||''}"></div>
+      <div class="form-group"><label>N° cuenta Agua</label><input id="f-nro-agua" type="text" value="${c.nro_agua||''}"></div>
+      <div class="form-group"><label>N° cuenta TGIU</label><input id="f-nro-tgiu" type="text" value="${c.nro_tgiu||''}"></div>
+      <div class="form-group"><label>N° cuenta Seguro</label><input id="f-nro-seguro" type="text" value="${c.nro_seguro||''}"></div>
+      <div class="form-group"><label>N° cuenta Internet</label><input id="f-nro-internet" type="text" value="${c.nro_internet||''}"></div>
+      <div class="form-group"><label>N° cuenta Expensas</label><input id="f-nro-expensas" type="text" value="${c.nro_expensas||''}"></div>
+    </div>
+
     <div class="section-title" style="margin:1rem 0 0.75rem">Propietario/s</div>
     <div id="lista-propietarios">
       ${propietarios.map((cp,i) => {
@@ -3384,17 +3395,6 @@ function openEditContrato(id) {
     <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
       <button class="btn btn-secondary" style="font-size:0.82rem" onclick="agregarPersonaRol('inquilino')">+ Buscar inquilino</button>
       <button class="btn btn-secondary" style="font-size:0.82rem;color:var(--green);border-color:var(--green)" onclick="abrirNuevaPersonaInline('inquilino')">+ Nueva persona</button>
-    </div>
-
-    <div class="section-title" style="margin:1rem 0 0.75rem">Números de identificación de servicios</div>
-    <p style="font-size:0.78rem;color:#888;margin-bottom:0.75rem">Solo para servicios que paga el inquilino</p>
-    <div class="form-grid">
-      <div class="form-group"><label>N° cuenta EPE</label><input id="f-nro-epe" type="text" value="${c.nro_epe||''}"></div>
-      <div class="form-group"><label>N° cuenta Agua</label><input id="f-nro-agua" type="text" value="${c.nro_agua||''}"></div>
-      <div class="form-group"><label>N° cuenta TGIU</label><input id="f-nro-tgiu" type="text" value="${c.nro_tgiu||''}"></div>
-      <div class="form-group"><label>N° cuenta Seguro</label><input id="f-nro-seguro" type="text" value="${c.nro_seguro||''}"></div>
-      <div class="form-group"><label>N° cuenta Internet</label><input id="f-nro-internet" type="text" value="${c.nro_internet||''}"></div>
-      <div class="form-group"><label>N° cuenta Expensas</label><input id="f-nro-expensas" type="text" value="${c.nro_expensas||''}"></div>
     </div>
 
     <div id="inline-persona-form"></div>
