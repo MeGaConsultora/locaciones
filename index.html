@@ -1832,8 +1832,26 @@ async function cargarListaServicios() {
       return `${ny}-${String(nm).padStart(2,'0')}`;
     })();
 
+    // Check pct sum for contracts sharing same nro
+    const nroCampo = `nro_${srv}`;
+    const pctWarnings = [];
+    const nrosVistos = {};
+    contratos.forEach(c => {
+      const nro = c[nroCampo];
+      if (!nro) return;
+      if (!nrosVistos[nro]) nrosVistos[nro] = { contratos: [], totalPct: 0 };
+      nrosVistos[nro].contratos.push(c.titulo||c.hoja);
+      nrosVistos[nro].totalPct += (c['pct_'+srv]||100) + (c['pct_prop_'+srv]||0);
+    });
+    Object.entries(nrosVistos).forEach(([nro, data]) => {
+      if (data.contratos.length > 1 && Math.abs(data.totalPct - 100) > 1) {
+        pctWarnings.push(`⚠ Nro ${nro}: ${data.contratos.join(', ')} suman ${data.totalPct}% (debería ser 100%)`);
+      }
+    });
+
     panel.innerHTML = `
       <p style="font-size:0.82rem;color:#888;margin-bottom:0.75rem">${contratos.length} contrato/s · ${sinCargar} sin cargar · ${contratos.length-sinCargar} ya cargados (borde verde)</p>
+      ${pctWarnings.length ? `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.75rem;font-size:0.82rem">${pctWarnings.join('<br>')}</div>` : ''}
       ${contratos.map(c => {
         const nroMap = { epe: c.nro_epe, agua: c.nro_agua, tgiu: c.nro_tgiu, seguro: c.nro_seguro, internet: c.nro_internet, expensas: c.nro_expensas };
         const nro = nroMap[srv] || '';
