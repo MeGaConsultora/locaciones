@@ -2010,6 +2010,26 @@ function actualizarTotalPct(srv) {
     el.textContent = total + '%';
     el.style.color = total === 100 ? 'var(--green)' : 'var(--accent)';
     el.closest('tr').style.background = total === 100 ? '' : '#fff3cd';
+    // Show warning below table if any row != 100
+    const allRows = ['epe','agua','tgiu','seguro','internet','expensas'];
+    const warnings = allRows.filter(s => {
+      const i = parseFloat(document.getElementById(`f-pct-${s}`)?.value)||0;
+      const p = parseFloat(document.getElementById(`f-pct-prop-${s}`)?.value)||0;
+      return Math.abs((i+p) - 100) > 0.5;
+    });
+    let warnEl = document.getElementById('pct-sum-warning');
+    if (!warnEl) {
+      warnEl = document.createElement('div');
+      warnEl.id = 'pct-sum-warning';
+      warnEl.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:0.6rem 1rem;margin-top:0.5rem;font-size:0.82rem;color:#856404';
+      el.closest('table').after(warnEl);
+    }
+    if (warnings.length) {
+      warnEl.style.display = 'block';
+      warnEl.textContent = `⚠ ${warnings.map(s=>s.toUpperCase()).join(', ')}: la suma de % inquilino + % propietario no da 100%. Revisá los porcentajes.`;
+    } else {
+      warnEl.style.display = 'none';
+    }
   }
 }
 
