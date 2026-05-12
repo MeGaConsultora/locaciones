@@ -1411,8 +1411,8 @@ async function abrirCrearAcceso(contratoId, hoja) {
 }
 
 async function modificarAccesoInquilino(contratoId, hoja) {
-  const email = document.getElementById('acc-email').value.trim();
-  const nombre = document.getElementById('acc-nombre').value.trim();
+  const email = document.getElementById('mod-email').value.trim();
+  const nombre = document.getElementById('mod-nombre').value.trim();
   if (!email) { toast('Ingresá el email','error'); return; }
 
   try {
@@ -1431,8 +1431,8 @@ async function modificarAccesoInquilino(contratoId, hoja) {
     const msgEncoded = encodeURIComponent(mensaje);
     window._mensajeAcceso = mensaje;
 
-    document.getElementById('acc-resultado').style.display = 'block';
-    document.getElementById('acc-resultado').innerHTML = `
+    document.getElementById('mod-resultado').style.display = 'block';
+    document.getElementById('mod-resultado').innerHTML = `
       <div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:10px;padding:1rem">
         <div style="font-weight:600;color:#155724;margin-bottom:0.5rem">✓ Acceso actualizado</div>
         <div style="background:white;border-radius:8px;padding:0.75rem;font-size:0.82rem;color:#333;margin-bottom:0.75rem;border:1px solid #c3e6cb">${mensaje}</div>
@@ -1448,8 +1448,8 @@ async function modificarAccesoInquilino(contratoId, hoja) {
 }
 
 async function crearAccesoInquilino(contratoId, hoja) {
-  const email = document.getElementById('acc-email').value.trim();
-  const nombre = document.getElementById('acc-nombre').value.trim();
+  const email = document.getElementById('mod-email').value.trim();
+  const nombre = document.getElementById('mod-nombre').value.trim();
   if (!email) { toast('Ingresá el email del inquilino','error'); return; }
 
   try {
@@ -1919,7 +1919,7 @@ async function guardarServicios() {
             const pagosNext = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesNext}&limit=1`);
             if (pagosNext.length) {
               const pNext = pagosNext[0];
-              const newTotal = (pNext.importe_alquiler||0)+(pNext.monto_agua||0)+(pNext.monto_tgiu||0)+importe;
+              const newTotal = (pNext.importe_alquiler||0)+(pNext.monto_agua||0)+(pNext.monto_tgiu||0)+(pNext.monto_seguro||0)+(pNext.monto_internet||0)+(pNext.monto_expensas||0)+importe;
               const yaAbonado = (pNext.total||0) - (pNext.saldo||0);
               const nuevoSaldo = Math.max(0, newTotal - yaAbonado);
               await sbPatch('pagos', pNext.id, { monto_epe: importe, total: newTotal, saldo: nuevoSaldo });
@@ -2889,62 +2889,92 @@ async function imprimirHistorial(contratoId) {
 // NUEVO CONTRATO
 // ============================================================
 function openNuevoContrato() {
-  document.getElementById('modal-title').textContent = 'Nuevo Contrato';
-  document.getElementById('modal-subtitle').textContent = 'Completá los datos del contrato';
+  // Use same form as edit but with empty contract
+  const emptyContrato = {
+    id: null, hoja: '', titulo: '', locador: '', locatario: '',
+    vigencia_desde: null, vigencia_hasta: null,
+    tipo_inmueble: 'Casa/Habitación', modalidad_pago: 'ADELANTADO',
+    comision_porcentaje: 8, periodicidad_actualizacion: '', indice_actualizacion: '',
+    gastos_inicio: 0, dia_vencimiento: 10, interes_punitorio: 0,
+    importe_inicial: 0, servicios_inquilino: '',
+    nro_epe: '', nro_agua: '', nro_tgiu: '', nro_seguro: '', nro_internet: '', nro_expensas: '',
+    fecha_rescision: null
+  };
+  _abrirFormularioContrato(emptyContrato, true);
+}
+
+function openEditContrato(id) {
+  const c = DB.contratos.find(x=>x.id===id);
+  if (!c) return;
+  _abrirFormularioContrato(c, false);
+}
+
+function _abrirFormularioContrato(c, esNuevo) {
+  const propietarios = esNuevo ? [] : DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'propietario');
+  const inquilinos = esNuevo ? [] : DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'inquilino');
+
+  document.getElementById('modal-title').textContent = esNuevo ? 'Nuevo Contrato' : 'Editar Contrato';
+  document.getElementById('modal-subtitle').textContent = esNuevo ? 'Completá los datos del contrato' : c.titulo;
   document.getElementById('modal-body').innerHTML = `
     <div class="section-title" style="margin-bottom:1rem">Datos del contrato</div>
     <div class="form-grid">
       <div class="form-group" style="grid-column:1/-1">
         <label>Título / Nombre del contrato</label>
-        <input id="f-titulo" type="text" placeholder="Ej: García-Pérez">
+        <input id="f-titulo" type="text" value="${c.titulo||''}" placeholder="Ej: García-Pérez">
       </div>
-      <div class="form-group"><label>Vigencia desde</label><input id="f-desde" type="date"></div>
-      <div class="form-group"><label>Vigencia hasta</label><input id="f-hasta" type="date"></div>
+      <div class="form-group"><label>Vigencia desde</label><input id="f-desde" type="date" value="${c.vigencia_desde?.substring(0,10)||''}"></div>
+      <div class="form-group"><label>Vigencia hasta</label><input id="f-hasta" type="date" value="${c.vigencia_hasta?.substring(0,10)||''}"></div>
       <div class="form-group"><label>Tipo de inmueble</label>
         <select id="f-tipo">
-          <option>Casa/Habitación</option><option>Departamento</option>
-          <option>Local Comercial</option><option>Galpón/Depósito</option>
-          <option>Cochera/Garaje</option><option>Consultorio</option><option>Otro</option>
+          ${['Casa/Habitación','Departamento','Local Comercial','Galpón/Depósito','Cochera/Garaje','Consultorio','Otro'].map(t=>`<option ${normTipo(c.tipo_inmueble)===t?'selected':''}>${t}</option>`).join('')}
         </select>
       </div>
       <div class="form-group"><label>Modalidad de pago</label>
-        <select id="f-modalidad"><option>ADELANTADO</option><option>VENCIDO</option></select>
+        <select id="f-modalidad">
+          <option ${c.modalidad_pago==='ADELANTADO'||!c.modalidad_pago?'selected':''}>ADELANTADO</option>
+          <option ${c.modalidad_pago==='VENCIDO'?'selected':''}>VENCIDO</option>
+        </select>
       </div>
       <div class="form-group"><label>% Comisión inmobiliaria</label>
-        <input id="f-comision-pct" type="number" placeholder="8" value="8" min="0" max="100">
+        <input id="f-comision-pct" type="number" value="${c.comision_porcentaje||8}" min="0" max="100">
       </div>
       <div class="form-group"><label>Periodicidad actualización</label>
         <select id="f-periodicidad">
-          <option value="">Sin actualización</option>
-          <option>Mensual</option><option>Bimestral</option><option>Trimestral</option>
-          <option>Cuatrimestral</option><option>Semestral</option><option>Anual</option>
+          <option value="" ${!c.periodicidad_actualizacion?'selected':''}>Sin actualización</option>
+          ${['Mensual','Bimestral','Trimestral','Cuatrimestral','Semestral','Anual'].map(p=>`<option ${c.periodicidad_actualizacion===p?'selected':''}>${p}</option>`).join('')}
         </select>
       </div>
       <div class="form-group"><label>Índice de actualización</label>
         <select id="f-indice">
-          <option value="">—</option>
-          <option>IPC (Índice de Precios al Consumidor)</option>
-          <option>ICL (Índice Contratos de Locación)</option>
-          <option>IRL (Índice de Referencia de Locaciones)</option>
-          <option>Kg de novillos</option>
-          <option>Dólar oficial</option>
-          <option>Acuerdo entre partes</option>
-          <option>Otro</option>
+          <option value="" ${!c.indice_actualizacion?'selected':''}>—</option>
+          ${['IPC (Índice de Precios al Consumidor)','ICL (Índice Contratos de Locación)','IRL (Índice de Referencia de Locaciones)','Kg de novillos','Dólar oficial','Acuerdo entre partes','Otro'].map(i=>`<option ${c.indice_actualizacion===i?'selected':''}>${i}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group"><label>Gastos inicio</label><input id="f-gastos" type="number" placeholder="0"></div>
-      <div class="form-group"><label>Importe inicial alquiler</label><input id="f-importe-inicial" type="number" placeholder="0" style="border-color:var(--green)"></div>
+      <div class="form-group"><label>Gastos inicio</label><input id="f-gastos" type="number" value="${c.gastos_inicio||0}" placeholder="0"></div>
+      <div class="form-group"><label>Importe inicial alquiler</label><input id="f-importe-inicial" type="number" value="${c.importe_inicial||''}" placeholder="0" style="border-color:var(--green)"></div>
       <div class="form-group"><label>Día vencimiento (del mes)</label><input id="f-dia-venc" type="number" min="1" max="31" value="10" placeholder="10"></div>
       <div class="form-group"><label>Interés punitorio diario (%)</label><input id="f-interes" type="number" min="0" step="0.001" value="0" placeholder="0"></div>
     </div>
 
     <div class="section-title" style="margin:1.2rem 0 1rem">Servicios e impuestos a cargo del inquilino</div>
-    <div style="display:flex;flex-wrap:wrap;gap:0.75rem;background:var(--cream);padding:1rem;border-radius:10px;margin-bottom:1.2rem">
-      ${['EPE','Agua','TGIU','Gas','Internet','Expensas','Seguro','Otros'].map(s =>
-        `<label style="display:flex;align-items:center;gap:6px;font-size:0.88rem;cursor:pointer">
-          <input type="checkbox" id="srv-${s}" value="${s}" style="width:15px;height:15px"> ${s}
-        </label>`
-      ).join('')}
+    <div style="display:flex;flex-wrap:wrap;gap:0.75rem;background:var(--cream);padding:1rem;border-radius:10px;margin-bottom:1rem">
+      ${['EPE','Agua','TGIU','Internet','Expensas','Seguro'].map(s => {
+        const checked = c.servicios_inquilino?.includes(s) ? 'checked' : '';
+        return `<label style="display:flex;align-items:center;gap:6px;font-size:0.88rem;cursor:pointer">
+          <input type="checkbox" class="serv-chk serv-edit-chk" value="${s}" ${checked} style="width:15px;height:15px"> ${s}
+        </label>`;
+      }).join('')}
+    </div>
+
+    <div class="section-title" style="margin:1rem 0 0.75rem">Números de identificación de servicios</div>
+    <p style="font-size:0.78rem;color:#888;margin-bottom:0.75rem">Solo para servicios que paga el inquilino</p>
+    <div class="form-grid">
+      <div class="form-group"><label>N° cuenta EPE</label><input id="f-nro-epe" type="text" value="${c.nro_epe||''}" placeholder="Opcional"></div>
+      <div class="form-group"><label>N° cuenta Agua</label><input id="f-nro-agua" type="text" value="${c.nro_agua||''}" placeholder="Opcional"></div>
+      <div class="form-group"><label>N° cuenta TGIU</label><input id="f-nro-tgiu" type="text" value="${c.nro_tgiu||''}" placeholder="Opcional"></div>
+      <div class="form-group"><label>N° cuenta Seguro</label><input id="f-nro-seguro" type="text" value="${c.nro_seguro||''}" placeholder="Opcional"></div>
+      <div class="form-group"><label>N° cuenta Internet</label><input id="f-nro-internet" type="text" value="${c.nro_internet||''}" placeholder="Opcional"></div>
+      <div class="form-group"><label>N° cuenta Expensas</label><input id="f-nro-expensas" type="text" value="${c.nro_expensas||''}" placeholder="Opcional"></div>
     </div>
 
     <div class="section-title" style="margin:1.2rem 0 0.75rem">Propietario/s</div>
@@ -2963,25 +2993,25 @@ function openNuevoContrato() {
 
     <div id="inline-persona-form"></div>
 
-    <div class="section-title" style="margin:1rem 0 0.75rem">Números de identificación de servicios</div>
-    <div class="form-grid">
-      <div class="form-group"><label>N° cuenta EPE</label><input id="f-nro-epe" type="text" placeholder="Opcional"></div>
-      <div class="form-group"><label>N° cuenta Agua</label><input id="f-nro-agua" type="text" placeholder="Opcional"></div>
-      <div class="form-group"><label>N° cuenta TGIU</label><input id="f-nro-tgiu" type="text" placeholder="Opcional"></div>
-      <div class="form-group"><label>N° cuenta Seguro</label><input id="f-nro-seguro" type="text" placeholder="Opcional"></div>
-      <div class="form-group"><label>N° cuenta Internet</label><input id="f-nro-internet" type="text" placeholder="Opcional"></div>
-      <div class="form-group"><label>N° cuenta Expensas</label><input id="f-nro-expensas" type="text" placeholder="Opcional"></div>
-    </div>
+    ${!esNuevo ? `
+    <div class="form-group" style="grid-column:1/-1;margin-top:0.5rem">
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;color:#666;cursor:pointer">
+        <input type="checkbox" id="f-reimportar" style="width:14px;height:14px">
+        Re-proyectar los meses del período actual con el importe indicado
+      </label>
+    </div>` : ''}
 
     <div class="form-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="guardarContrato()">Guardar contrato</button>
+      <button class="btn btn-secondary" onclick="${esNuevo ? 'closeModal()' : 'openContrato('+c.id+')'}">${esNuevo ? 'Cancelar' : '← Volver'}</button>
+      <button class="btn btn-primary" onclick="${esNuevo ? 'guardarContrato()' : 'actualizarContrato('+c.id+')'}">${esNuevo ? 'Guardar contrato' : 'Guardar cambios'}</button>
     </div>
   `;
+  document.getElementById('modal-overlay').dataset.contratoId = esNuevo ? '' : String(c.id);
   document.getElementById('modal-overlay').classList.add('open');
-  // Auto-add one row for each
-  agregarPersonaRol('propietario');
-  agregarPersonaRol('inquilino');
+  if (esNuevo) {
+    agregarPersonaRol('propietario');
+    agregarPersonaRol('inquilino');
+  }
 }
 
 function abrirNuevaPersonaInline(rol) {
@@ -3282,130 +3312,6 @@ async function guardarContrato() {
 // ============================================================
 // EDITAR CONTRATO
 // ============================================================
-function openEditContrato(id) {
-  const c = DB.contratos.find(x=>x.id===id);
-  if (!c) return;
-  const propietarios = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === id && x.rol === 'propietario');
-  const inquilinos = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === id && x.rol === 'inquilino');
-
-  document.getElementById('modal-title').textContent = 'Editar Contrato';
-  document.getElementById('modal-subtitle').textContent = c.titulo;
-  document.getElementById('modal-body').innerHTML = `
-    <div class="form-grid">
-      <div class="form-group" style="grid-column:1/-1"><label>Título</label><input id="f-titulo" type="text" value="${c.titulo||''}"></div>
-      <div class="form-group"><label>Vigencia desde</label><input id="f-desde" type="date" value="${c.vigencia_desde?.substring(0,10)||''}"></div>
-      <div class="form-group"><label>Vigencia hasta</label><input id="f-hasta" type="date" value="${c.vigencia_hasta?.substring(0,10)||''}"></div>
-      <div class="form-group"><label>Tipo de inmueble</label>
-        <select id="f-tipo">
-          ${['Casa/Habitación','Departamento','Local Comercial','Galpón/Depósito','Cochera/Garaje','Consultorio','Otro'].map(t=>`<option ${normTipo(c.tipo_inmueble)===t?'selected':''}>${t}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group"><label>Modalidad de pago</label>
-        <select id="f-modalidad">
-          <option ${c.modalidad_pago==='ADELANTADO'?'selected':''}>ADELANTADO</option>
-          <option ${c.modalidad_pago==='VENCIDO'?'selected':''}>VENCIDO</option>
-        </select>
-      </div>
-      <div class="form-group"><label>% Comisión</label>
-        <input id="f-comision-pct" type="number" value="${c.comision_porcentaje||8}" min="0" max="100">
-      </div>
-      <div class="form-group"><label>Periodicidad actualización</label>
-        <select id="f-periodicidad">
-          <option value="" ${!c.periodicidad_actualizacion?'selected':''}>Sin actualización</option>
-          ${['Mensual','Bimestral','Trimestral','Cuatrimestral','Semestral','Anual'].map(p=>`<option value="${p}" ${c.periodicidad_actualizacion===p?'selected':''}>${p}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group"><label>Índice de actualización</label>
-        <select id="f-indice">
-          <option value="" ${!c.indice_actualizacion?'selected':''}>—</option>
-          ${['IPC (Índice de Precios al Consumidor)','ICL (Índice Contratos de Locación)','IRL (Índice de Referencia de Locaciones)','Kg de novillos','Dólar oficial','Acuerdo entre partes','Otro'].map(i=>`<option value="${i}" ${c.indice_actualizacion===i?'selected':''}>${i}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group"><label>Gastos inicio</label>
-        <input id="f-gastos" type="number" value="${c.gastos_inicio||0}">
-      </div>
-      <div class="form-group"><label>Día vencimiento (del mes)</label>
-        <input id="f-dia-venc" type="number" min="1" max="31" value="${c.dia_vencimiento||10}">
-      </div>
-      <div class="form-group"><label>Interés punitorio diario (%)</label>
-        <input id="f-interes" type="number" min="0" step="0.001" value="${c.interes_punitorio||0}">
-      </div>
-      <div class="form-group" style="grid-column:1/-1">
-        <label>Importe inicial alquiler</label>
-        <input id="f-importe-inicial" type="number" value="${c.importe_inicial||''}" placeholder="0" style="border-color:var(--green);margin-top:4px">
-        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:0.82rem;color:#666;cursor:pointer">
-          <input type="checkbox" id="f-reimportar" style="width:14px;height:14px">
-          Re-proyectar los meses del período actual con este importe
-        </label>
-      </div>
-    </div>
-
-    <div class="section-title" style="margin:1rem 0 0.75rem">Servicios e impuestos a cargo del inquilino</div>
-    <div style="display:flex;flex-wrap:wrap;gap:1rem;padding:1rem;background:var(--cream);border-radius:8px;margin-bottom:1rem">
-      ${['EPE','Agua','TGIU','Internet','Expensas','Seguro'].map(s => {
-        const checked = c.servicios_inquilino?.includes(s) ? 'checked' : '';
-        return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.88rem">
-          <input type="checkbox" class="serv-edit-chk" value="${s}" ${checked} style="width:15px;height:15px"> ${s}
-        </label>`;
-      }).join('')}
-    </div>
-
-    <div class="section-title" style="margin:1rem 0 0.75rem">Números de identificación de servicios</div>
-    <p style="font-size:0.78rem;color:#888;margin-bottom:0.75rem">Solo para servicios que paga el inquilino</p>
-    <div class="form-grid">
-      <div class="form-group"><label>N° cuenta EPE</label><input id="f-nro-epe" type="text" value="${c.nro_epe||''}"></div>
-      <div class="form-group"><label>N° cuenta Agua</label><input id="f-nro-agua" type="text" value="${c.nro_agua||''}"></div>
-      <div class="form-group"><label>N° cuenta TGIU</label><input id="f-nro-tgiu" type="text" value="${c.nro_tgiu||''}"></div>
-      <div class="form-group"><label>N° cuenta Seguro</label><input id="f-nro-seguro" type="text" value="${c.nro_seguro||''}"></div>
-      <div class="form-group"><label>N° cuenta Internet</label><input id="f-nro-internet" type="text" value="${c.nro_internet||''}"></div>
-      <div class="form-group"><label>N° cuenta Expensas</label><input id="f-nro-expensas" type="text" value="${c.nro_expensas||''}"></div>
-    </div>
-
-    <div class="section-title" style="margin:1rem 0 0.75rem">Propietario/s</div>
-    <div id="lista-propietarios">
-      ${propietarios.map((cp,i) => {
-        const p = cp.personas || DB_PERSONAS.find(x=>x.id===cp.persona_id);
-        const nombre = p ? `${p.apellido||''}, ${p.nombre||''}`.trim() : '—';
-        return `<div data-rol="propietario" data-persona-id="${cp.persona_id}" style="background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">
-          <input type="text" value="${nombre}" style="flex:1;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem" oninput="buscarPersonaEnLinea(this,'propietario',${i})">
-          <div id="sug-propietario-${i}" style="position:fixed;background:white;border:1px solid var(--border);border-radius:8px;display:none;max-height:150px;overflow-y:auto;z-index:300;min-width:300px"></div>
-          <span style="font-size:0.85rem;color:var(--green);font-weight:600">✓</span>
-          <button onclick="this.closest('[data-rol]').remove()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
-        </div>`;
-      }).join('')}
-    </div>
-    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
-      <button class="btn btn-secondary" style="font-size:0.82rem" onclick="agregarPersonaRol('propietario')">+ Buscar propietario</button>
-      <button class="btn btn-secondary" style="font-size:0.82rem;color:var(--green);border-color:var(--green)" onclick="abrirNuevaPersonaInline('propietario')">+ Nueva persona</button>
-    </div>
-
-    <div class="section-title" style="margin:1rem 0 0.75rem">Inquilino/s</div>
-    <div id="lista-inquilinos">
-      ${inquilinos.map((cp,i) => {
-        const p = cp.personas || DB_PERSONAS.find(x=>x.id===cp.persona_id);
-        const nombre = p ? `${p.apellido||''}, ${p.nombre||''}`.trim() : '—';
-        return `<div data-rol="inquilino" data-persona-id="${cp.persona_id}" style="background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">
-          <input type="text" value="${nombre}" style="flex:1;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem" oninput="buscarPersonaEnLinea(this,'inquilino',${i})">
-          <div id="sug-inquilino-${i}" style="position:fixed;background:white;border:1px solid var(--border);border-radius:8px;display:none;max-height:150px;overflow-y:auto;z-index:300;min-width:300px"></div>
-          <span style="font-size:0.85rem;color:var(--green);font-weight:600">✓</span>
-          <button onclick="this.closest('[data-rol]').remove()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
-        </div>`;
-      }).join('')}
-    </div>
-    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
-      <button class="btn btn-secondary" style="font-size:0.82rem" onclick="agregarPersonaRol('inquilino')">+ Buscar inquilino</button>
-      <button class="btn btn-secondary" style="font-size:0.82rem;color:var(--green);border-color:var(--green)" onclick="abrirNuevaPersonaInline('inquilino')">+ Nueva persona</button>
-    </div>
-
-    <div id="inline-persona-form"></div>
-
-    <div class="form-actions">
-      <button class="btn btn-secondary" onclick="openContrato(${id})">← Volver</button>
-      <button class="btn btn-primary" onclick="actualizarContrato(${id})">Guardar cambios</button>
-    </div>
-  `;
-}
-
 async function actualizarContrato(id) {
   const propItems = document.querySelectorAll('[data-rol="propietario"]');
   const inqItems = document.querySelectorAll('[data-rol="inquilino"]');
