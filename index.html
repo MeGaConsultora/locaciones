@@ -1901,7 +1901,7 @@ async function cargarListaServicios() {
         
         const yaCargado = pago && pago[campo] > 0;
         const totalBoleta = yaCargado ? Math.round(pago[campo] * 100 / (c['pct_'+srv]||100)) : '';
-        const cardClass = yaCargado ? 'ya-cargado-${srv}' : 'sin-cargar-${srv}';
+        const cardClass = yaCargado ? `ya-cargado-${srv}` : `sin-cargar-${srv}`;
         return `<div class="${cardClass}" style="${yaCargado?'display:none;':''} background:${yaCargado?'#f0fff4':'var(--cream)'};border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem;border:1.5px solid ${yaCargado?'var(--green)':'transparent'}">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;flex-wrap:wrap">
             <div>
