@@ -2188,7 +2188,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
     <!-- SOLAPA 3: RECIBO PROPIETARIO -->
     <div id="s3" class="solapa-panel">
       ${!p || !p.total ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
-      <div id="gp-prop-items">${generarItemsPropietario(p, extrasProp, comisionPct)}</div>
+      <div id="gp-prop-items">${generarItemsPropietario(p, extrasProp, comisionPct, c)}</div>
       <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem;font-size:1rem">
         <span>Total a rendir:</span>
         <span id="gp-total-prop" style="color:var(--green)">—</span>
@@ -2250,7 +2250,7 @@ function generarItemsCobro(p, extrasInq) {
   }).join('');
 }
 
-function generarItemsPropietario(p, extrasProp, comisionPct) {
+function generarItemsPropietario(p, extrasProp, comisionPct, c) {
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
   const alq = p.importe_alquiler||0;
   const comision = alq * (comisionPct/100);
