@@ -883,6 +883,7 @@ async function openContrato(id) {
 }
 
 async function recargarGrilla(c) {
+  pagosActuales = []; // Clear before loading
   try {
     const hojaEncoded = encodeURIComponent(c.hoja);
     pagosActuales = await sbGetAll('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc`);
