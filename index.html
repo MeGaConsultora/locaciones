@@ -1806,24 +1806,26 @@ async function cargarListaServicios() {
   
   for (const [srv, label] of Object.entries(serviciosMap)) {
     const campo = `monto_${srv}`;
-    const contratos = DB.contratos.filter(c => {
+    // Get ALL contracts with this service (both loaded and not loaded)
+    const todosConServicio = DB.contratos.filter(c => {
       if (getEstado(c) === 'rescindido') return false;
       const servicios = (c.servicios_inquilino||'').toLowerCase();
-      if (!servicios.includes(srv === 'tgiu' ? 'tgiu' : srv)) return false;
-      // Only show if no amount loaded for this month
-      const pago = pagosPorHoja[c.hoja];
-      return !pago || !pago[campo] || pago[campo] === 0;
+      return servicios.includes(srv);
     });
 
     const panelId = `srv-${srv}`;
     const panel = document.getElementById(panelId);
     if (!panel) continue;
 
-    if (!contratos.length) {
+    if (!todosConServicio.length) {
       panel.innerHTML = `<div class="empty-state"><div class="icon">✓</div><p>No hay contratos con ${label} a cargo del inquilino</p></div>`;
       continue;
     }
-    const sinCargar = contratos.filter(c => { const p = pagosPorHoja[c.hoja]; return !p || !p[campo] || p[campo] === 0; }).length;
+
+    // Split into loaded and not loaded
+    const contratos = todosConServicio.filter(c => { const p = pagosPorHoja[c.hoja]; return !p || !p[campo] || p[campo] === 0; });
+    const cargados = todosConServicio.filter(c => { const p = pagosPorHoja[c.hoja]; return p && p[campo] > 0; });
+    const sinCargar = contratos.length;
 
     const mesNext = (() => {
       const [y, m] = mesKey.split('-').map(Number);
@@ -1863,16 +1865,38 @@ async function cargarListaServicios() {
       }
     });
 
+    // Build cargados HTML
+    const cargadosHtml = cargados.map(c => {
+      const pago = pagosPorHoja[c.hoja];
+      const nro = c[`nro_${srv}`] || '';
+      const totalBoleta = Math.round((pago[campo]||0) * 100 / (c['pct_'+srv]||100));
+      return `<div class="ya-cargado-${srv}" style="display:none;background:#f0fff4;border:1.5px solid var(--green);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;flex-wrap:wrap">
+          <div>
+            <strong style="font-size:0.88rem">${c.titulo||c.hoja}</strong>
+            <div style="font-size:0.75rem;color:#888">${c._locatario||c.locatario||'—'}${nro?' · Cta: '+nro:''}</div>
+          </div>
+          <div>
+            <input type="number" id="srv-${srv}-${c.id}" data-hoja="${c.hoja}" data-pago-id="${pago?.id||''}"
+              data-pct="${c['pct_'+srv]||100}" value="${totalBoleta}"
+              placeholder="$ total boleta" style="width:140px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem">
+            <div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Guardado: ${formatMoney(pago[campo])}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
     panel.innerHTML = `
       <p style="font-size:0.82rem;color:#888;margin-bottom:0.5rem">
-      ${contratos.length} contrato/s · <strong>${sinCargar}</strong> sin cargar · ${contratos.length-sinCargar} ya cargados
-      ${contratos.length-sinCargar > 0 ? `<button onclick="toggleYaCargados(this.dataset.srv)" data-srv="${srv}" id="btn-ya-cargados-${srv}" style="background:none;border:none;color:var(--accent);font-size:0.78rem;cursor:pointer;text-decoration:underline;margin-left:8px">&#9654; Ver/Modificar ya cargados</button>` : ''}
-    </p>
+        ${todosConServicio.length} contrato/s · <strong>${sinCargar}</strong> sin cargar · ${cargados.length} ya cargados
+        ${cargados.length > 0 ? '<button onclick="toggleYaCargados(this.dataset.srv)" data-srv="'+srv+'" id="btn-ya-cargados-'+srv+'" style="background:none;border:none;color:var(--accent);font-size:0.78rem;cursor:pointer;text-decoration:underline;margin-left:8px">&#9654; Ver/Modificar ya cargados</button>' : ''}
+      </p>
       ${pctWarnings.length ? `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.75rem;font-size:0.82rem">
         ${pctWarnings.map(w => `<div style="margin-bottom:4px">⚠ ${w.msg} 
           ${w.ids.map(id => `<button onclick="openModal2ForContrato(${id})" style="background:none;border:none;color:#856404;text-decoration:underline;cursor:pointer;font-size:0.82rem;padding:0">→ Editar</button>`).join(' ')}
         </div>`).join('')}
       </div>` : ''}
+      ${cargadosHtml}
       ${contratos.map(c => {
         const nroMap = { epe: c.nro_epe, agua: c.nro_agua, tgiu: c.nro_tgiu, seguro: c.nro_seguro, internet: c.nro_internet, expensas: c.nro_expensas };
         const nro = nroMap[srv] || '';
@@ -1955,9 +1979,30 @@ async function guardarServicios() {
           pagoId = pagoActual.id;
         }
 
-        // Accumulate changes
+        // Accumulate changes for this contract
         if (!cambiosPorPago[pagoId]) cambiosPorPago[pagoId] = { pago: pagoActual, changes: {} };
         cambiosPorPago[pagoId].changes[`monto_${srv}`] = importe;
+
+        // Propagate to other contracts sharing same nro
+        const cActual = DB.contratos.find(x => x.hoja === hoja);
+        const nroShared = cActual?.[`nro_${srv}`];
+        if (nroShared) {
+          const contratosShared = DB.contratos.filter(c =>
+            c[`nro_${srv}`] === nroShared && c.hoja !== hoja && 
+            (c.servicios_inquilino||'').toLowerCase().includes(srv)
+          );
+          for (const cS of contratosShared) {
+            try {
+              const hojaS = encodeURIComponent(cS.hoja);
+              const pagosS = await sbGet('pagos', `hoja=eq.${hojaS}&mes=eq.${mes}&limit=1`);
+              if (!pagosS.length) continue;
+              const pagoS = pagosS[0];
+              if (!cambiosPorPago[pagoS.id]) cambiosPorPago[pagoS.id] = { pago: pagoS, changes: {} };
+              // Store the same total bill - applyPct will use each contract's own pct
+              cambiosPorPago[pagoS.id].changes[`monto_${srv}`] = importe;
+            } catch(e) {}
+          }
+        }
 
         // EPE: also save cuota 2 in next month if checked
         if (srv === 'epe') {
@@ -2168,7 +2213,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
         ${(() => {
           const mkSrvField = (id, label, val, srv) => {
             const pct = c?.['pct_'+srv] ?? 100;
-            const hint = (pct > 0 && pct < 100) ? `<div style="font-size:0.72rem;color:#856404;margin-top:2px">Ingresá el total de la boleta</div>` : '';
+            const hint = '';
             const onInput = `onchange="recalcGP(window._gpComision||8)"`;
             const disabledHint = `<div style="font-size:0.72rem;color:#aaa;margin-top:2px">Modificar desde Cargar servicios del mes</div>`;
             return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" ${onInput} style="background:#f5f5f5;color:#999;cursor:not-allowed" readonly title="Modificar desde Cargar servicios del mes">${disabledHint}</div>`;
