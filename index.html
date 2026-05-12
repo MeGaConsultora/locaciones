@@ -1832,19 +1832,28 @@ async function cargarListaServicios() {
       return `${ny}-${String(nm).padStart(2,'0')}`;
     })();
 
-    // Check pct sum for contracts sharing same nro
+    // Check pct sum - both shared and individual contracts
     const nroCampo = `nro_${srv}`;
     const pctWarnings = [];
     const nrosVistos = {};
     contratos.forEach(c => {
       const nro = c[nroCampo];
-      if (!nro) return;
-      if (!nrosVistos[nro]) nrosVistos[nro] = { contratos: [], totalPct: 0 };
-      nrosVistos[nro].contratos.push(c.titulo||c.hoja);
-      nrosVistos[nro].totalPct += (c['pct_'+srv]||100) + (c['pct_prop_'+srv]||0);
+      const pctInq = c['pct_'+srv] ?? 100;
+      const pctProp = c['pct_prop_'+srv] ?? 0;
+      const total = pctInq + pctProp;
+      // Individual contract warning
+      if (Math.abs(total - 100) > 0.5) {
+        pctWarnings.push(`⚠ ${c.titulo||c.hoja}: suma ${total}% (debería ser 100%)`);
+      }
+      // Shared nro warning
+      if (nro) {
+        if (!nrosVistos[nro]) nrosVistos[nro] = { contratos: [], totalPct: 0 };
+        nrosVistos[nro].contratos.push(c.titulo||c.hoja);
+        nrosVistos[nro].totalPct += pctInq + pctProp;
+      }
     });
     Object.entries(nrosVistos).forEach(([nro, data]) => {
-      if (data.contratos.length > 1 && Math.abs(data.totalPct - 100) > 1) {
+      if (data.contratos.length > 1 && Math.abs(data.totalPct - 100) > 0.5) {
         pctWarnings.push(`⚠ Nro ${nro}: ${data.contratos.join(', ')} suman ${data.totalPct}% (debería ser 100%)`);
       }
     });
@@ -1886,10 +1895,10 @@ async function cargarListaServicios() {
             </div>
             <div>
             <input type="number" id="srv-${srv}-${c.id}" data-hoja="${c.hoja}" data-pago-id="${pago?.id||''}" 
-              data-pct="${c['pct_'+srv]??100}"
+              data-pct="${c['pct_'+srv]||100}"
               value="${pago && pago[campo] > 0 ? Math.round(pago[campo] * 100 / (c['pct_'+srv]||100)) : ''}"
               placeholder="$ importe" style="width:130px;padding:5px 8px;border:1.5px solid ${pago&&pago[campo]>0?'var(--green)':'var(--border)'};border-radius:6px;font-size:0.85rem">
-            ${(c['pct_'+srv]??100) < 100 ? `<div style="font-size:0.72rem;color:#856404;margin-top:3px">Total boleta → se guarda el ${c['pct_'+srv]}%</div>` : ''}
+            ${(c['pct_'+srv]||100) < 100 ? `<div style="font-size:0.72rem;color:#856404;margin-top:3px">Total boleta → se guarda el ${c['pct_'+srv]}%</div>` : ''}
             ${pago&&pago[campo]>0 ? `<div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Cargado: ${formatMoney(pago[campo])}</div>` : ''}
           </div>
           </div>
@@ -2135,7 +2144,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
         ${(() => {
           const mkSrvField = (id, label, val, srv) => {
             const pct = c?.['pct_'+srv] ?? 100;
-            const hint = pct < 100 ? `<div style="font-size:0.72rem;color:#856404;margin-top:2px">Ingresá el total de la boleta</div>` : '';
+            const hint = (pct > 0 && pct < 100) ? `<div style="font-size:0.72rem;color:#856404;margin-top:2px">Ingresá el total de la boleta</div>` : '';
             const onInput = `onchange="recalcGP(window._gpComision||8)"`;
             return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" ${onInput}>${hint}</div>`;
           };
@@ -3211,6 +3220,8 @@ function _abrirFormularioContrato(c, esNuevo) {
     agregarPersonaRol('propietario');
     agregarPersonaRol('inquilino');
   }
+  // Validate pct on load
+  setTimeout(() => ['epe','agua','tgiu','seguro','internet','expensas'].forEach(s => actualizarTotalPct(s)), 100);
 }
 
 function abrirNuevaPersonaInline(rol) {
