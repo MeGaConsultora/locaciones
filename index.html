@@ -2688,6 +2688,31 @@ function openEditContrato(id) {
       <div class="form-group"><label>% Comisión</label>
         <input id="f-comision-pct" type="number" value="${c.comision_porcentaje||8}" min="0" max="100">
       </div>
+      <div class="form-group"><label>Periodicidad actualización</label>
+        <select id="f-periodicidad">
+          <option value="" ${!c.periodicidad_actualizacion?'selected':''}>Sin actualización</option>
+          ${['Mensual','Bimestral','Trimestral','Cuatrimestral','Semestral','Anual'].map(p=>`<option value="${p}" ${c.periodicidad_actualizacion===p?'selected':''}>${p}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label>Índice de actualización</label>
+        <select id="f-indice">
+          <option value="" ${!c.indice_actualizacion?'selected':''}>—</option>
+          ${['IPC (Índice de Precios al Consumidor)','ICL (Índice Contratos de Locación)','IRL (Índice de Referencia de Locaciones)','Kg de novillos','Dólar oficial','Acuerdo entre partes','Otro'].map(i=>`<option value="${i}" ${c.indice_actualizacion===i?'selected':''}>${i}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label>Gastos inicio</label>
+        <input id="f-gastos" type="number" value="${c.gastos_inicio||0}">
+      </div>
+    </div>
+
+    <div class="section-title" style="margin:1rem 0 0.75rem">Servicios e impuestos a cargo del inquilino</div>
+    <div style="display:flex;flex-wrap:wrap;gap:1rem;padding:1rem;background:var(--cream);border-radius:8px;margin-bottom:1rem">
+      ${['EPE','Agua','TGIU','Gas','Internet','Expensas','Seguro','Otros'].map(s => {
+        const checked = c.servicios_inquilino?.includes(s) ? 'checked' : '';
+        return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.88rem">
+          <input type="checkbox" class="serv-edit-chk" value="${s}" ${checked} style="width:15px;height:15px"> ${s}
+        </label>`;
+      }).join('')}
     </div>
 
     <div class="section-title" style="margin:1rem 0 0.75rem">Propietario/s</div>
@@ -2770,6 +2795,35 @@ async function actualizarContrato(id) {
       await sbPost('contrato_personas', {contrato_id:id, persona_id:inqIds[i], rol:'inquilino', orden:i+1});
     }
     toast('Contrato actualizado ✓');
+    
+    // Check for months outside new vigencia
+    const nuevaDesde = document.getElementById('f-desde').value;
+    const nuevaHasta = document.getElementById('f-hasta').value;
+    if (nuevaDesde && nuevaHasta) {
+      const contrato = DB.contratos.find(x=>x.id===id);
+      if (contrato) {
+        const pagosContrato = DB.pagos.filter(p => p.hoja === contrato.hoja);
+        const huerfanos = pagosContrato.filter(p => {
+          if (!p.mes) return false;
+          const mesKey = p.mes.substring(0,7);
+          return mesKey < nuevaDesde.substring(0,7) || mesKey > nuevaHasta.substring(0,7);
+        });
+        if (huerfanos.length > 0) {
+          const mesesStr = huerfanos.map(p => formatDate(p.mes)).join(', ');
+          const confirmar = confirm(`Hay ${huerfanos.length} mes/es fuera de la nueva vigencia: ${mesesStr}\n\n¿Querés eliminarlos?`);
+          if (confirmar) {
+            for (const p of huerfanos) {
+              // Only delete if empty (no imports loaded)
+              if (!p.total || p.total === 0) {
+                await fetch(`${SB_URL}/rest/v1/pagos?id=eq.${p.id}`, {method:'DELETE', headers:HEADERS});
+              }
+            }
+            toast('Meses fuera de vigencia eliminados ✓');
+          }
+        }
+      }
+    }
+
     await loadAll();
     openContrato(id);
   } catch(e) { toast('Error: '+e.message,'error'); }
