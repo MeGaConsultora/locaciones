@@ -2926,6 +2926,7 @@ async function guardarContrato() {
     comision_porcentaje: comisionPct,
     dia_vencimiento: parseInt(document.getElementById('f-dia-venc')?.value)||10,
     interes_punitorio: parseFloat(document.getElementById('f-interes')?.value)||0,
+    importe_inicial: parseFloat(document.getElementById('f-importe-inicial')?.value)||0,
   };
 
   try {
@@ -3027,8 +3028,8 @@ function openEditContrato(id) {
         <input id="f-interes" type="number" min="0" step="0.001" value="${c.interes_punitorio||0}">
       </div>
       <div class="form-group" style="grid-column:1/-1">
-        <label>Importe alquiler vigente <span style="font-size:0.75rem;color:#888">(opcional — si lo modificás, se re-proyectan los meses del período actual)</span></label>
-        <input id="f-importe-inicial" type="number" value="${(() => { const up = DB.pagos.filter(p=>p.hoja===c.hoja&&p.importe_alquiler>0).slice(-1)[0]; return up?.importe_alquiler||''; })()||''}" placeholder="0" style="border-color:var(--green);margin-top:4px">
+        <label>Importe inicial alquiler</label>
+        <input id="f-importe-inicial" type="number" value="${c.importe_inicial||''}" placeholder="0" style="border-color:var(--green);margin-top:4px">
       </div>
     </div>
 
@@ -3113,6 +3114,8 @@ async function actualizarContrato(id) {
     servicios_inquilino: serviciosChecked.length ? serviciosChecked.join(', ') : null,
     dia_vencimiento: parseInt(document.getElementById('f-dia-venc')?.value)||10,
     interes_punitorio: parseFloat(document.getElementById('f-interes')?.value)||0,
+    importe_inicial: parseFloat(document.getElementById('f-importe-inicial')?.value)||0,
+    importe_inicial: parseFloat(document.getElementById('f-importe-inicial')?.value)||0,
     propietario_id: propIds[0]||null,
     inquilino_id: inqIds[0]||null,
   };
@@ -3130,14 +3133,6 @@ async function actualizarContrato(id) {
       await sbPost('contrato_personas', {contrato_id:id, persona_id:inqIds[i], rol:'inquilino', orden:i+1});
     }
     toast('Contrato actualizado ✓');
-
-    // Re-project if importe was changed
-    const nuevoImporte = parseFloat(document.getElementById('f-importe-inicial')?.value)||0;
-    if (nuevoImporte > 0) {
-      const cActualizado = { ...DB.contratos.find(x=>x.id===id), ...body };
-      await proyectarPeriodo(cActualizado.hoja||cActualizado.titulo, TODAY.substring(0,7), nuevoImporte, cActualizado.periodicidad_actualizacion, cActualizado.dia_vencimiento||10, cActualizado.modalidad_pago||'ADELANTADO');
-      toast('Alquiler re-proyectado ✓');
-    }
     
     // Check for months outside new vigencia
     const nuevaDesde = document.getElementById('f-desde').value;
