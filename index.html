@@ -1787,7 +1787,7 @@ async function abrirCargarServicios() {
     </div>
   `;
   document.getElementById('modal-overlay').classList.add('open');
-  setTimeout(cargarListaServicios, 50);
+  setTimeout(cargarListaServicios, 200);
 }
 
 function toggleCuota2Option(contratoId, cuota) {
@@ -1798,13 +1798,18 @@ function toggleCuota2Option(contratoId, cuota) {
 async function cargarListaServicios() {
   const mesKey = document.getElementById('srv-mes')?.value;
   if (!mesKey) return;
+  // Check if panels exist yet
+  if (!document.getElementById('srv-epe')) {
+    setTimeout(cargarListaServicios, 200);
+    return;
+  }
   const mes = mesKey + '-01';
   const hojaEncoded = mesKey;
 
   // Fetch pagos for this month
   let pagosMes = [];
   try {
-    pagosMes = await sbGet('pagos', `mes=eq.${mes}&select=id,hoja,monto_epe,monto_agua,monto_tgiu&limit=500`);
+    pagosMes = await sbGet('pagos', `mes=eq.${mes}&select=id,hoja,monto_epe,monto_agua,monto_tgiu,monto_seguro,monto_internet,monto_expensas&limit=500`);
   } catch(e) {}
   const pagosPorHoja = {};
   pagosMes.forEach(p => pagosPorHoja[p.hoja] = p);
