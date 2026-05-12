@@ -1866,7 +1866,7 @@ async function cargarListaServicios() {
     panel.innerHTML = `
       <p style="font-size:0.82rem;color:#888;margin-bottom:0.5rem">
       ${contratos.length} contrato/s · <strong>${sinCargar}</strong> sin cargar · ${contratos.length-sinCargar} ya cargados
-      ${contratos.length-sinCargar > 0 ? `<button onclick="toggleYaCargados('${srv}')" id="btn-ya-cargados-${srv}" style="background:none;border:none;color:var(--accent);font-size:0.78rem;cursor:pointer;text-decoration:underline;margin-left:8px">▶ Ver/Modificar ya cargados</button>` : ''}
+      ${contratos.length-sinCargar > 0 ? `<button onclick="toggleYaCargados(this.dataset.srv)" data-srv="${srv}" id="btn-ya-cargados-${srv}" style="background:none;border:none;color:var(--accent);font-size:0.78rem;cursor:pointer;text-decoration:underline;margin-left:8px">&#9654; Ver/Modificar ya cargados</button>` : ''}
     </p>
       ${pctWarnings.length ? `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.75rem;font-size:0.82rem">
         ${pctWarnings.map(w => `<div style="margin-bottom:4px">⚠ ${w.msg} 
@@ -3616,8 +3616,12 @@ async function actualizarContrato(id) {
   Object.keys(body).forEach(k => body[k] === undefined && delete body[k]);
 
   try {
-    // Get old pct values before saving
-    const oldContrato = DB.contratos.find(x=>x.id===id);
+    // Get old pct values fresh from DB before saving
+    let oldContrato = DB.contratos.find(x=>x.id===id);
+    try {
+      const freshC = await sbGet('contratos', `id=eq.${id}&select=hoja,titulo,pct_epe,pct_agua,pct_tgiu,pct_seguro,pct_internet,pct_expensas,nro_epe,nro_agua,nro_tgiu,nro_seguro,nro_internet,nro_expensas&limit=1`);
+      if (freshC.length) oldContrato = { ...oldContrato, ...freshC[0] };
+    } catch(e) {}
     const pctCambiados = ['epe','agua','tgiu','seguro','internet','expensas'].filter(srv => {
       const oldPct = oldContrato?.['pct_'+srv] ?? 100;
       const newPct = body['pct_'+srv] ?? oldPct;
