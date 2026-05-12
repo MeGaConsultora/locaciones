@@ -3600,7 +3600,74 @@ async function actualizarContrato(id) {
   Object.keys(body).forEach(k => body[k] === undefined && delete body[k]);
 
   try {
+    // Get old pct values before saving
+    const oldContrato = DB.contratos.find(x=>x.id===id);
+    const pctCambiados = ['epe','agua','tgiu','seguro','internet','expensas'].filter(srv => {
+      const oldPct = oldContrato?.['pct_'+srv] ?? 100;
+      const newPct = body['pct_'+srv] ?? oldPct;
+      return Math.abs(oldPct - newPct) > 0.5;
+    });
+
     await sbPatch('contratos', id, body);
+
+    // Recalculate existing unpaid pagos if pct changed
+    if (pctCambiados.length > 0) {
+      const hoja = oldContrato?.hoja || oldContrato?.titulo;
+      if (hoja) {
+        try {
+          // Find all contracts sharing same nro for each changed service
+          const contratosARecalcular = new Set([hoja]);
+          for (const srv of pctCambiados) {
+            const nroCampo = `nro_${srv}`;
+            const nro = body[nroCampo] || oldContrato?.[nroCampo];
+            if (nro) {
+              DB.contratos.filter(c => c[nroCampo] === nro && c.hoja !== hoja)
+                .forEach(c => contratosARecalcular.add(c.hoja));
+            }
+          }
+
+          for (const hojaR of contratosARecalcular) {
+            const cR = DB.contratos.find(x => x.hoja === hojaR);
+            const hojaEncoded = encodeURIComponent(hojaR);
+            const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=gte.${TODAY.substring(0,7)}-01&order=mes.asc&limit=24`);
+            for (const p of pagos) {
+              if (p.pagado && p.pagado !== '0') continue;
+              const updates = {};
+              let changed = false;
+              for (const srv of pctCambiados) {
+                const nroCampo = `nro_${srv}`;
+                const nro = body[nroCampo] || oldContrato?.[nroCampo];
+                if (!nro || cR?.[nroCampo] !== nro) continue; // only if same nro
+                const oldPct = hojaR === hoja ? (oldContrato?.['pct_'+srv] ?? 100) : (cR?.['pct_'+srv] ?? 100);
+                const currentMonto = p['monto_'+srv] || 0;
+                if (currentMonto > 0 && oldPct > 0) {
+                  const totalBill = Math.round(currentMonto * 100 / oldPct);
+                  const newPct = hojaR === hoja ? (body['pct_'+srv] ?? oldPct) : oldPct;
+                  const newMonto = Math.round(totalBill * newPct / 100);
+                  updates['monto_'+srv] = newMonto;
+                  changed = true;
+                }
+              }
+              if (changed) {
+                const alq = p.importe_alquiler || 0;
+                const epe = updates.monto_epe ?? p.monto_epe ?? 0;
+                const agua = updates.monto_agua ?? p.monto_agua ?? 0;
+                const tgiu = updates.monto_tgiu ?? p.monto_tgiu ?? 0;
+                const seguro = updates.monto_seguro ?? p.monto_seguro ?? 0;
+                const internet = updates.monto_internet ?? p.monto_internet ?? 0;
+                const expensas = updates.monto_expensas ?? p.monto_expensas ?? 0;
+                const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
+                const yaAbonado = (p.total||0) - (p.saldo||0);
+                updates.total = newTotal;
+                updates.saldo = Math.max(0, newTotal - yaAbonado);
+                await sbPatch('pagos', p.id, updates);
+              }
+            }
+          }
+          toast(`Importes recalculados para ${pctCambiados.map(s=>s.toUpperCase()).join(', ')} ✓`);
+        } catch(e) { console.error('Error recalculando:', e); }
+      }
+    }
     // Update contrato_personas - delete old and insert new
     await fetch(`${SB_URL}/rest/v1/contrato_personas?contrato_id=eq.${id}`, {method:'DELETE', headers:HEADERS});
     for (let i=0; i<propIds.length; i++) {
