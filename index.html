@@ -643,6 +643,47 @@ function formatPersonas(personas, rol) {
   return `${nombre} y otros`;
 }
 
+function calcularFechaVencimiento(mesKey, contrato) {
+  // mesKey = 'YYYY-MM'
+  const [y, m] = mesKey.split('-').map(Number);
+  const dia = contrato.dia_vencimiento || 10;
+  const modalidad = contrato.modalidad_pago || 'ADELANTADO';
+  
+  let vencYear = y, vencMonth = m;
+  if (modalidad === 'VENCIDO') {
+    // Paga el mes anterior: vence el día X del mes siguiente al periodo
+    vencMonth = m + 1;
+    if (vencMonth > 12) { vencMonth = 1; vencYear++; }
+  }
+  // Format date
+  return `${vencYear}-${String(vencMonth).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+}
+
+function calcularIntereses(alquiler, fechaVencStr, fechaPagoStr, interesdiario) {
+  if (!interesdiario || interesdiario <= 0) return 0;
+  
+  const fechaVenc = new Date(fechaVencStr + 'T12:00:00');
+  const fechaPago = new Date(fechaPagoStr + 'T12:00:00');
+  
+  // First business day after vencimiento
+  let primerDiaHabil = new Date(fechaVenc);
+  primerDiaHabil.setDate(primerDiaHabil.getDate() + 1);
+  while (primerDiaHabil.getDay() === 0 || primerDiaHabil.getDay() === 6) {
+    primerDiaHabil.setDate(primerDiaHabil.getDate() + 1);
+  }
+  
+  if (fechaPago <= primerDiaHabil) return 0; // No interest
+  
+  // Days of mora
+  const diasMora = Math.floor((fechaPago - primerDiaHabil) / 86400000);
+  if (diasMora <= 0) return 0;
+  
+  // Compound interest: alquiler * ((1 + rate/100)^days - 1)
+  const tasa = interesdiario / 100;
+  const interes = alquiler * (Math.pow(1 + tasa, diasMora) - 1);
+  return Math.round(interes * 100) / 100;
+}
+
 function formatMoney(n) {
   if (n == null || isNaN(n)) return '—';
   return '$ ' + Math.round(n).toLocaleString('es-AR');
@@ -963,6 +1004,7 @@ function renderGrilla(c) {
       title="Clic: editar | Doble clic: ver detalle"
       style="cursor:pointer">
       <td class="grid-mes"><strong>${formatDate(p.mes)}</strong></td>
+      <td style="font-size:0.78rem;color:#888;white-space:nowrap">${(() => { const f = calcularFechaVencimiento(p.mes?.substring(0,7)||'', c); return formatDate(f, true); })()}</td>
       <td class="num">${p.importe_alquiler>0?formatMoney(p.importe_alquiler):'—'}</td>
       <td class="num">${p.monto_epe>0?formatMoney(p.monto_epe):'—'}</td>
       <td class="num">${p.monto_agua>0?formatMoney(p.monto_agua):'—'}</td>
@@ -987,6 +1029,7 @@ function renderGrilla(c) {
       <table class="grid-table">
         <thead><tr>
           <th>Mes</th>
+          <th>Vence</th>
           <th class="r">Alquiler</th>
           <th class="r">EPE</th>
           <th class="r">Agua</th>
@@ -1452,6 +1495,7 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
   window._gpHoja = hoja;
   window._gpContratoId = c.id;
   window._gpComision = c.comision_porcentaje||8;
+  window._gpContratoActual = c;
 
   document.getElementById('modal-title').textContent = 'Gestión de Pago';
   document.getElementById('modal-subtitle').textContent = hoja;
@@ -1512,7 +1556,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
     <!-- SOLAPA 1: CARGAR/MODIFICAR -->
     <div id="s1" class="solapa-panel active">
       <div class="form-grid">
-        <div class="form-group"><label>Fecha vencimiento</label><input id="gp-vence" type="date" value="${p?.fecha_pago_hasta?.substring(0,10)||''}"></div>
+        <div class="form-group"><label>Fecha vencimiento</label><input id="gp-vence" type="date" value="${p?.fecha_pago_hasta?.substring(0,10) || calcularFechaVencimiento(mesKey, c)}"></div>
         <div class="form-group"><label>Alquiler</label><input id="gp-alquiler" type="number" value="${p?.importe_alquiler||''}" placeholder="0" oninput="recalcGP(${comisionPct})"></div>
         <div class="form-group"><label>EPE</label><input id="gp-epe" type="number" value="${p?.monto_epe||''}" placeholder="0"></div>
         <div class="form-group"><label>Agua</label><input id="gp-agua" type="number" value="${p?.monto_agua||''}" placeholder="0"></div>
@@ -1562,6 +1606,19 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
         ✓ Este mes está completamente pagado
       </div>` : ''}
       <div id="gp-cobro-items">${generarItemsCobro(p, extrasInq)}</div>
+      ${c?.interes_punitorio > 0 ? `
+      <div style="background:#fff8e1;border:1px solid #ffc107;border-radius:8px;padding:0.75rem 1rem;margin-top:0.75rem">
+        <div style="font-size:0.82rem;font-weight:600;color:#856404;margin-bottom:6px">⏱ Interés punitorio (${c.interes_punitorio}% diario s/alquiler)</div>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+          <label style="font-size:0.82rem;color:#856404">Fecha de pago:</label>
+          <input type="date" id="gp-fecha-pago" value="${TODAY}" style="padding:4px 8px;border:1px solid #ffc107;border-radius:6px;font-size:0.82rem" onchange="recalcIntereses()">
+          <span id="gp-interes-info" style="font-size:0.82rem;color:#856404"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-top:6px">
+          <input type="checkbox" id="gp-interes-chk" onchange="recalcCobro()" style="width:15px;height:15px">
+          <label id="gp-interes-label" style="font-size:0.82rem;color:#856404;cursor:pointer" for="gp-interes-chk">Agregar intereses al cobro</label>
+        </div>
+      </div>` : ''}
       <div style="margin-top:0.75rem;padding:0.75rem;background:var(--cream);border-radius:8px">
         <div class="form-group">
           <label>Pago a cuenta (importe libre)</label>
@@ -1596,6 +1653,8 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
   recalcGP(comisionPct);
   recalcCobro();
   recalcProp();
+  // Auto-calculate interest
+  setTimeout(recalcIntereses, 50);
   // Activate requested tab
   if (solapaInicial !== 's1') {
     const btn = document.querySelector(`.solapa-btn:nth-child(${solapaInicial==='s2'?2:3})`);
@@ -1676,6 +1735,30 @@ function generarItemsPropietario(p, extrasProp, comisionPct) {
   `;
 }
 
+function recalcIntereses() {
+  const fechaPago = document.getElementById('gp-fecha-pago')?.value;
+  const vence = document.getElementById('gp-vence')?.value;
+  const alquiler = parseFloat(document.getElementById('gp-alquiler')?.value)||0;
+  const c = window._gpContratoActual;
+  if (!c || !fechaPago || !vence || !alquiler) return;
+  
+  const interes = calcularIntereses(alquiler, vence, fechaPago, c.interes_punitorio||0);
+  const infoEl = document.getElementById('gp-interes-info');
+  const labelEl = document.getElementById('gp-interes-label');
+  const chkEl = document.getElementById('gp-interes-chk');
+  
+  if (interes > 0) {
+    if (infoEl) infoEl.textContent = `= ${formatMoney(interes)}`;
+    if (labelEl) labelEl.textContent = `Agregar intereses al cobro (${formatMoney(interes)})`;
+    if (chkEl) { chkEl.dataset.interes = interes; }
+  } else {
+    if (infoEl) infoEl.textContent = 'Sin mora';
+    if (labelEl) labelEl.textContent = 'Sin intereses (dentro del plazo)';
+    if (chkEl) { chkEl.dataset.interes = 0; chkEl.checked = false; }
+  }
+  recalcCobro();
+}
+
 function recalcGP(comisionPct) {
   const alq = parseFloat(document.getElementById('gp-alquiler')?.value)||0;
   const comision = alq * (comisionPct/100);
@@ -1704,6 +1787,11 @@ function recalcCobro() {
   });
   const acuenta = parseFloat(document.getElementById('gp-acuenta')?.value)||0;
   total += acuenta;
+  // Add interest if checked
+  const interesChk = document.getElementById('gp-interes-chk');
+  if (interesChk?.checked) {
+    total += parseFloat(interesChk.dataset.interes||0);
+  }
   const el = document.getElementById('gp-total-cobro');
   if (el) el.textContent = formatMoney(total);
 }
@@ -1916,6 +2004,16 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   const acuenta = parseFloat(document.getElementById('gp-acuenta')?.value)||0;
   const acuentaConcepto = document.getElementById('gp-acuenta-concepto')?.value||'A cuenta';
   if (acuenta > 0) { totalCobrado += acuenta; itemsRecibo.push({label: acuentaConcepto, monto: acuenta}); }
+  
+  // Add interest if checked
+  const interesChk = document.getElementById('gp-interes-chk');
+  if (interesChk?.checked) {
+    const interesVal = parseFloat(interesChk.dataset.interes||0);
+    if (interesVal > 0) {
+      totalCobrado += interesVal;
+      itemsRecibo.push({label: 'Interés punitorio', monto: interesVal});
+    }
+  }
 
   if (totalCobrado <= 0) { toast('Seleccioná al menos un ítem','error'); return; }
 
@@ -2334,6 +2432,8 @@ function openNuevoContrato() {
         </select>
       </div>
       <div class="form-group"><label>Gastos inicio</label><input id="f-gastos" type="number" placeholder="0"></div>
+      <div class="form-group"><label>Día vencimiento (del mes)</label><input id="f-dia-venc" type="number" min="1" max="31" value="10" placeholder="10"></div>
+      <div class="form-group"><label>Interés punitorio diario (%)</label><input id="f-interes" type="number" min="0" step="0.001" value="0" placeholder="0"></div>
     </div>
 
     <div class="section-title" style="margin:1.2rem 0 1rem">Servicios e impuestos a cargo del inquilino</div>
@@ -2609,6 +2709,8 @@ async function guardarContrato() {
     propietario_id: propId||null,
     inquilino_id: inqId||null,
     comision_porcentaje: comisionPct,
+    dia_vencimiento: parseInt(document.getElementById('f-dia-venc')?.value)||10,
+    interes_punitorio: parseFloat(document.getElementById('f-interes')?.value)||0,
   };
 
   try {
@@ -2702,6 +2804,12 @@ function openEditContrato(id) {
       </div>
       <div class="form-group"><label>Gastos inicio</label>
         <input id="f-gastos" type="number" value="${c.gastos_inicio||0}">
+      </div>
+      <div class="form-group"><label>Día vencimiento (del mes)</label>
+        <input id="f-dia-venc" type="number" min="1" max="31" value="${c.dia_vencimiento||10}">
+      </div>
+      <div class="form-group"><label>Interés punitorio diario (%)</label>
+        <input id="f-interes" type="number" min="0" step="0.001" value="${c.interes_punitorio||0}">
       </div>
     </div>
 
