@@ -2877,6 +2877,8 @@ async function actualizarContrato(id) {
   const propPersonas = propIds.map(pid => DB_PERSONAS.find(p=>p.id===pid)).filter(Boolean);
   const inqPersonas = inqIds.map(pid => DB_PERSONAS.find(p=>p.id===pid)).filter(Boolean);
 
+  const serviciosChecked = [...document.querySelectorAll('.serv-edit-chk:checked')].map(c=>c.value);
+
   const body = {
     titulo: document.getElementById('f-titulo').value.trim(),
     locador: propPersonas.length ? formatPersonasFromCP(propPersonas.map((p,i)=>({personas:p,orden:i+1}))) : undefined,
@@ -2886,6 +2888,12 @@ async function actualizarContrato(id) {
     tipo_inmueble: document.getElementById('f-tipo').value,
     modalidad_pago: document.getElementById('f-modalidad').value,
     comision_porcentaje: parseFloat(document.getElementById('f-comision-pct').value)||8,
+    periodicidad_actualizacion: document.getElementById('f-periodicidad')?.value||null,
+    indice_actualizacion: document.getElementById('f-indice')?.value||null,
+    gastos_inicio: parseFloat(document.getElementById('f-gastos')?.value)||0,
+    servicios_inquilino: serviciosChecked.length ? serviciosChecked.join(', ') : null,
+    dia_vencimiento: parseInt(document.getElementById('f-dia-venc')?.value)||10,
+    interes_punitorio: parseFloat(document.getElementById('f-interes')?.value)||0,
     propietario_id: propIds[0]||null,
     inquilino_id: inqIds[0]||null,
   };
