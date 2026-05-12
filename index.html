@@ -2295,8 +2295,14 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
       ];
       let html = '';
       for (const srv of srvList) {
-        // Services paid by inquilino rendered to propietario (add to recibo)
-        if (servRinde.includes(srv.key) && srv.monto > 0) {
+        if (!srv.monto) continue;
+        const pctInq = c?.['pct_'+srv.key] ?? 100;
+        const pctProp = c?.['pct_prop_'+srv.key] ?? 0;
+        const seRinde = servRinde.includes(srv.key);
+        const propAbona = servPropAbona.includes(srv.key);
+
+        if (seRinde) {
+          // Propietario paga la boleta — le rendimos lo que cobró el inquilino
           html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
             <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
               <input type="checkbox" id="prop-chk-srv-${srv.key}" value="${srv.monto}" data-signo="1" checked onchange="recalcProp()" style="width:15px;height:15px">
@@ -2304,23 +2310,18 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
             </label>
             <span style="font-size:0.85rem;color:var(--green)">+ ${formatMoney(srv.monto)}</span>
           </div>`;
-        }
-        // Services paid by propietario (deduct from recibo)
-        if (servPropAbona.includes(srv.key) && srv.monto > 0) {
-          const pctInq = c?.['pct_'+srv.key] ?? 100;
-          const pctProp = c?.['pct_prop_'+srv.key] ?? 0;
-          if (pctProp > 0 && pctInq > 0) {
-            const totalBill = Math.round(srv.monto * 100 / pctInq);
-            const montoProp = Math.round(totalBill * pctProp / 100);
-            if (montoProp > 0) {
-              html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
-                <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
-                  <input type="checkbox" id="prop-chk-srv-prop-${srv.key}" value="${montoProp}" data-signo="-1" checked onchange="recalcProp()" style="width:15px;height:15px">
-                  ${srv.label} (propietario ${pctProp}%)
-                </label>
-                <span style="font-size:0.85rem;color:var(--accent)">− ${formatMoney(montoProp)}</span>
-              </div>`;
-            }
+        } else if (propAbona && pctProp > 0 && pctInq > 0) {
+          // Inmobiliaria paga — descontamos solo la parte del propietario
+          const totalBill = Math.round(srv.monto * 100 / pctInq);
+          const montoProp = Math.round(totalBill * pctProp / 100);
+          if (montoProp > 0) {
+            html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
+              <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
+                <input type="checkbox" id="prop-chk-srv-prop-${srv.key}" value="${montoProp}" data-signo="-1" checked onchange="recalcProp()" style="width:15px;height:15px">
+                ${srv.label} (propietario ${pctProp}%)
+              </label>
+              <span style="font-size:0.85rem;color:var(--accent)">− ${formatMoney(montoProp)}</span>
+            </div>`;
           }
         }
       }
@@ -3102,7 +3103,7 @@ function _abrirFormularioContrato(c, esNuevo) {
           <th style="padding:6px 10px;text-align:center">% Inquilino</th>
           <th style="padding:6px 10px;text-align:center">% Propietario</th>
           <th style="padding:6px 10px;text-align:center">Total</th>
-          <th style="padding:6px 10px;text-align:center">¿Se rinde?</th>
+          <th style="padding:6px 10px;text-align:center">¿Se rinde al propietario?</th>
         </tr></thead>
         <tbody>
           ${['epe','agua','tgiu','seguro','internet','expensas'].map(s => {
