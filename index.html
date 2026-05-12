@@ -189,9 +189,11 @@
   .saldo-pendiente { color:var(--accent); font-weight:600; }
   .saldo-ok { color:var(--green); }
 
-  .toast { position:fixed; bottom:2rem; right:2rem; background:var(--ink); color:var(--cream); padding:0.8rem 1.4rem; border-radius:8px; font-size:0.85rem; z-index:999; animation:toastIn 0.3s ease; box-shadow:var(--shadow-lg); }
+  #toast-container { position:fixed; bottom:2rem; right:2rem; z-index:9999; display:flex; flex-direction:column; gap:0.5rem; align-items:flex-end; }
+  .toast { background:var(--ink); color:var(--cream); padding:0.8rem 1.4rem; border-radius:8px; font-size:0.85rem; animation:toastIn 0.3s ease; box-shadow:var(--shadow-lg); max-width:400px; }
   .toast.success { border-left:3px solid var(--green); }
   .toast.error { border-left:3px solid var(--accent); }
+  .toast.warn { border-left:3px solid #ffc107; }
   @keyframes toastIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
 
   @media(max-width:600px) { main { padding:1rem; } .stats-row { grid-template-columns:1fr 1fr; } }
@@ -713,10 +715,16 @@ function daysDiff(d1, d2) {
   return Math.round((new Date(d1) - new Date(d2)) / 86400000);
 }
 function toast(msg, type='success') {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    document.body.appendChild(container);
+  }
   const el = document.createElement('div');
   el.className = `toast ${type}`;
   el.textContent = msg;
-  document.body.appendChild(el);
+  container.appendChild(el);
   setTimeout(() => el.remove(), 3500);
 }
 
@@ -1897,53 +1905,7 @@ async function cargarListaServicios() {
         </div>`).join('')}
       </div>` : ''}
       ${cargadosHtml}
-      ${contratos.map(c => {
-        const nroMap = { epe: c.nro_epe, agua: c.nro_agua, tgiu: c.nro_tgiu, seguro: c.nro_seguro, internet: c.nro_internet, expensas: c.nro_expensas };
-        const nro = nroMap[srv] || '';
-        const pago = pagosPorHoja[c.hoja];
-        
-        // EPE: check if next month is available
-        let epeExtra = '';
-        if (srv === 'epe') {
-          const venceAntesMes = c.vigencia_hasta && c.vigencia_hasta < mesNext + '-01';
-          epeExtra = `
-            <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:6px">
-              <select id="srv-epe-cuota-${c.id}" style="padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.8rem" onchange="toggleCuota2Option(${c.id},this.value)">
-                <option value="1">Cuota 1</option>
-                <option value="2">Cuota 2</option>
-              </select>
-              ${!venceAntesMes ? `
-                <div id="srv-epe-cuota2-wrap-${c.id}" style="display:flex">
-                  <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;cursor:pointer">
-                    <input type="checkbox" id="srv-epe-cuota2-${c.id}" data-hoja="${c.hoja}" data-next="${mesNext}" style="width:14px;height:14px">
-                    Cargar cuota 2 en ${mesNext.replace('-','/')} con mismo importe
-                  </label>
-                </div>
-              ` : `<span style="font-size:0.78rem;color:var(--accent)">⚠ Contrato vence antes de ${mesNext.replace('-','/')}</span>`}
-            </div>`;
-        }
-        
-        const yaCargado = pago && pago[campo] > 0;
-        const totalBoleta = yaCargado ? Math.round(pago[campo] * 100 / (c['pct_'+srv]||100)) : '';
-        const cardClass = yaCargado ? `ya-cargado-${srv}` : `sin-cargar-${srv}`;
-        return `<div class="${cardClass}" style="${yaCargado?'display:none;':''} background:${yaCargado?'#f0fff4':'var(--cream)'};border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem;border:1.5px solid ${yaCargado?'var(--green)':'transparent'}">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;flex-wrap:wrap">
-            <div>
-              <strong style="font-size:0.88rem">${c.titulo||c.hoja}</strong>
-              <div style="font-size:0.75rem;color:#888">${c._locatario||c.locatario||'—'}${nro?' · Cta: '+nro:''}</div>
-            </div>
-            <div>
-            <input type="number" id="srv-${srv}-${c.id}" data-hoja="${c.hoja}" data-pago-id="${pago?.id||''}" 
-              data-pct="${c['pct_'+srv]||100}"
-              value="${totalBoleta}"
-              placeholder="$ total boleta" style="width:140px;padding:5px 8px;border:1.5px solid ${yaCargado?'var(--green)':'var(--border)'};border-radius:6px;font-size:0.85rem">
-            ${(c['pct_'+srv]||100) < 100 ? `<div style="font-size:0.72rem;color:#856404;margin-top:3px">Total boleta → se guarda el ${c['pct_'+srv]}%</div>` : ''}
-            ${yaCargado ? `<div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Guardado: ${formatMoney(pago[campo])}</div>` : ''}
-          </div>
-          </div>
-          ${epeExtra}
-        </div>`;
-      }).join('')}
+      ${sinCargarHtml}
     `;
   }
 }
@@ -1953,8 +1915,6 @@ async function guardarServicios() {
   if (!mesKey) return;
   const mes = mesKey + '-01';
   let guardados = 0;
-
-  // Collect all changes grouped by pago
   const cambiosPorPago = {};
 
   for (const srv of ['epe', 'agua', 'tgiu', 'seguro', 'internet', 'expensas']) {
@@ -1962,113 +1922,85 @@ async function guardarServicios() {
     for (const input of inputs) {
       const importe = parseFloat(input.value);
       if (!importe) continue;
-      const hoja = input.dataset.hoja;
-      const hojaEncoded = encodeURIComponent(hoja);
 
-      try {
-        // Find pago for this hoja/mes
-        let pagoId = input.dataset.pagoId;
-        let pagoActual = null;
-        if (pagoId) {
-          pagoActual = DB.pagos.find(p => p.id == pagoId);
-        }
-        if (!pagoActual) {
+      // Get hojas - grouped input has data-hojas, legacy has data-hoja
+      const hojas = input.dataset.hojas
+        ? input.dataset.hojas.split('|').filter(Boolean)
+        : input.dataset.hoja ? [input.dataset.hoja] : [];
+
+      for (const hoja of hojas) {
+        try {
+          const hojaEncoded = encodeURIComponent(hoja);
           const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
           if (!pagos.length) continue;
-          pagoActual = pagos[0];
-          pagoId = pagoActual.id;
-        }
+          const p = pagos[0];
+          if (!cambiosPorPago[p.id]) cambiosPorPago[p.id] = { pago: p, changes: {} };
+          cambiosPorPago[p.id].changes[`monto_${srv}`] = importe;
+        } catch(e) { console.error('Error finding pago:', e); }
+      }
 
-        // Accumulate changes for this contract
-        if (!cambiosPorPago[pagoId]) cambiosPorPago[pagoId] = { pago: pagoActual, changes: {} };
-        cambiosPorPago[pagoId].changes[`monto_${srv}`] = importe;
-
-        // Propagate to other contracts sharing same nro
-        const cActual = DB.contratos.find(x => x.hoja === hoja);
-        const nroShared = cActual?.[`nro_${srv}`];
-        if (nroShared) {
-          const contratosShared = DB.contratos.filter(c =>
-            c[`nro_${srv}`] === nroShared && c.hoja !== hoja && 
-            (c.servicios_inquilino||'').toLowerCase().includes(srv)
-          );
-          for (const cS of contratosShared) {
+      // EPE cuota 2
+      if (srv === 'epe') {
+        const contratoId = input.id.replace('srv-epe-g-','').replace('srv-epe-','').split(',')[0];
+        const c2chk = document.getElementById(`srv-epe-cuota2-${contratoId}`);
+        if (c2chk?.checked && hojas.length > 0) {
+          const hoja = hojas[0];
+          const cActual = DB.contratos.find(x => x.hoja === hoja);
+          const mesNext = c2chk.dataset.next + '-01';
+          for (const h of hojas) {
             try {
-              const hojaS = encodeURIComponent(cS.hoja);
-              const pagosS = await sbGet('pagos', `hoja=eq.${hojaS}&mes=eq.${mes}&limit=1`);
-              if (!pagosS.length) continue;
-              const pagoS = pagosS[0];
-              if (!cambiosPorPago[pagoS.id]) cambiosPorPago[pagoS.id] = { pago: pagoS, changes: {} };
-              // Store the same total bill - applyPct will use each contract's own pct
-              cambiosPorPago[pagoS.id].changes[`monto_${srv}`] = importe;
+              const hojaEncoded = encodeURIComponent(h);
+              const pagosNext = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesNext}&limit=1`);
+              if (!pagosNext.length) continue;
+              const pN = pagosNext[0];
+              if (!cambiosPorPago[pN.id]) cambiosPorPago[pN.id] = { pago: pN, changes: {} };
+              cambiosPorPago[pN.id].changes['monto_epe'] = importe;
             } catch(e) {}
           }
         }
-
-        // EPE: also save cuota 2 in next month if checked
-        if (srv === 'epe') {
-          const contratoId = input.id.split('-').pop();
-          const c2chk = document.getElementById(`srv-epe-cuota2-${contratoId}`);
-          if (c2chk?.checked) {
-            const mesNext = c2chk.dataset.next + '-01';
-            const pagosNext = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesNext}&limit=1`);
-            if (pagosNext.length) {
-              const pNext = pagosNext[0];
-              const newTotal = (pNext.importe_alquiler||0)+(pNext.monto_agua||0)+(pNext.monto_tgiu||0)+(pNext.monto_seguro||0)+(pNext.monto_internet||0)+(pNext.monto_expensas||0)+importe;
-              const yaAbonado = (pNext.total||0) - (pNext.saldo||0);
-              const nuevoSaldo = Math.max(0, newTotal - yaAbonado);
-              const cNext = DB.contratos.find(x => x.hoja === hoja);
-              const pctEpe = cNext?.pct_epe ?? 100;
-              const montoEpeNext = Math.round(importe * pctEpe / 100);
-              await sbPatch('pagos', pNext.id, { monto_epe: montoEpeNext, total: (pNext.importe_alquiler||0)+(pNext.monto_agua||0)+(pNext.monto_tgiu||0)+(pNext.monto_seguro||0)+(pNext.monto_internet||0)+(pNext.monto_expensas||0)+montoEpeNext, saldo: Math.max(0,((pNext.importe_alquiler||0)+(pNext.monto_agua||0)+(pNext.monto_tgiu||0)+(pNext.monto_seguro||0)+(pNext.monto_internet||0)+(pNext.monto_expensas||0)+montoEpeNext)-((pNext.total||0)-(pNext.saldo||0))) });
-              guardados++;
-            }
-          }
-        }
-      } catch(e) { console.error('Error guardando servicio:', e); }
+      }
     }
   }
 
-  // Now update each pago with all changes + recalculate total
+  // Apply pct and save each pago
   for (const [pagoId, {pago, changes}] of Object.entries(cambiosPorPago)) {
-    const alq = pago.importe_alquiler || 0;
-    // Apply pct to services - user enters TOTAL bill, we store INQUILINO portion
-    const cPago = DB.contratos.find(x => x.hoja === pago.hoja);
-    // Fetch fresh pct data from Supabase to avoid stale cache
-    let pctData = cPago;
     try {
-      const fresh = await sbGet('contratos', `hoja=eq.${encodeURIComponent(pago.hoja)}&select=pct_epe,pct_agua,pct_tgiu,pct_seguro,pct_internet,pct_expensas,pct_prop_epe,pct_prop_agua,pct_prop_tgiu,pct_prop_seguro,pct_prop_internet,pct_prop_expensas&limit=1`);
-      if (fresh.length) pctData = { ...cPago, ...fresh[0] };
-    } catch(e) {}
-    const applyPct = (val, srv) => {
-      const pct = pctData?.['pct_'+srv] ?? 100;
-      return Math.round(val * pct / 100);
-    };
-    // Use 'in' operator to check if key exists in changes (undefined != null is false in JS!)
-    const epe = 'monto_epe' in changes ? applyPct(changes.monto_epe, 'epe') : (pago.monto_epe ?? 0);
-    const agua = 'monto_agua' in changes ? applyPct(changes.monto_agua, 'agua') : (pago.monto_agua ?? 0);
-    const tgiu = 'monto_tgiu' in changes ? applyPct(changes.monto_tgiu, 'tgiu') : (pago.monto_tgiu ?? 0);
-    const seguro = 'monto_seguro' in changes ? applyPct(changes.monto_seguro, 'seguro') : (pago.monto_seguro ?? 0);
-    const internet = 'monto_internet' in changes ? applyPct(changes.monto_internet, 'internet') : (pago.monto_internet ?? 0);
-    const expensas = 'monto_expensas' in changes ? applyPct(changes.monto_expensas, 'expensas') : (pago.monto_expensas ?? 0);
-    const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
-    const yaAbonado = (pago.total||0) - (pago.saldo||0);
-    const nuevoSaldo = Math.max(0, newTotal - yaAbonado);
-    // Build patch with pct-applied values (NOT ...changes which has original totals)
-    const patch = { total: newTotal, saldo: nuevoSaldo };
-    if (changes.monto_epe != null) patch.monto_epe = epe;
-    if (changes.monto_agua != null) patch.monto_agua = agua;
-    if (changes.monto_tgiu != null) patch.monto_tgiu = tgiu;
-    if (changes.monto_seguro != null) patch.monto_seguro = seguro;
-    if (changes.monto_internet != null) patch.monto_internet = internet;
-    if (changes.monto_expensas != null) patch.monto_expensas = expensas;
-    await sbPatch('pagos', parseInt(pagoId), patch);
-    guardados++;
+      // Fetch fresh pct from Supabase
+      const cPago = DB.contratos.find(x => x.hoja === pago.hoja);
+      let pctData = cPago;
+      try {
+        const fresh = await sbGet('contratos', `hoja=eq.${encodeURIComponent(pago.hoja)}&select=pct_epe,pct_agua,pct_tgiu,pct_seguro,pct_internet,pct_expensas&limit=1`);
+        if (fresh.length) pctData = { ...cPago, ...fresh[0] };
+      } catch(e) {}
+
+      const applyPct = (val, srv) => Math.round(val * (pctData?.['pct_'+srv] ?? 100) / 100);
+
+      const alq = pago.importe_alquiler || 0;
+      const epe     = 'monto_epe'      in changes ? applyPct(changes.monto_epe, 'epe')           : (pago.monto_epe ?? 0);
+      const agua    = 'monto_agua'     in changes ? applyPct(changes.monto_agua, 'agua')          : (pago.monto_agua ?? 0);
+      const tgiu    = 'monto_tgiu'     in changes ? applyPct(changes.monto_tgiu, 'tgiu')          : (pago.monto_tgiu ?? 0);
+      const seguro  = 'monto_seguro'   in changes ? applyPct(changes.monto_seguro, 'seguro')      : (pago.monto_seguro ?? 0);
+      const internet= 'monto_internet' in changes ? applyPct(changes.monto_internet, 'internet')  : (pago.monto_internet ?? 0);
+      const expensas= 'monto_expensas' in changes ? applyPct(changes.monto_expensas, 'expensas')  : (pago.monto_expensas ?? 0);
+      const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
+      const yaAbonado = (pago.total||0) - (pago.saldo||0);
+      const patch = { total: newTotal, saldo: Math.max(0, newTotal - yaAbonado) };
+      if ('monto_epe'      in changes) patch.monto_epe = epe;
+      if ('monto_agua'     in changes) patch.monto_agua = agua;
+      if ('monto_tgiu'     in changes) patch.monto_tgiu = tgiu;
+      if ('monto_seguro'   in changes) patch.monto_seguro = seguro;
+      if ('monto_internet' in changes) patch.monto_internet = internet;
+      if ('monto_expensas' in changes) patch.monto_expensas = expensas;
+      await sbPatch('pagos', parseInt(pagoId), patch);
+      guardados++;
+    } catch(e) { console.error('Error saving pago:', e); }
   }
 
   toast(`${guardados} servicio/s guardados ✓`);
   await loadAll();
   cargarListaServicios();
 }
+
 
 function actualizarTotalPct(srv) {
   const inq = parseFloat(document.getElementById(`f-pct-${srv}`)?.value)||0;
