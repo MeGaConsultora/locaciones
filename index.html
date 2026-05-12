@@ -3143,7 +3143,9 @@ async function actualizarContrato(id) {
     const nuevoImporte = parseFloat(document.getElementById('f-importe-inicial')?.value)||0;
     if (reimportar && nuevoImporte > 0) {
       const cActualizado = { ...DB.contratos.find(x=>x.id===id), ...body };
-      await proyectarPeriodo(cActualizado.hoja||cActualizado.titulo, TODAY.substring(0,7), nuevoImporte, cActualizado.periodicidad_actualizacion, cActualizado.dia_vencimiento||10, cActualizado.modalidad_pago||'ADELANTADO');
+      // Start from vigencia_desde, not TODAY
+      const desdeKey = (cActualizado.vigencia_desde || TODAY).substring(0,7);
+      await proyectarPeriodo(cActualizado.hoja||cActualizado.titulo, desdeKey, nuevoImporte, cActualizado.periodicidad_actualizacion, cActualizado.dia_vencimiento||10, cActualizado.modalidad_pago||'ADELANTADO');
       toast('Período re-proyectado ✓');
     }
     
