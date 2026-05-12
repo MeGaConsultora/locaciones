@@ -3342,7 +3342,7 @@ function openEditContrato(id) {
 
     <div class="section-title" style="margin:1rem 0 0.75rem">Servicios e impuestos a cargo del inquilino</div>
     <div style="display:flex;flex-wrap:wrap;gap:1rem;padding:1rem;background:var(--cream);border-radius:8px;margin-bottom:1rem">
-      ${['EPE','Agua','TGIU','Gas','Internet','Expensas','Seguro','Otros'].map(s => {
+      ${['EPE','Agua','TGIU','Internet','Expensas','Seguro'].map(s => {
         const checked = c.servicios_inquilino?.includes(s) ? 'checked' : '';
         return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.88rem">
           <input type="checkbox" class="serv-edit-chk" value="${s}" ${checked} style="width:15px;height:15px"> ${s}
@@ -3469,10 +3469,15 @@ async function actualizarContrato(id) {
       toast('Período re-proyectado ✓');
     }
     
-    // Check for months outside new vigencia
+    // Check for months outside new vigencia ONLY if dates changed
     const nuevaDesde = document.getElementById('f-desde').value;
     const nuevaHasta = document.getElementById('f-hasta').value;
-    if (nuevaDesde && nuevaHasta) {
+    const contratoOriginal = DB.contratos.find(x=>x.id===id);
+    const fechasChanged = contratoOriginal && (
+      nuevaDesde !== (contratoOriginal.vigencia_desde?.substring(0,10)||'') ||
+      nuevaHasta !== (contratoOriginal.vigencia_hasta?.substring(0,10)||'')
+    );
+    if (nuevaDesde && nuevaHasta && fechasChanged) {
       const contrato = DB.contratos.find(x=>x.id===id);
       if (contrato) {
         const pagosContrato = DB.pagos.filter(p => p.hoja === contrato.hoja);
