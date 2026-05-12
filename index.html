@@ -3610,13 +3610,12 @@ async function actualizarContrato(id) {
       await sbPost('contrato_personas', {contrato_id:id, persona_id:inqIds[i], rol:'inquilino', orden:i+1});
     }
     toast('Contrato actualizado ✓');
-    // If editing from modal2, close it and reopen services
-    const modal2El = document.getElementById('modal2-overlay');
-    if (modal2El && modal2El.classList.contains('open')) {
+    // If editing from services screen, reopen services after save
+    if (window._volverAServicios) {
+      window._volverAServicios = false;
       await loadAll();
-      modal2El.classList.remove('open');
-      document.getElementById('modal-overlay').classList.add('open');
-      setTimeout(cargarListaServicios, 200);
+      document.getElementById('modal-overlay').classList.remove('open');
+      setTimeout(abrirCargarServicios, 100);
       return;
     }
 
@@ -3930,7 +3929,10 @@ function closeModal(e) {
     const contratoId = overlay.dataset.contratoId;
     overlay.classList.remove('open');
     overlay.dataset.contratoId = '';
-    if (contratoId) {
+    if (window._volverAServicios) {
+      window._volverAServicios = false;
+      setTimeout(abrirCargarServicios, 100);
+    } else if (contratoId) {
       openContrato(parseInt(contratoId));
     }
   }
@@ -3939,39 +3941,13 @@ function closeModal(e) {
 function closeModal2() {
   const el = document.getElementById('modal2-overlay');
   if (el) el.classList.remove('open');
-  // Reopen services modal and refresh
-  document.getElementById('modal-overlay').classList.add('open');
-  setTimeout(cargarListaServicios, 200);
 }
 
 async function openModal2ForContrato(contratoId) {
-  await loadAll();
-  const c = DB.contratos.find(x => x.id === contratoId);
-  if (!c) return;
-
-  // Build form HTML directly into modal2
-  const propietarios = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'propietario');
-  const inquilinos = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'inquilino');
-
-  document.getElementById('modal2-title').textContent = 'Editar Contrato';
-  document.getElementById('modal2-subtitle').textContent = c.titulo;
-
-  // Use the same _abrirFormularioContrato but render into modal2-body
-  // Temporarily swap modal-body target
-  const origBody = document.getElementById('modal-body');
-  const modal2Body = document.getElementById('modal2-body');
-
-  // Call _abrirFormularioContrato normally (it writes to modal-body and opens modal-overlay)
-  _abrirFormularioContrato(c, false);
-
-  // Wait for it to render then move content to modal2 without opening modal-overlay
-  requestAnimationFrame(() => {
-    modal2Body.innerHTML = origBody.innerHTML;
-    origBody.innerHTML = '';
-    document.getElementById('modal-overlay').classList.remove('open');
-    document.getElementById('modal2-overlay').classList.add('open');
-    setTimeout(() => ['epe','agua','tgiu','seguro','internet','expensas'].forEach(s => actualizarTotalPct(s)), 50);
-  });
+  // Mark that we came from services screen
+  window._volverAServicios = true;
+  // Just open normal edit modal
+  openEditContrato(contratoId);
 }
 
 // ============================================================
