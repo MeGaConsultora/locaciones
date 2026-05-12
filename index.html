@@ -1948,6 +1948,7 @@ async function guardarServicios() {
       const fresh = await sbGet('contratos', `hoja=eq.${encodeURIComponent(pago.hoja)}&select=pct_epe,pct_agua,pct_tgiu,pct_seguro,pct_internet,pct_expensas,pct_prop_epe,pct_prop_agua,pct_prop_tgiu,pct_prop_seguro,pct_prop_internet,pct_prop_expensas&limit=1`);
       if (fresh.length) pctData = { ...cPago, ...fresh[0] };
     } catch(e) {}
+    console.log('DEBUG pctData for', pago.hoja, ':', JSON.stringify({pct_agua: pctData?.pct_agua, pct_epe: pctData?.pct_epe}));
     const applyPct = (val, srv) => {
       const pct = pctData?.['pct_'+srv] ?? 100;
       return Math.round(val * pct / 100);
