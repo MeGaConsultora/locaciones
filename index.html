@@ -3030,6 +3030,10 @@ function openEditContrato(id) {
       <div class="form-group" style="grid-column:1/-1">
         <label>Importe inicial alquiler</label>
         <input id="f-importe-inicial" type="number" value="${c.importe_inicial||''}" placeholder="0" style="border-color:var(--green);margin-top:4px">
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:0.82rem;color:#666;cursor:pointer">
+          <input type="checkbox" id="f-reimportar" style="width:14px;height:14px">
+          Re-proyectar los meses del período actual con este importe
+        </label>
       </div>
     </div>
 
@@ -3133,6 +3137,15 @@ async function actualizarContrato(id) {
       await sbPost('contrato_personas', {contrato_id:id, persona_id:inqIds[i], rol:'inquilino', orden:i+1});
     }
     toast('Contrato actualizado ✓');
+
+    // Re-project if checkbox is checked
+    const reimportar = document.getElementById('f-reimportar')?.checked;
+    const nuevoImporte = parseFloat(document.getElementById('f-importe-inicial')?.value)||0;
+    if (reimportar && nuevoImporte > 0) {
+      const cActualizado = { ...DB.contratos.find(x=>x.id===id), ...body };
+      await proyectarPeriodo(cActualizado.hoja||cActualizado.titulo, TODAY.substring(0,7), nuevoImporte, cActualizado.periodicidad_actualizacion, cActualizado.dia_vencimiento||10, cActualizado.modalidad_pago||'ADELANTADO');
+      toast('Período re-proyectado ✓');
+    }
     
     // Check for months outside new vigencia
     const nuevaDesde = document.getElementById('f-desde').value;
