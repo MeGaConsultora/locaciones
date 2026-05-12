@@ -1052,6 +1052,17 @@ function renderGrilla(c) {
     return;
   }
 
+  // Build servicios flags from contrato
+  const serviciosStr = (c.servicios_inquilino||'').toLowerCase();
+  const serviciosInquilino = {
+    epe: serviciosStr.includes('epe'),
+    agua: serviciosStr.includes('agua'),
+    tgiu: serviciosStr.includes('tgiu'),
+    seguro: serviciosStr.includes('seguro'),
+    internet: serviciosStr.includes('internet'),
+    expensas: serviciosStr.includes('expensas')
+  };
+
   // Sort descending by mes
   const pagosOrdenados = [...pagosActuales].sort((a,b) => (b.mes||'').localeCompare(a.mes||''));
 
@@ -1069,10 +1080,12 @@ function renderGrilla(c) {
       <td class="grid-mes"><strong>${formatDate(p.mes)}</strong></td>
       <td style="font-size:0.78rem;color:#888;white-space:nowrap">${(() => { const f = calcularFechaVencimiento(p.mes?.substring(0,7)||'', c); return formatDate(f, true); })()}</td>
       <td class="num">${p.importe_alquiler>0?formatMoney(p.importe_alquiler):'—'}</td>
-      <td class="num">${p.monto_epe>0?formatMoney(p.monto_epe):'—'}</td>
-      <td class="num">${p.monto_agua>0?formatMoney(p.monto_agua):'—'}</td>
-      <td class="num">${p.monto_tgiu>0?formatMoney(p.monto_tgiu):'—'}</td>
-      <td class="num">${p.monto_seguro>0?formatMoney(p.monto_seguro):'—'}</td>
+      ${serviciosInquilino.epe?`<td class="num">${p.monto_epe>0?formatMoney(p.monto_epe):'—'}</td>`:''}
+      ${serviciosInquilino.agua?`<td class="num">${p.monto_agua>0?formatMoney(p.monto_agua):'—'}</td>`:''}
+      ${serviciosInquilino.tgiu?`<td class="num">${p.monto_tgiu>0?formatMoney(p.monto_tgiu):'—'}</td>`:''}
+      ${serviciosInquilino.seguro?`<td class="num">${p.monto_seguro>0?formatMoney(p.monto_seguro):'—'}</td>`:''}
+      ${serviciosInquilino.internet?`<td class="num">${p.monto_internet>0?formatMoney(p.monto_internet):'—'}</td>`:''}
+      ${serviciosInquilino.expensas?`<td class="num">${p.monto_expensas>0?formatMoney(p.monto_expensas):'—'}</td>`:''}
       <td style="font-size:0.78rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasLabel}">${extrasLabel}</td>
       <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>
       <td class="num" id="abonado-${p.id}">${(() => { const ab = (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
@@ -1094,10 +1107,12 @@ function renderGrilla(c) {
           <th>Mes</th>
           <th>Vence</th>
           <th class="r">Alquiler</th>
-          <th class="r">EPE</th>
-          <th class="r">Agua</th>
-          <th class="r">TGIU</th>
-          <th class="r">Seguro</th>
+          ${serviciosInquilino.epe?'<th class="r">EPE</th>':''}
+          ${serviciosInquilino.agua?'<th class="r">Agua</th>':''}
+          ${serviciosInquilino.tgiu?'<th class="r">TGIU</th>':''}
+          ${serviciosInquilino.seguro?'<th class="r">Seguro</th>':''}
+          ${serviciosInquilino.internet?'<th class="r">Internet</th>':''}
+          ${serviciosInquilino.expensas?'<th class="r">Expensas</th>':''}
           <th>Extras</th>
           <th class="r">Total</th>
           <th class="r">Abonado</th>
@@ -1748,10 +1763,16 @@ async function abrirCargarServicios() {
       <button class="solapa-btn active" onclick="mostrarSolapa('srv-epe',this)">⚡ EPE</button>
       <button class="solapa-btn" onclick="mostrarSolapa('srv-agua',this)">💧 Agua</button>
       <button class="solapa-btn" onclick="mostrarSolapa('srv-tgiu',this)">🏛 TGIU</button>
+      <button class="solapa-btn" onclick="mostrarSolapa('srv-seguro',this)">🔒 Seguro</button>
+      <button class="solapa-btn" onclick="mostrarSolapa('srv-internet',this)">🌐 Internet</button>
+      <button class="solapa-btn" onclick="mostrarSolapa('srv-expensas',this)">🏢 Expensas</button>
     </div>
     <div id="srv-epe" class="solapa-panel active"><div class="loading">Seleccioná un mes para cargar</div></div>
     <div id="srv-agua" class="solapa-panel"><div class="loading">Seleccioná un mes para cargar</div></div>
     <div id="srv-tgiu" class="solapa-panel"><div class="loading">Seleccioná un mes para cargar</div></div>
+    <div id="srv-seguro" class="solapa-panel"><div class="loading">Seleccioná un mes para cargar</div></div>
+    <div id="srv-internet" class="solapa-panel"><div class="loading">Seleccioná un mes para cargar</div></div>
+    <div id="srv-expensas" class="solapa-panel"><div class="loading">Seleccioná un mes para cargar</div></div>
     <div class="form-actions" style="margin-top:1rem">
       <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
       <button class="btn btn-primary" onclick="guardarServicios()">💾 Guardar servicios</button>
@@ -1759,6 +1780,11 @@ async function abrirCargarServicios() {
   `;
   document.getElementById('modal-overlay').classList.add('open');
   setTimeout(cargarListaServicios, 50);
+}
+
+function toggleCuota2Option(contratoId, cuota) {
+  const div = document.getElementById(`srv-epe-cuota2-wrap-${contratoId}`);
+  if (div) div.style.display = cuota === '2' ? 'none' : 'flex';
 }
 
 async function cargarListaServicios() {
@@ -1776,7 +1802,7 @@ async function cargarListaServicios() {
   pagosMes.forEach(p => pagosPorHoja[p.hoja] = p);
 
   // Get contracts with each service as inquilino's responsibility
-  const serviciosMap = { epe: 'EPE', agua: 'Agua', tgiu: 'TGIU' };
+  const serviciosMap = { epe: 'EPE', agua: 'Agua', tgiu: 'TGIU', seguro: 'Seguro', internet: 'Internet', expensas: 'Expensas' };
   
   for (const [srv, label] of Object.entries(serviciosMap)) {
     const campo = `monto_${srv}`;
@@ -1808,7 +1834,8 @@ async function cargarListaServicios() {
     panel.innerHTML = `
       <p style="font-size:0.82rem;color:#888;margin-bottom:0.75rem">${contratos.length} contrato/s sin ${label} cargada</p>
       ${contratos.map(c => {
-        const nro = c[`nro_${srv}`] || '';
+        const nroMap = { epe: c.nro_epe, agua: c.nro_agua, tgiu: c.nro_tgiu, seguro: c.nro_seguro, internet: c.nro_internet, expensas: c.nro_expensas };
+        const nro = nroMap[srv] || '';
         const pago = pagosPorHoja[c.hoja];
         
         // EPE: check if next month is available
@@ -1817,15 +1844,17 @@ async function cargarListaServicios() {
           const venceAntesMes = c.vigencia_hasta && c.vigencia_hasta < mesNext + '-01';
           epeExtra = `
             <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:6px">
-              <select id="srv-epe-cuota-${c.id}" style="padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.8rem">
+              <select id="srv-epe-cuota-${c.id}" style="padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.8rem" onchange="toggleCuota2Option(${c.id},this.value)">
                 <option value="1">Cuota 1</option>
                 <option value="2">Cuota 2</option>
               </select>
               ${!venceAntesMes ? `
-                <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;cursor:pointer">
-                  <input type="checkbox" id="srv-epe-cuota2-${c.id}" data-hoja="${c.hoja}" data-next="${mesNext}" style="width:14px;height:14px">
-                  Cargar cuota 2 en ${mesNext.replace('-','/')} con mismo importe
-                </label>
+                <div id="srv-epe-cuota2-wrap-${c.id}" style="display:flex">
+                  <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;cursor:pointer">
+                    <input type="checkbox" id="srv-epe-cuota2-${c.id}" data-hoja="${c.hoja}" data-next="${mesNext}" style="width:14px;height:14px">
+                    Cargar cuota 2 en ${mesNext.replace('-','/')} con mismo importe
+                  </label>
+                </div>
               ` : `<span style="font-size:0.78rem;color:var(--accent)">⚠ Contrato vence antes de ${mesNext.replace('-','/')}</span>`}
             </div>`;
         }
@@ -1852,41 +1881,70 @@ async function guardarServicios() {
   const mes = mesKey + '-01';
   let guardados = 0;
 
-  for (const srv of ['epe', 'agua', 'tgiu']) {
+  // Collect all changes grouped by pago
+  const cambiosPorPago = {};
+
+  for (const srv of ['epe', 'agua', 'tgiu', 'seguro', 'internet', 'expensas']) {
     const inputs = document.querySelectorAll(`[id^="srv-${srv}-"]:not([id*="cuota"])`);
     for (const input of inputs) {
       const importe = parseFloat(input.value);
       if (!importe) continue;
       const hoja = input.dataset.hoja;
-      const pagoId = input.dataset.pagoId;
-      const campo = `monto_${srv}`;
+      const hojaEncoded = encodeURIComponent(hoja);
 
       try {
+        // Find pago for this hoja/mes
+        let pagoId = input.dataset.pagoId;
+        let pagoActual = null;
         if (pagoId) {
-          await sbPatch('pagos', pagoId, { [campo]: importe });
-        } else {
-          // Find pago for this hoja/mes
-          const hojaEncoded = encodeURIComponent(hoja);
-          const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
-          if (pagos.length) await sbPatch('pagos', pagos[0].id, { [campo]: importe });
+          pagoActual = DB.pagos.find(p => p.id == pagoId);
         }
-        guardados++;
+        if (!pagoActual) {
+          const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
+          if (!pagos.length) continue;
+          pagoActual = pagos[0];
+          pagoId = pagoActual.id;
+        }
+
+        // Accumulate changes
+        if (!cambiosPorPago[pagoId]) cambiosPorPago[pagoId] = { pago: pagoActual, changes: {} };
+        cambiosPorPago[pagoId].changes[`monto_${srv}`] = importe;
 
         // EPE: also save cuota 2 in next month if checked
         if (srv === 'epe') {
-          const c2chk = document.getElementById(`srv-epe-cuota2-${input.id.split('-').pop()}`);
+          const contratoId = input.id.split('-').pop();
+          const c2chk = document.getElementById(`srv-epe-cuota2-${contratoId}`);
           if (c2chk?.checked) {
             const mesNext = c2chk.dataset.next + '-01';
-            const hojaEncoded = encodeURIComponent(hoja);
             const pagosNext = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesNext}&limit=1`);
             if (pagosNext.length) {
-              await sbPatch('pagos', pagosNext[0].id, { monto_epe: importe });
+              const pNext = pagosNext[0];
+              const newTotal = (pNext.importe_alquiler||0)+(pNext.monto_agua||0)+(pNext.monto_tgiu||0)+importe;
+              const yaAbonado = (pNext.total||0) - (pNext.saldo||0);
+              const nuevoSaldo = Math.max(0, newTotal - yaAbonado);
+              await sbPatch('pagos', pNext.id, { monto_epe: importe, total: newTotal, saldo: nuevoSaldo });
               guardados++;
             }
           }
         }
       } catch(e) { console.error('Error guardando servicio:', e); }
     }
+  }
+
+  // Now update each pago with all changes + recalculate total
+  for (const [pagoId, {pago, changes}] of Object.entries(cambiosPorPago)) {
+    const alq = pago.importe_alquiler || 0;
+    const epe = changes.monto_epe ?? pago.monto_epe ?? 0;
+    const agua = changes.monto_agua ?? pago.monto_agua ?? 0;
+    const tgiu = changes.monto_tgiu ?? pago.monto_tgiu ?? 0;
+    const seguro = changes.monto_seguro ?? pago.monto_seguro ?? 0;
+    const internet = changes.monto_internet ?? pago.monto_internet ?? 0;
+    const expensas = changes.monto_expensas ?? pago.monto_expensas ?? 0;
+    const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
+    const yaAbonado = (pago.total||0) - (pago.saldo||0);
+    const nuevoSaldo = Math.max(0, newTotal - yaAbonado);
+    await sbPatch('pagos', parseInt(pagoId), { ...changes, total: newTotal, saldo: nuevoSaldo });
+    guardados++;
   }
 
   toast(`${guardados} servicio/s guardados ✓`);
@@ -1997,6 +2055,8 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
         <div class="form-group"><label>Agua</label><input id="gp-agua" type="number" value="${p?.monto_agua||''}" placeholder="0"></div>
         <div class="form-group"><label>TGIU</label><input id="gp-tgiu" type="number" value="${p?.monto_tgiu||''}" placeholder="0"></div>
         <div class="form-group"><label>Seguro</label><input id="gp-seguro" type="number" value="${p?.monto_seguro||''}" placeholder="0"></div>
+        ${c?.servicios_inquilino?.toLowerCase().includes('internet')?`<div class="form-group"><label>Internet</label><input id="gp-internet" type="number" value="${p?.monto_internet||''}" placeholder="0"></div>`:''}
+        ${c?.servicios_inquilino?.toLowerCase().includes('expensas')?`<div class="form-group"><label>Expensas</label><input id="gp-expensas" type="number" value="${p?.monto_expensas||''}" placeholder="0"></div>`:''}
         <div class="form-group"><label>Comisión (${comisionPct}%)</label><input id="gp-comision" type="number" value="${comisionMonto.toFixed(2)}" placeholder="0" readonly style="background:#f5f5f5"></div>
       </div>
 
@@ -2331,7 +2391,9 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
     }
   } catch(e) {}
   
-  const total = alq+epe+agua+tgiu+seguro+extrasInqTotal;
+  const internet = parseFloat(document.getElementById('gp-internet')?.value)||0;
+  const expensas = parseFloat(document.getElementById('gp-expensas')?.value)||0;
+  const total = alq+epe+agua+tgiu+seguro+internet+expensas+extrasInqTotal;
 
   try {
     const hojaEncoded = encodeURIComponent(hoja);
@@ -2343,16 +2405,20 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       const totalAnterior = existing[0].total||0;
       const yaAbonado = totalAnterior - saldoActual;
       const nuevoSaldo = Math.max(0, total - yaAbonado);
+      const internetVal = parseFloat(document.getElementById('gp-internet')?.value)||0;
+      const expensasVal = parseFloat(document.getElementById('gp-expensas')?.value)||0;
       await sbPatch('pagos', pagoId, {
         importe_alquiler:alq, monto_epe:epe, monto_agua:agua,
-        monto_tgiu:tgiu, monto_seguro:seguro, total,
+        monto_tgiu:tgiu, monto_seguro:seguro, monto_internet:internetVal, monto_expensas:expensasVal, total,
         comision_8:comision, fecha_pago_hasta:vence, saldo:nuevoSaldo
       });
     } else {
+      const internetNew = parseFloat(document.getElementById('gp-internet')?.value)||0;
+      const expensasNew = parseFloat(document.getElementById('gp-expensas')?.value)||0;
       const r = await sbPost('pagos', {
         hoja, mes, corresponde_a_mes:mes,
         importe_alquiler:alq, monto_epe:epe, monto_agua:agua,
-        monto_tgiu:tgiu, monto_seguro:seguro, total,
+        monto_tgiu:tgiu, monto_seguro:seguro, monto_internet:internetNew, monto_expensas:expensasNew, total,
         comision_8:comision, fecha_pago_hasta:vence, saldo:total, pagado:'0'
       });
       pagoId = r[0]?.id;
@@ -2902,6 +2968,9 @@ function openNuevoContrato() {
       <div class="form-group"><label>N° cuenta EPE</label><input id="f-nro-epe" type="text" placeholder="Opcional"></div>
       <div class="form-group"><label>N° cuenta Agua</label><input id="f-nro-agua" type="text" placeholder="Opcional"></div>
       <div class="form-group"><label>N° cuenta TGIU</label><input id="f-nro-tgiu" type="text" placeholder="Opcional"></div>
+      <div class="form-group"><label>N° cuenta Seguro</label><input id="f-nro-seguro" type="text" placeholder="Opcional"></div>
+      <div class="form-group"><label>N° cuenta Internet</label><input id="f-nro-internet" type="text" placeholder="Opcional"></div>
+      <div class="form-group"><label>N° cuenta Expensas</label><input id="f-nro-expensas" type="text" placeholder="Opcional"></div>
     </div>
 
     <div class="form-actions">
@@ -3158,6 +3227,9 @@ async function guardarContrato() {
     nro_epe: document.getElementById('f-nro-epe')?.value.trim()||null,
     nro_agua: document.getElementById('f-nro-agua')?.value.trim()||null,
     nro_tgiu: document.getElementById('f-nro-tgiu')?.value.trim()||null,
+    nro_seguro: document.getElementById('f-nro-seguro')?.value.trim()||null,
+    nro_internet: document.getElementById('f-nro-internet')?.value.trim()||null,
+    nro_expensas: document.getElementById('f-nro-expensas')?.value.trim()||null,
   };
 
   try {
@@ -3315,10 +3387,14 @@ function openEditContrato(id) {
     </div>
 
     <div class="section-title" style="margin:1rem 0 0.75rem">Números de identificación de servicios</div>
+    <p style="font-size:0.78rem;color:#888;margin-bottom:0.75rem">Solo para servicios que paga el inquilino</p>
     <div class="form-grid">
       <div class="form-group"><label>N° cuenta EPE</label><input id="f-nro-epe" type="text" value="${c.nro_epe||''}"></div>
       <div class="form-group"><label>N° cuenta Agua</label><input id="f-nro-agua" type="text" value="${c.nro_agua||''}"></div>
       <div class="form-group"><label>N° cuenta TGIU</label><input id="f-nro-tgiu" type="text" value="${c.nro_tgiu||''}"></div>
+      <div class="form-group"><label>N° cuenta Seguro</label><input id="f-nro-seguro" type="text" value="${c.nro_seguro||''}"></div>
+      <div class="form-group"><label>N° cuenta Internet</label><input id="f-nro-internet" type="text" value="${c.nro_internet||''}"></div>
+      <div class="form-group"><label>N° cuenta Expensas</label><input id="f-nro-expensas" type="text" value="${c.nro_expensas||''}"></div>
     </div>
 
     <div id="inline-persona-form"></div>
@@ -3361,6 +3437,9 @@ async function actualizarContrato(id) {
     nro_epe: document.getElementById('f-nro-epe')?.value.trim()||null,
     nro_agua: document.getElementById('f-nro-agua')?.value.trim()||null,
     nro_tgiu: document.getElementById('f-nro-tgiu')?.value.trim()||null,
+    nro_seguro: document.getElementById('f-nro-seguro')?.value.trim()||null,
+    nro_internet: document.getElementById('f-nro-internet')?.value.trim()||null,
+    nro_expensas: document.getElementById('f-nro-expensas')?.value.trim()||null,
     propietario_id: propIds[0]||null,
     inquilino_id: inqIds[0]||null,
   };
