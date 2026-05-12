@@ -3612,9 +3612,9 @@ async function actualizarContrato(id) {
     toast('Contrato actualizado ✓');
     // If editing from modal2, close it and reopen services
     const modal2El = document.getElementById('modal2-overlay');
-    if (modal2El && modal2El.style.display === 'flex') {
+    if (modal2El && modal2El.classList.contains('open')) {
       await loadAll();
-      modal2El.style.display = 'none';
+      modal2El.classList.remove('open');
       document.getElementById('modal-overlay').classList.add('open');
       setTimeout(cargarListaServicios, 200);
       return;
@@ -3938,7 +3938,7 @@ function closeModal(e) {
 
 function closeModal2() {
   const el = document.getElementById('modal2-overlay');
-  if (el) el.style.display = 'none';
+  if (el) el.classList.remove('open');
   // Reopen services modal and refresh
   document.getElementById('modal-overlay').classList.add('open');
   setTimeout(cargarListaServicios, 200);
@@ -3948,17 +3948,30 @@ async function openModal2ForContrato(contratoId) {
   await loadAll();
   const c = DB.contratos.find(x => x.id === contratoId);
   if (!c) return;
+
+  // Build form HTML directly into modal2
+  const propietarios = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'propietario');
+  const inquilinos = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'inquilino');
+
   document.getElementById('modal2-title').textContent = 'Editar Contrato';
   document.getElementById('modal2-subtitle').textContent = c.titulo;
-  // Render form into modal-body first, then move to modal2-body
+
+  // Use the same _abrirFormularioContrato but render into modal2-body
+  // Temporarily swap modal-body target
+  const origBody = document.getElementById('modal-body');
+  const modal2Body = document.getElementById('modal2-body');
+
+  // Call _abrirFormularioContrato normally (it writes to modal-body and opens modal-overlay)
   _abrirFormularioContrato(c, false);
-  setTimeout(() => {
-    document.getElementById('modal2-body').innerHTML = document.getElementById('modal-body').innerHTML;
+
+  // Wait for it to render then move content to modal2 without opening modal-overlay
+  requestAnimationFrame(() => {
+    modal2Body.innerHTML = origBody.innerHTML;
+    origBody.innerHTML = '';
     document.getElementById('modal-overlay').classList.remove('open');
-    document.getElementById('modal2-overlay').style.display = 'flex';
-    // Re-run pct validation
-    ['epe','agua','tgiu','seguro','internet','expensas'].forEach(s => actualizarTotalPct(s));
-  }, 100);
+    document.getElementById('modal2-overlay').classList.add('open');
+    setTimeout(() => ['epe','agua','tgiu','seguro','internet','expensas'].forEach(s => actualizarTotalPct(s)), 50);
+  });
 }
 
 // ============================================================
@@ -4707,7 +4720,7 @@ setInterval(async () => {
 </script>
 
   <!-- MODAL2 for editing contracts from services screen -->
-  <div id="modal2-overlay" style="position:fixed;inset:0;background:#000000cc;z-index:1100;display:none;align-items:flex-start;justify-content:center;padding:2rem 1rem;overflow-y:auto">
+  <div id="modal2-overlay" class="modal-overlay" style="z-index:1100">
     <div class="modal-box" style="max-height:90vh;overflow-y:auto;width:100%;max-width:860px">
       <div class="modal-header">
         <div>
