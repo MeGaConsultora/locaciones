@@ -414,12 +414,16 @@
 
   <!-- VENCIMIENTOS -->
   <div id="panel-vencimientos" class="panel">
-    <div class="chip-row">
-      <button class="chip active" onclick="setVencFiltro('30',this)">30 días</button>
-      <button class="chip" onclick="setVencFiltro('60',this)">60 días</button>
-      <button class="chip" onclick="setVencFiltro('90',this)">90 días</button>
-      <button class="chip" onclick="setVencFiltro('vencidos',this)">Ya vencidos</button>
-      <button class="chip" onclick="setVencFiltro('todos',this)">Todos</button>
+    <div class="toolbar" style="margin-bottom:0.75rem">
+      <div class="chip-row" style="margin:0">
+        <button class="chip active" onclick="setVencFiltro('30',this)">30 días</button>
+        <button class="chip" onclick="setVencFiltro('60',this)">60 días</button>
+        <button class="chip" onclick="setVencFiltro('90',this)">90 días</button>
+        <button class="chip" onclick="setVencFiltro('vencidos',this)">Ya vencidos</button>
+        <button class="chip" onclick="setVencFiltro('todos',this)">Todos</button>
+      </div>
+      <button class="btn btn-secondary" onclick="seleccionarTodosVenc()" style="font-size:0.82rem">☑ Seleccionar todos</button>
+      <button class="btn btn-secondary" onclick="imprimirVencimientos()" style="font-size:0.82rem">🖨️ Imprimir seleccionados</button>
     </div>
     <div id="venc-list" class="venc-list"></div>
   </div>
@@ -920,14 +924,19 @@ function renderVencimientos() {
     const cls = d<0?'':d<=15?'urgent':d<=30?'soon':'ok';
     const dtext = d<0?`Venció hace ${-d} días`:d===0?'¡Vence hoy!':`Vence en ${d} días`;
     const lastPago = DB.pagos.filter(p=>p.hoja===c.hoja).slice(-1)[0];
-    return `<div class="venc-item ${cls}" onclick="openContrato(${c.id})">
-      <div class="venc-date">${formatDate(c.vigencia_hasta, true)}</div>
-      <div class="venc-info">
-        <div class="venc-nombre">${c.titulo}</div>
-        <div class="venc-detalle">${c.locatario||''} · ${normTipo(c.tipo_inmueble)}</div>
-        <div class="venc-detalle" style="color:${d<0?'#999':d<=15?'var(--accent)':d<=30?'var(--accent2)':'var(--green)'}">${dtext}</div>
+    return `<div class="venc-item ${cls}" style="display:flex;align-items:center;gap:0.75rem">
+      <input type="checkbox" class="venc-chk" data-id="${c.id}" onclick="event.stopPropagation()" style="width:16px;height:16px;flex-shrink:0">
+      <div style="flex:1;cursor:pointer" onclick="openContrato(${c.id})">
+        <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+          <div class="venc-date">${formatDate(c.vigencia_hasta, true)}</div>
+          <div class="venc-info" style="flex:1">
+            <div class="venc-nombre">${c.titulo}</div>
+            <div class="venc-detalle">${c._locatario||c.locatario||''} · ${normTipo(c.tipo_inmueble)}</div>
+            <div class="venc-detalle" style="color:${d<0?'#999':d<=15?'var(--accent)':d<=30?'var(--accent2)':'var(--green)'}">${dtext}</div>
+          </div>
+          ${lastPago?`<div style="font-weight:600;font-size:0.9rem;text-align:right">${formatMoney(lastPago.importe_alquiler)}<div style="font-size:0.72rem;color:#aaa;font-weight:400">último alquiler</div></div>`:''}
+        </div>
       </div>
-      ${lastPago?`<div style="font-weight:600;font-size:0.9rem;text-align:right">${formatMoney(lastPago.importe_alquiler)}<div style="font-size:0.72rem;color:#aaa;font-weight:400">último alquiler</div></div>`:''}
     </div>`;
   }).join('');
 }
