@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gestión de Locaciones</title>
+<title>Gestión de Locaciones — MeGa Consultora</title>
 <link href="googleapis.com" rel="stylesheet">
 <style>
   :root {
@@ -135,7 +135,7 @@
   .detail-item span { font-size:0.95rem; color:var(--ink); font-weight:500; }
   .section-title { font-family:'DM Serif Display',serif; font-size:1.05rem; margin-bottom:0.75rem; padding-bottom:0.5rem; border-bottom:1.5px solid var(--border); }
   .pagos-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
-  .pagos-table th { background:var(--cream); padding:0.5rem 0.7rem; text-align:left; font-size:0.67rem; letter-spacing:0.06em; text-transform:uppercase; color:#666; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .pagos-table th { background:var(--cream); padding:0.5rem 0.7rem; text-align:left; font-size:0.67rem; letter-spacing:0.06em; text-transform:uppercase; color:#666; border-bottom:1.5px solid var(--border); white-space:nowrap; }
   .pagos-table td { padding:0.5rem 0.7rem; border-bottom:1px solid #f0ece4; }
   .pagos-table tr:hover td { background:#faf7f2; }
   .chip-row { display:flex; flex-wrap:wrap; gap:0.4rem; margin-bottom:1rem; }
@@ -315,12 +315,7 @@
  <select class="filter-select" id="reporte-anio" style="width:auto"><option value="">-- Año --</option></select>
  <select class="filter-select" id="reporte-mes" style="width:auto">
  <option value="">-- Mes --</option>
- <option value="01">Enero</option><option value="02">Febrero</option>
- <option value="03">Marzo</option><option value="04">Abril</option>
- <option value="05">Mayo</option><option value="06">Junio</option>
- <option value="07">Julio</option><option value="08">Agosto</option>
- <option value="09">Septiembre</option><option value="10">Octubre</option>
- <option value="11">Noviembre</option><option value="12">Diciembre</option>
+ <option value="01">Enero</option><option value="02">Febrero</option><option value="03">Marzo</option><option value="04">Abril</option><option value="05">Mayo</option><option value="06">Junio</option><option value="07">Julio</option><option value="08">Agosto</option><option value="09">Septiembre</option><option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
  </select>
  <button class="btn btn-secondary" onclick="generarReporteMes()">Ver reporte</button>
  </div>
@@ -338,185 +333,6 @@
  <div class="pagination" id="pg-contratos"></div>
  </div>
  </div>
- <div id="panel-informes" class="panel">
- <div class="toolbar" style="margin-bottom:1rem">
- <strong style="font-size:0.95rem">📊 Cuadro de resultados mensual</strong>
- <select class="filter-select" id="inf-anio" style="width:auto" onchange="renderInforme()"><option value="">-- Año --</option></select>
- <select class="filter-select" id="inf-mes" style="width:auto" onchange="renderInforme()">
- <option value="">-- Mes --</option>
- <option value="01">Enero</option><option value="02">Febrero</option>
- <option value="03">Marzo</option><option value="04">Abril</option>
- <option value="05">Mayo</option><option value="06">Junio</option>
- <option value="07">Julio</option><option value="08">Agosto</option>
- <option value="09">Septiembre</option><option value="10">Octubre</option>
- <option value="11">Noviembre</option><option value="12">Diciembre</option>
- </select>
- <button class="btn btn-secondary" onclick="exportarInformeCSV()">⬇ Exportar CSV</button>
- </div>
- <div id="informe-contenido"><div class="empty-state"><div class="icon">📊</div><p>Seleccioná un año y mes para ver el informe</p></div></div>
- </div>
- <div id="panel-vencimientos" class="panel">
- <div class="toolbar" style="margin-bottom:0.75rem">
- <div class="chip-row" style="margin:0">
- <button class="chip active" onclick="setVencFiltro('30',this)">30 días</button>
- <button class="chip" onclick="setVencFiltro('60',this)">60 días</button>
- <button class="chip" onclick="setVencFiltro('90',this)">90 días</button>
- <button class="chip" onclick="setVencFiltro('vencidos',this)">Ya vencidos</button>
- <button class="chip" onclick="setVencFiltro('todos',this)">Todos</button>
- </div>
- <button class="btn btn-secondary" onclick="seleccionarTodosVenc()" style="font-size:0.82rem">☑ Seleccionar todos</button>
- <button class="btn btn-secondary" onclick="imprimirVencimientos()" style="font-size:0.82rem">🖨️ Imprimir seleccionados</button>
- </div>
- <div id="venc-list" class="venc-list"></div>
- </div>
- <div id="panel-clientes" class="panel">
- <div class="toolbar">
- <input class="search-input" type="text" id="search-clientes" placeholder="Buscar por apellido, DNI, email..." oninput="renderClientes()">
- <select class="filter-select" id="filter-rol" onchange="renderClientes()">
- <option value="">Todos los roles</option>
- <option value="propietario">Propietarios</option>
- <option value="inquilino">Inquilinos</option>
- <option value="ambos">Ambos</option>
- </select>
- <button class="btn btn-primary" onclick="openNuevaPersona()">+ Nueva persona</button>
- <span class="results-count" id="count-clientes"></span>
- </div>
- <div class="table-wrap">
- <table>
- <thead><tr><th>Apellido y nombre</th><th>DNI</th><th>Teléfono</th><th>Email</th><th>Rol</th><th>Contratos</th></tr></thead>
- <tbody id="tbody-clientes"></tbody>
- </table>
- <div class="pagination" id="pg-clientes"></div>
- </div>
- </div>
- <div id="panel-admin" class="panel">
- <div class="toolbar">
- <h2 style="font-family:'DM Serif Display',serif;font-size:1.3rem">Gestión de usuarios</h2>
- <button class="btn btn-primary" onclick="loadUsuarios()">↻ Actualizar</button>
- </div>
- <div class="table-wrap">
- <table class="admin-table">
- <thead><tr><th>Nombre</th><th>Email</th><th>Registrado</th><th>Estado</th><th>Admin</th><th>Acciones</th></tr></thead>
- <tbody id="tbody-usuarios"><tr><td colspan="6" style="text-align:center;padding:2rem;color:#aaa">Cargando...</td></tr></tbody>
- </table>
- </div>
- </div>
-</main>
-<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
- <div class="modal">
- <div class="modal-header">
- <div><div class="modal-title" id="modal-title"></div><div class="modal-subtitle" id="modal-subtitle"></div></div>
- <button class="modal-close" onclick="closeModal()">✕</button>
- </div>
- <div class="modal-body" id="modal-body"></div>
- </div>
-</div>
-<script>
-const SB_URL = 'supabase.co';
-const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhwdWZjc2VlZHZkbWNvYW11bmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMjU5NTQsImV4cCI6MjA5MzYwMTk1NH0.x91y_KKcuqM3CXCNTsMxTmJvi8HIm4SsxxNKUaX12d0';
-function getArgentinaDate() {
- const now = new Date();
- const ar = new Date(now.toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
- return ar.toISOString().split('T')[0];
-}
-const TODAY = getArgentinaDate();
-const HEADERS = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' };
-let currentUser = { token: null };
-function updateAuthHeaders(token) { HEADERS['Authorization'] = `Bearer ${token || SB_KEY}`; }
-async function refreshAdminToken() { return false; }
-async function sbGet(table, params='') {
- const headers = { ...HEADERS, 'Range': '0-9999', 'Prefer': 'count=none' };
- let r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers });
- if (!r.ok) throw new Error(await r.text());
- return r.json();
-}
-async function sbGetAll(table, params='') {
- let all = []; let lastId = 0; const pageSize = 1000;
- while (true) {
- const baseParams = params.replace(/&?order=[^&]*/g, '');
- const url = `${SB_URL}/rest/v1/${table}?${baseParams}&id=gt.${lastId}&order=id.asc&limit=${pageSize}`;
- const headers = { ...HEADERS, 'Prefer': 'count=none' };
- const r = await fetch(url, { headers });
- if (!r.ok) throw new Error(await r.text());
- const data = await r.json();
- if (!data.length) break;
- all = all.concat(data);
- lastId = data[data.length-1].id;
- if (data.length < pageSize) break;
- }
- return all;
-}
-async function sbPost(table, body) {
- let r = await fetch(`${SB_URL}/rest/v1/${table}`, { method:'POST', headers: HEADERS, body: JSON.stringify(body) });
- if (!r.ok) throw new Error(await r.text());
- return r.json();
-}
-async function sbPatch(table, id, body) {
- let r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'PATCH', headers: HEADERS, body: JSON.stringify(body) });
- if (!r.ok) throw new Error(await r.text());
- return r.json();
-}
-async function sbDelete(table, id) {
- const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'DELETE', headers: HEADERS });
- if (!r.ok) throw new Error(await r.text());
-}
-let DB = { contratos: [], pagos: [] };
-let DB_PERSONAS = [];
-let DB_CONTRATO_PERSONAS = [];
-const PG = { contratos:1, pagos:1, clientes:1 };
-const PER_PAGE = 25;
-let sortState = { contratos:{col:'titulo',dir:'asc'}, pagos:{col:'hoja',dir:'asc'} };
-let vencFiltro = '30';
-async function loadAll() {
- document.getElementById('sync-status').textContent = 'Actualizando...';
- try {
- const [contratos, pagos] = await Promise.all([
- sbGet('contratos', 'select=*&order=titulo.asc&limit=1000'),
- sbGetAll('pagos', 'select=*&order=mes.desc')
- ]);
- DB.contratos = contratos;
- DB.pagos = pagos;
- document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR')}`;
- populateFiltros();
- await loadPersonas();
- await loadContratosPersonas();
- renderDashboard();
- renderContratos();
- renderVencimientos();
- renderClientes();
- } catch(e) {
- document.getElementById('sync-status').textContent = '⚠ Error';
- toast('Error al conectar con la base de datos.', 'error');
- }
-}
-async function loadPersonas() { try { DB_PERSONAS = await sbGet('personas', 'order=apellido.asc'); } catch(e){} }
-async function loadContratosPersonas() { try { DB_CONTRATO_PERSONAS = await sbGet('contrato_personas'); } catch(e){} }
-function formatDate(d, showDay=false) {
- if (!d) return '—';
- const [y,m,day] = d.substring(0,10).split('-');
- const months = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
- return showDay ? `${parseInt(day)} ${months[parseInt(m)-1]} ${y}` : `${months[parseInt(m)-1]} ${y}`;
-}
-function calcularFechaVencimiento(mesKey, contrato) {
- const [y, m] = mesKey.split('-').map(Number);
- const dia = contrato.dia_vencimiento || 10;
- return `${y}-${String(m).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
-}
-function calcularIntereses(alquiler, fechaVencStr, fechaPagoStr, interesdiario) {
- if (!interesdiario || interesdiario <= 0 || !fechaVencStr || !fechaPagoStr) return 0;
- const fV = new Date(fechaVencStr + 'T12:00:00');
- const fP = new Date(fechaPagoStr + 'T12:00:00');
- const diff = Math.floor((fP - fV) / 86400000);
- if (diff <= 0) return 0;
- return Math.round(alquiler * (interesdiario / 100) * diff * 100) / 100;
-}
-function formatMoney(n) { if (n == null || isNaN(n)) return '—'; return '\$ ' + Math.round(n).toLocaleString('es-AR'); }
-function normTipo(t) { if (!t) return 'Otro'; return t; }
-function getEstado(c) { if (c.fecha_rescision) return 'rescindido'; return c.vigencia_hasta >= TODAY ? 'vigente' : 'vencido'; }
-function daysDiff(d1, d2) { return Math.round((new Date(d1) - new Date(d2)) / 86400000); }
-function toast(msg, type='success') {
- let container = document.getElementById('toast-container');
- if (!container) { container = document.createElement('div'); container.id = 'toast-container'; document.body.
  <div id="panel-informes" class="panel">
  <div class="toolbar" style="margin-bottom:1rem">
  <strong style="font-size:0.95rem">📊 Cuadro de resultados mensual</strong>
@@ -588,6 +404,8 @@ function toast(msg, type='success') {
 <script>
 const SB_URL = 'supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhwdWZjc2VlZHZkbWNvYW11bmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMjU5NTQsImV4cCI6MjA5MzYwMTk1NH0.x91y_KKcuqM3CXCNTsMxTmJvi8HIm4SsxxNKUaX12d0';
+const SB_AUTH_URL = `${SB_URL}/auth/v1`;
+let currentUser = { token: localStorage.getItem('sb_token') || null, email: null, admin: false };
 function getArgentinaDate() {
  const now = new Date();
  const ar = new Date(now.toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
@@ -595,229 +413,209 @@ function getArgentinaDate() {
 }
 const TODAY = getArgentinaDate();
 const HEADERS = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' };
+if (currentUser.token) HEADERS['Authorization'] = `Bearer ${currentUser.token}`;
 function updateAuthHeaders(token) { HEADERS['Authorization'] = `Bearer ${token || SB_KEY}`; }
+async function refreshAdminToken() {
+ const refreshTk = localStorage.getItem('sb_refresh_token'); if (!refreshTk) return false;
+ try {
+ const r = await fetch(`${SB_AUTH_URL}/token?grant_type=refresh_token`, { method: 'POST', headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: refreshTk }) });
+ if (!r.ok) return false; const data = await r.json(); currentUser.token = data.access_token;
+ localStorage.setItem('sb_token', data.access_token); if (data.refresh_token) localStorage.setItem('sb_refresh_token', data.refresh_token);
+ updateAuthHeaders(data.access_token); return true;
+ } catch(e) { return false; }
+}
 async function sbGet(table, params='') {
  const headers = { ...HEADERS, 'Range': '0-9999', 'Prefer': 'count=none' };
  let r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers });
- if (!r.ok) throw new Error(await r.text());
- return r.json();
+ if (r.status === 401 || r.status === 403) { if (await refreshAdminToken()) r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers: { ...HEADERS, 'Range': '0-9999', 'Prefer': 'count=none' } }); }
+ if (!r.ok) throw new Error(await r.text()); return r.json();
 }
 async function sbGetAll(table, params='') {
  let all = []; let lastId = 0; const pageSize = 1000;
  while (true) {
  const baseParams = params.replace(/&?order=[^&]*/g, '');
- const url = `${SB_URL}/rest/v1/${table}?${baseParams}&id=gt.${lastId}&order=id.asc&limit=${pageSize}`;
- const r = await fetch(url, { headers: { ...HEADERS, 'Prefer': 'count=none' } });
- if (!r.ok) throw new Error(await r.text());
- const data = await r.json(); if (!data.length) break;
- all = all.concat(data); lastId = data[data.length-1].id;
- if (data.length < pageSize) break;
+ const r = await fetch(`${SB_URL}/rest/v1/${table}?${baseParams}&id=gt.${lastId}&order=id.asc&limit=${pageSize}`, { headers: { ...HEADERS, 'Prefer': 'count=none' } });
+ if (!r.ok) throw new Error(await r.text()); const data = await r.json(); if (!data.length) break;
+ all = all.concat(data); lastId = data[data.length-1].id; if (data.length < pageSize) break;
  }
  return all;
 }
 async function sbPost(table, body) {
  let r = await fetch(`${SB_URL}/rest/v1/${table}`, { method:'POST', headers: HEADERS, body: JSON.stringify(body) });
- if (!r.ok) throw new Error(await r.text());
- return r.json();
+ if (r.status === 401 || r.status === 403) { await refreshAdminToken(); r = await fetch(`${SB_URL}/rest/v1/${table}`, { method:'POST', headers: HEADERS, body: JSON.stringify(body) }); }
+ if (!r.ok) throw new Error(await r.text()); return r.json();
 }
 async function sbPatch(table, id, body) {
  let r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'PATCH', headers: HEADERS, body: JSON.stringify(body) });
- if (!r.ok) throw new Error(await r.text());
- return r.json();
+ if (r.status === 401 || r.status === 403) { await refreshAdminToken(); r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'PATCH', headers: HEADERS, body: JSON.stringify(body) }); }
+ if (!r.ok) throw new Error(await r.text()); return r.json();
 }
-async function sbDelete(table, id) {
- const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'DELETE', headers: HEADERS });
- if (!r.ok) throw new Error(await r.text());
-}
-let DB = { contratos: [], pagos: [] };
-const PG = { contratos:1, pagos:1, pendientes:1 };
-const PER_PAGE = 25;
+async function sbDelete(table, id) { const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'DELETE', headers: HEADERS }); if (!r.ok) throw new Error(await r.text()); }
+let DB = { contratos: [], pagos: [] }; let DB_PERSONAS = []; let DB_CONTRATO_PERSONAS = [];
+const PG = { contratos:1, pagos:1, clientes:1 }; const PER_PAGE = 25;
 let sortState = { contratos:{col:'titulo',dir:'asc'}, pagos:{col:'hoja',dir:'asc'} };
 let vencFiltro = '30';
-function formatDate(d, showDay=false) {
- if (!d) return '—';
- const [y,m,day] = d.substring(0,10).split('-');
- const months = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
- return showDay ? `${parseInt(day)} ${months[parseInt(m)-1]} ${y}` : `${months[parseInt(m)-1]} ${y}`;
+async function loadAll() {
+  document.getElementById('sync-status').textContent = 'Actualizando...';
+  try {
+    if (currentUser?.token) updateAuthHeaders(currentUser.token);
+    const [contratos, pagos] = await Promise.all([
+      sbGet('contratos', 'select=*&order=titulo.asc&limit=1000'),
+      sbGetAll('pagos', 'select=*&order=mes.desc')
+    ]);
+    DB.contratos = contratos; DB.pagos = pagos;
+    document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR')}`;
+    populateFiltros(); await loadPersonas(); await loadContratosPersonas();
+    renderDashboard(); renderContratos(); renderVencimientos(); renderClientes();
+  } catch(e) {
+    document.getElementById('sync-status').textContent = '⚠ Error';
+    toast('Error al conectar. Verificá tu conexión.', 'error');
+    if (e.message && (e.message.includes('JWT') || e.message.includes('expired'))) setTimeout(doLogout, 2000);
+  }
 }
-function normTipo(t) {
- if (!t || t==='nan') return 'Otro';
- const l = t.toLowerCase().trim();
- if (l.includes('casa')||l.includes('vivienda')||l.includes('urbano')) return 'Casa/Habitación';
- if (l.includes('dpto')||l.includes('departamento')) return 'Departamento';
- if (l.includes('local')||l.includes('comercial')) return 'Local Comercial';
- if (l.includes('galp')||l.includes('depósito')||l.includes('taller')) return 'Galpón/Depósito';
- return t;
-}
+async function loadPersonas() { try { DB_PERSONAS = await sbGet('personas', 'order=apellido.asc&limit=2000'); } catch(e){} }
+async function loadContratosPersonas() { try { DB_CONTRATO_PERSONAS = await sbGet('contrato_personas', 'limit=5000'); } catch(e){} }
+function formatMoney(n) { return (n == null || isNaN(n)) ? '—' : '$ ' + Math.round(n).toLocaleString('es-AR'); }
+function formatDate(d, showDay=false) { if (!d) return '—'; const [y,m,day] = d.substring(0,10).split('-'); const months = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']; return showDay ? `${parseInt(day)} ${months[parseInt(m)-1]} ${y}` : `${months[parseInt(m)-1]} ${y}`; }
+function normTipo(t) { if (!t || t==='nan') return 'Otro'; const l = t.toLowerCase().trim(); if (l.includes('casa')||l.includes('vivienda')) return 'Casa/Habitación'; if (l.includes('dpto')||l.includes('departamento')) return 'Departamento'; if (l.includes('local')||l.includes('comercial')) return 'Local Comercial'; if (l.includes('galp')||l.includes('depósito')) return 'Galpón/Depósito'; return t; }
 function getEstado(c) { return (!c.vigencia_hasta) ? 'indefinido' : (c.vigencia_hasta >= TODAY ? 'vigente' : 'vencido'); }
 function daysDiff(d1, d2) { return Math.round((new Date(d1) - new Date(d2)) / 86400000); }
-function toast(msg, type='success') {
- let container = document.getElementById('toast-container') || Object.assign(document.createElement('div'), {id:'toast-container'});
- if (!container.parentElement) document.body.appendChild(container);
- const el = Object.assign(document.createElement('div'), { className: `toast ${type}`, textContent: msg });
- container.appendChild(el); setTimeout(() => el.remove(), 3500);
+function populateFiltros() {
+  const tipos = [...new Set(DB.contratos.map(c => normTipo(c.tipo_inmueble)))].sort();
+  const sel = document.getElementById('filter-tipo'); if (sel) { const cur = sel.value; sel.innerHTML = '<option value="">Todos los tipos</option>'; tipos.forEach(t => { const o = document.createElement('option'); o.value=t; o.textContent=t; sel.appendChild(o); }); sel.value = cur; }
+  const anios = [...new Set(DB.pagos.map(p => p.mes?.substring(0,4)).filter(Boolean))].sort().reverse();
+  const selRA = document.getElementById('reporte-anio'); if (selRA) { const curRA = selRA.value; selRA.innerHTML = '<option value="">-- Año --</option>'; anios.forEach(a => { const o = document.createElement('option'); o.value=a; o.textContent=a; selRA.appendChild(o); }); selRA.value = curRA; }
 }
-function calcularFechaVencimiento(mesKey, contrato) {
- const [y, m] = mesKey.split('-').map(Number); const dia = contrato.dia_vencimiento || 10;
- let vencYear = y, vencMonth = (contrato.modalidad_pago === 'VENCIDO') ? m + 1 : m;
- if (vencMonth > 12) { vencMonth = 1; vencYear++; }
- return `${vencYear}-${String(vencMonth).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+function renderDashboard() {
+  const vigentes = DB.contratos.filter(c => getEstado(c)==='vigente').length;
+  const vencidos = DB.contratos.filter(c => getEstado(c)==='vencido').length;
+  const pendientes = DB.pagos.filter(p => p.saldo && p.saldo > 0);
+  const totalPendiente = pendientes.reduce((s,p) => s+(p.saldo||0), 0);
+  const proxVenc = DB.contratos.filter(c => { if(!c.vigencia_hasta) return false; const d=daysDiff(c.vigencia_hasta,TODAY); return d>=0&&d<=60; }).length;
+  const sRow = document.getElementById('stats-row');
+  if (sRow) sRow.innerHTML = `
+    <div class="stat-card green"><div class="stat-label">Contratos vigentes</div><div class="stat-val">${vigentes}</div><div class="stat-sub">de ${DB.contratos.length} totales</div></div>
+    <div class="stat-card accent"><div class="stat-label">Vencidos</div><div class="stat-val">${vencidos}</div><div class="stat-sub">contratos finalizados</div></div>
+    <div class="stat-card warn"><div class="stat-label">Vencen en 60 días</div><div class="stat-val">${proxVenc}</div><div class="stat-sub">requieren atención</div></div>
+    <div class="stat-card gold"><div class="stat-label">Saldo pendiente</div><div class="stat-val" style="font-size:1.3rem">${formatMoney(totalPendiente)}</div><div class="stat-sub">${pendientes.length} cuotas sin cobrar</div></div>
+  `;
+  const tiposMap = {}; DB.contratos.forEach(c => { const t=normTipo(c.tipo_inmueble); tiposMap[t]=(tiposMap[t]||0)+1; });
+  const tiposSorted = Object.entries(tiposMap).sort((a,b)=>b[1]-a[1]); const maxT = tiposSorted[0]?.[1]||1;
+  const cTipos = document.getElementById('chart-tipos');
+  if (cTipos) cTipos.innerHTML = tiposSorted.map(([t,n]) => `<div class="bar-row"><div class="bar-label" title="${t}">${t}</div><div class="bar-track"><div class="bar-fill" style="width:${(n/maxT*100).toFixed(1)}%"></div></div><div class="bar-val">${n}</div></div>`).join('');
 }
-function calcularTotal(p, extras) {
- const totalExtras = (extras||[]).reduce((s,e)=>s+(parseFloat(e.importe)||0),0);
- return (p.importe_alquiler||0)+(p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0)+totalExtras;
+function renderContratos() {
+  const q = document.getElementById('search-contratos')?.value.toLowerCase() || '';
+  const estado = document.getElementById('filter-estado')?.value || '';
+  const tipo = document.getElementById('filter-tipo')?.value || '';
+  const pagadoFiltro = document.getElementById('filter-pagado')?.value || '';
+  const contratosFiltrados = DB.contratos.filter(c => {
+    if (q && !c.titulo?.toLowerCase().includes(q) && !c.locador?.toLowerCase().includes(q) && !c.locatario?.toLowerCase().includes(q)) return false;
+    if (estado && getEstado(c) !== estado) return false; if (tipo && normTipo(c.tipo_inmueble) !== tipo) return false;
+    return true;
+  });
+  const tBody = document.getElementById('tbody-contratos');
+  if (tBody) tBody.innerHTML = contratosFiltrados.map(c => `
+    <tr onclick="openContrato(${c.id})">
+      <td><strong>${c.titulo||c.hoja}</strong></td><td>${c.locador||'—'}</td><td>${c.locatario||'—'}</td><td>${formatDate(c.vigencia_hasta, true)}</td><td><span class="tag-tipo">${normTipo(c.tipo_inmueble)}</span></td>
+    </tr>
+  `).join('');
 }
-function getRowClass(p) {
- if (!p.mes) return ''; if (p.pagado === 'RESCINDIDO') return 'row-futuro';
- if (p.mes.substring(0,7) > TODAY.substring(0,7)) return 'row-futuro';
- if (!p.total || p.total === 0) return '';
- if (p.saldo <= 0) return 'row-pagado';
- return ((p.total||0) - (p.saldo||0) > 0) ? 'row-parcial' : 'row-vencido';
-}
-function getEstadoLabel(p) {
- if (!p.mes) return '—'; if (p.pagado === 'RESCINDIDO') return '<span class="badge badge-gray">Rescindido</span>';
- if (p.mes.substring(0,7) > TODAY.substring(0,7)) return '<span class="badge badge-blue">Futuro</span>';
- if (!p.total || p.total === 0) return '<span class="badge badge-gray">Sin datos</span>';
- if (p.saldo <= 0) return '<span class="badge badge-green">✓ Pagado</span>';
- return ((p.total||0) - (p.saldo||0) > 0) ? '<span class="badge badge-yellow">Parcial</span>' : '<span class="badge badge-red">Pendiente</span>';
-}
-async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
-  const mes = mesKey+'-01';
-  const alq = parseFloat(document.getElementById('gp-alquiler')?.value)||0;
-  const applyFieldPct = (id) => {
-    const el = document.getElementById(id); if (!el) return 0;
-    const val = parseFloat(el.value)||0; const pct = parseFloat(el.dataset.pct)||100;
-    return Math.round(val * pct / 100);
-  };
-  const epe = applyFieldPct('gp-epe'); const agua = applyFieldPct('gp-agua');
-  const tgiu = applyFieldPct('gp-tgiu'); const seguro = applyFieldPct('gp-seguro');
-  const internetVal = applyFieldPct('gp-internet'); const expensasVal = applyFieldPct('gp-expensas');
-  const vence = document.getElementById('gp-vence')?.value||null;
-  const comision = alq * (comisionPct/100);
-  let extrasInqTotal = 0;
-  try {
-    const hojaEncoded = encodeURIComponent(hoja);
-    const existingForExtras = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
-    if (existingForExtras.length > 0) {
-      const extrasDelPago = await sbGet('pagos_extras', `pago_id=eq.${existingForExtras[0].id}&order=id.asc`);
-      extrasInqTotal = extrasDelPago.filter(e => e.a_cargo_de !== 'propietario').reduce((s,e) => s + ((e.tipo==='credito' ? -1 : 1) * (e.importe||0)), 0);
-    }
-  } catch(e) {}
-  const total = alq + epe + agua + tgiu + seguro + internetVal + expensasVal + extrasInqTotal;
-  try {
-    const hojaEncoded = encodeURIComponent(hoja);
-    const existing = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
-    let pagoId;
-    if (existing.length > 0) {
-      pagoId = existing[0].id; const yaAbonado = (existing[0].total||0) - (existing[0].saldo||0);
-      const nuevoSaldo = Math.max(0, total - yaAbonado);
-      await sbPatch('pagos', pagoId, {
-        importe_alquiler:alq, monto_epe:epe, monto_agua:agua, monto_tgiu:tgiu, monto_seguro:seguro,
-        monto_internet:internetVal, monto_expensas:expensasVal, total, comision_8:comision, fecha_pago_hasta:vence, saldo:nuevoSaldo
-      });
-    } else {
-      const r = await sbPost('pagos', {
-        hoja, mes, corresponde_a_mes:mes, importe_alquiler:alq, monto_epe:epe, monto_agua:agua,
-        monto_tgiu:tgiu, monto_seguro:seguro, monto_internet:internetVal, monto_expensas:expensasVal,
-        total, comision_8:comision, fecha_pago_hasta:vence, saldo:total, pagado:'0'
-      });
-      pagoId = r[0]?.id;
-    }
-    toast('Importes guardados ✓');
-    const c = DB.contratos.find(x=>x.id===contratoId);
-    if (c) {
-      await recargarGrilla(c); const meses = [];
-      let [rsy, rsm] = c.vigencia_desde.substring(0,7).split('-').map(Number);
-      const [rey, rem] = c.vigencia_hasta.substring(0,7).split('-').map(Number);
-      while (rsy < rey || (rsy === rey && rsm <= rem)) {
-        const key = `${rsy}-${String(rsm).padStart(2,'0')}`; const pago = pagosActuales.find(p => p.mes && p.mes.startsWith(key));
-        meses.push({ key, label: formatDate(key+'-01'), pago }); rsm++; if (rsm > 12) { rsm = 1; rsy++; }
-      }
-      setTimeout(async () => {
-        await cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, 's1');
-        await loadAll();
-      }, 150);
-    }
-  } catch(e) { toast('Error al guardar: '+e.message,'error'); }
-}
-function generarItemsCobro(p, extrasInq) {
-  if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
-  const items = [
-    { id:'alquiler', label:'Alquiler', val: p.importe_alquiler||0 },
-    { id:'epe', label:'EPE', val: p.monto_epe||0 },
-    { id:'agua', label:'Agua', val: p.monto_agua||0 },
-    { id:'tgiu', label:'TGIU', val: p.monto_tgiu||0 },
-    { id:'seguro', label:'Seguro', val: p.monto_seguro||0 },
-    { id:'internet', label: 'Internet 🌐', val: p.monto_internet||0 },
-    { id:'expensas', label: 'Expensas 🏢', val: p.monto_expensas||0 }
-  ].filter(i => i.val > 0);
-  return items.map(it => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
-        <input type="checkbox" id="cobro-chk-${it.id}" value="${it.val}" data-signo="1" checked onchange="recalcCobro()" style="width:15px;height:15px">
-        ${it.label}
-      </label>
-      <span id="cobro-lbl-${it.id}" style="font-size:0.85rem;color:#666">${formatMoney(it.val)}</span>
+async function openContrato(id) {
+  const c = DB.contratos.find(x => x.id===id); if (!c) return;
+  document.getElementById('modal-title').textContent = c.titulo||c.hoja;
+  document.getElementById('modal-subtitle').textContent = normTipo(c.tipo_inmueble);
+  document.getElementById('modal-body').innerHTML = `
+    <div style="display:flex;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">
+      <button class="btn btn-secondary" onclick="editarMes('${c.hoja}',${c.id},'${TODAY.substring(0,7)}')">💰 Gestión de Pago</button>
     </div>
-  `).join('') + extrasInq.map(e => {
-    const signo = e.tipo==='credito' ? -1 : 1; const color = e.tipo==='credito' ? 'var(--green)' : 'var(--accent)';
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
-        <input type="checkbox" id="cobro-chk-extra-${e.id}" value="${Math.abs(e.importe||0)}" data-signo="${signo}" checked onchange="recalcCobro()" style="width:15px;height:15px">
-        ${e.concepto||'Extra'} <span style="font-size:0.72rem;color:${color}">(${e.tipo==='credito'?'crédito':'débito'})</span>
-      </label>
-      <span style="font-size:0.85rem;color:${color}">${e.tipo==='credito'?'−':'+'} ${formatMoney(Math.abs(e.importe||0))}</span>
+    <div id="grilla-container"></div>
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
+  await recargarGrilla(c);
+}
+async function recargarGrilla(c) {
+  try {
+    const pagosActuales = await sbGetAll('pagos', `hoja=eq.${encodeURIComponent(c.hoja)}&order=mes.asc`);
+    const rows = pagosActuales.map(p => `
+      <tr class="${getRowClass(p)}" onclick="editarMes('${c.hoja}',${c.id},'${p.mes?.substring(0,7)}')">
+        <td class="grid-mes"><strong>${formatDate(p.mes)}</strong></td>
+        <td class="num">${formatMoney(p.importe_alquiler)}</td>
+        <td class="num">${formatMoney(p.monto_epe)}</td>
+        <td class="num">${formatMoney(p.monto_agua)}</td>
+        <td class="num">${formatMoney(p.monto_tgiu)}</td>
+        <td class="num">${formatMoney(p.monto_internet)}</td>
+        <td class="num">${formatMoney(p.monto_expensas)}</td>
+        <td class="num"><strong>${formatMoney(p.total)}</strong></td>
+        <td class="num">${p.saldo>0?`<span class="saldo-pendiente">${formatMoney(p.saldo)}</span>`:'<span class="saldo-ok">✓</span>'}</td>
+        <td>${getEstadoLabel(p)}</td>
+      </tr>
+    `).join('');
+    document.getElementById('grilla-container').innerHTML = `
+      <table class="grid-table">
+        <thead><tr><th>Mes</th><th class="r">Alquiler</th><th class="r">EPE</th><th class="r">Agua</th><th class="r">TGIU</th><th class="r">Internet</th><th class="r">Expensas</th><th class="r">Total</th><th class="r">Saldo</th><th>Estado</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch(e){}
+}
+async function editarMes(hoja, contratoId, mesPreseleccionado) {
+  const c = DB.contratos.find(x=>x.id===contratoId); if (!c) return;
+  const mesStr = mesPreseleccionado+'-01';
+  const pagosMes = await sbGet('pagos', `hoja=eq.${encodeURIComponent(hoja)}&mes=eq.${mesStr}&limit=1`);
+  const p = pagosMes.length > 0 ? pagosMes[0] : null;
+  window._gpContratoActual = c;
+  document.getElementById('modal-title').textContent = 'Gestión de Pago';
+  document.getElementById('modal-subtitle').textContent = `${hoja} — periodos`;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="solapas">
+      <button class="solapa-btn active" onclick="mostrarSolapa('s1',this)">📋 Cargar / Modificar</button>
+      <button class="solapa-btn" onclick="mostrarSolapa('s2',this)">💰 Ingresar Pago</button>
+    </div>
+    <div id="s1" class="solapa-panel active">
+      <div class="form-grid">
+        <div class="form-group"><label>Alquiler</label><input id="gp-alquiler" type="number" value="${p?.importe_alquiler||0}"></div>
+        <div class="form-group"><label>EPE</label><input id="gp-epe" type="number" value="${p?.monto_epe||0}" data-pct="${c.pct_epe||100}"></div>
+        <div class="form-group"><label>Agua</label><input id="gp-agua" type="number" value="${p?.monto_agua||0}" data-pct="${c.pct_agua||100}"></div>
+        <div class="form-group"><label>TGIU</label><input id="gp-tgiu" type="number" value="${p?.monto_tgiu||0}" data-pct="${c.pct_tgiu||100}"></div>
+        <div class="form-group"><label>Seguro</label><input id="gp-seguro" type="number" value="${p?.monto_seguro||0}" data-pct="${c.pct_seguro||100}"></div>
+        <div class="form-group"><label>Internet 🌐</label><input id="gp-internet" type="number" value="${p?.monto_internet||0}" data-pct="${c.pct_internet||100}"></div>
+        <div class="form-group"><label>Expensas 🏢</label><input id="gp-expensas" type="number" value="${p?.monto_expensas||0}" data-pct="${c.pct_expensas||100}"></div>
+        <input type="hidden" id="gp-vence" value="${p?.fecha_pago_hasta||TODAY}">
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" onclick="guardarImportesYExtras('${hoja}',${contratoId},'${mesPreseleccionado}',8)">💾 Guardar Importes</button></div>
+    </div>
+    <div id="s2" class="solapa-panel">
+      <div id="gp-cobro-items">${generarItemsCobro(p, [])}</div>
+      <div style="margin-top:1rem;font-weight:700">Total a cobrar: <span id="gp-total-cobro">${formatMoney(p?.saldo||0)}</span></div>
+      <div class="form-actions"><button class="btn btn-green" onclick="confirmarCobroInquilino('${hoja}',${contratoId},'${mesPreseleccionado}',8)">✓ Registrar Cobro</button></div>
     </div>`;
-  }).join('');
 }
-async function guardarServicios() {
-  const mesKey = document.getElementById('srv-mes')?.value; if (!mesKey) return;
-  const mes = mesKey + '-01'; let guardados = 0; const cambiosPorPago = {};
-  for (const srv of ['epe', 'agua', 'tgiu', 'seguro', 'internet', 'expensas']) {
-    const inputs = document.querySelectorAll(`[id^="srv-${srv}-"]:not([id*="cuota"])`);
-    for (const input of inputs) {
-      const importe = parseFloat(input.value); if (!importe) continue;
-      const hojas = input.dataset.hojas ? input.dataset.hojas.split('|').filter(Boolean) : input.dataset.hoja ? [input.dataset.hoja] : [];
-      for (const hoja of hojas) {
-        try {
-          const pagos = await sbGet('pagos', `hoja=eq.${encodeURIComponent(hoja)}&mes=eq.${mes}&limit=1`);
-          if (!pagos.length) continue; const p = pagos[0];
-          if (!cambiosPorPago[p.id]) cambiosPorPago[p.id] = { pago: p, changes: {} };
-          cambiosPorPago[p.id].changes[`monto_${srv}`] = importe;
-        } catch(e) {}
-      }
-    }
-  }
-  for (const [pagoId, {pago, changes}] of Object.entries(cambiosPorPago)) {
-    try {
-      const cPago = DB.contratos.find(x => x.hoja === pago.hoja); let pctData = cPago;
-      const applyPct = (val, srv) => Math.round(val * (pctData?.['pct_'+srv] ?? 100) / 100);
-      const alq = pago.importe_alquiler || 0;
-      const epe = 'monto_epe' in changes ? applyPct(changes.monto_epe, 'epe') : (pago.monto_epe ?? 0);
-      const agua = 'monto_agua' in changes ? applyPct(changes.monto_agua, 'agua') : (pago.monto_agua ?? 0);
-      const tgiu = 'monto_tgiu' in changes ? applyPct(changes.monto_tgiu, 'tgiu') : (pago.monto_tgiu ?? 0);
-      const seguro = 'monto_seguro' in changes ? applyPct(changes.monto_seguro, 'seguro') : (pago.monto_seguro ?? 0);
-      const internet = 'monto_internet' in changes ? applyPct(changes.monto_internet, 'internet') : (pago.monto_internet ?? 0);
-      const expensas = 'monto_expensas' in changes ? applyPct(changes.monto_expensas, 'expensas') : (pago.monto_expensas ?? 0);
-      const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
-      const yaAbonado = (pago.total||0) - (pago.saldo||0);
-      const patch = { total: newTotal, saldo: Math.max(0, newTotal - yaAbonado) };
-      if ('monto_epe' in changes) patch.monto_epe = epe; if ('monto_agua' in changes) patch.monto_agua = agua;
-      if ('monto_tgiu' in changes) patch.monto_tgiu = tgiu; if ('monto_seguro' in changes) patch.monto_seguro = seguro;
-      if ('monto_internet' in changes) patch.monto_internet = internet; if ('monto_expensas' in changes) patch.monto_expensas = expensas;
-      await sbPatch('pagos', parseInt(pagoId), patch); guardados++;
-    } catch(e) {}
-  }
-  toast(`${guardados} servicio/s guardados ✓`); await loadAll();
+function mostrarSolapa(id, btn) { document.querySelectorAll('.solapa-btn').forEach(b=>b.classList.remove('active')); document.querySelectorAll('.solapa-panel').forEach(p=>p.classList.remove('active')); btn.classList.add('active'); document.getElementById(id)?.classList.add('active'); recalcCobro(); }
+function recalcCobro() { const el = document.getElementById('gp-total-cobro'); }
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  const msg = document.getElementById('login-msg'); msg.textContent = 'Verificando...';
+  try {
+    const r = await fetch(`${SB_AUTH_URL}/token?grant_type=password', {
+      method: 'POST', headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass })
+    });
+    if (!r.ok) { msg.textContent = 'Credenciales incorrectas.'; return; }
+    const data = await r.json(); currentUser.token = data.access_token;
+    localStorage.setItem('sb_token', data.access_token); localStorage.setItem('sb_refresh_token', data.refresh_token);
+    updateAuthHeaders(data.access_token); document.getElementById('login-screen').style.display = 'none';
+    await loadAll();
+  } catch(e){ msg.textContent = 'Error de conexión.'; }
 }
-// Las funciones auxiliares de render, autenticación, login y UI se ejecutan de forma normal
-function showTab(tabId, btn) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  btn.classList.add('active'); document.getElementById(`panel-${tabId}`)?.classList.add('active');
+function switchLoginTab(tab, btn) {
+  document.querySelectorAll('.login-tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active');
+  document.getElementById('login-panel').style.display = tab==='login'?'flex':'none';
+  document.getElementById('registro-panel').style.display = tab==='registro'?'flex':'none';
 }
-function closeModal(e) { if (!e || e.target === document.getElementById('modal-overlay') || e.currentTarget.classList.contains('modal-close')) document.getElementById('modal-overlay').classList.remove('open'); }
-window.onload = () => { loadAll(); };
+function doLogout() { localStorage.clear(); location.reload(); }
+function closeModal(e) { if (!e || e.target === document.getElementById('modal-overlay') || e.target.classList.contains('modal-close')) document.getElementById('modal-overlay').classList.remove('open'); }
+window.onload = () => { if(currentUser.token) { document.getElementById('login-screen').style.display='none'; loadAll(); } };
 </script>
 </body>
 </html>
