@@ -2329,15 +2329,12 @@ function mostrarSolapa(id, btn) {
 function generarItemsCobro(p, extrasInq) {
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
   const items = [
-  { id:'alquiler', label:'Alquiler',  val: pago.importe_alquiler },
-  { id:'epe',      label:'EPE',       val: pago.monto_epe },
-  { id:'agua',     label:'Agua',      val: pago.monto_agua },
-  { id:'tgiu',     label:'TGIU',      val: pago.monto_tgiu },
-  { id:'seguro',   label:'Seguro',    val: pago.monto_seguro },
-  { id:'internet', label:'Internet',  val: pago.monto_internet },
-  { id:'expensas', label:'Expensas',  val: pago.monto_expensas },
-  { id:'otros',    label:'Otros',     val: pago.monto_otros, concepto: pago.concepto_otros },
-].filter(it => it.val && it.val > 0);
+    { id:'alquiler', label:'Alquiler', val: p.importe_alquiler||0 },
+    { id:'epe', label:'EPE', val: p.monto_epe||0 },
+    { id:'agua', label:'Agua', val: p.monto_agua||0 },
+    { id:'tgiu', label:'TGIU', val: p.monto_tgiu||0 },
+    { id:'seguro', label:'Seguro', val: p.monto_seguro||0 },
+  ].filter(i => i.val > 0);
 
   return items.map(it => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
@@ -3882,13 +3879,15 @@ function cargarItemsPago(impagos, pagoId, todosPagos) {
   const nroMes = todosPagos.findIndex(x => x.id == pagoId) + 1;
 
   const items = [
-    { id:'alquiler', label:'Alquiler',  val: pago.importe_alquiler },
-    { id:'epe',      label:'EPE',       val: pago.monto_epe },
-    { id:'agua',     label:'Agua',      val: pago.monto_agua },
-    { id:'tgiu',     label:'TGIU',      val: pago.monto_tgiu },
-    { id:'seguro',   label:'Seguro',    val: pago.monto_seguro },
-    { id:'otros',    label:'Otros',     val: pago.monto_otros, concepto: pago.concepto_otros },
-  ].filter(it => it.val && it.val > 0);
+  { id:'alquiler', label:'Alquiler',  val: pago.importe_alquiler },
+  { id:'epe',      label:'EPE',       val: pago.monto_epe },
+  { id:'agua',     label:'Agua',      val: pago.monto_agua },
+  { id:'tgiu',     label:'TGIU',      val: pago.monto_tgiu },
+  { id:'seguro',   label:'Seguro',    val: pago.monto_seguro },
+  { id:'internet', label:'Internet',  val: pago.monto_internet },
+  { id:'expensas', label:'Expensas',  val: pago.monto_expensas },
+  { id:'otros',    label:'Otros',     val: pago.monto_otros, concepto: pago.concepto_otros },
+].filter(it => it.val && it.val > 0);
 
   document.getElementById('items-pago').innerHTML = `
     <div class="section-title" style="margin-bottom:1rem">Mes ${nroMes} — ${formatDate(pago.mes)}</div>
