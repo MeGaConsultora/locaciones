@@ -3192,7 +3192,7 @@ function _abrirFormularioContrato(c, esNuevo) {
       <div class="form-group"><label>N° cuenta Expensas</label><input id="f-nro-expensas" type="text" value="${c.nro_expensas||''}" placeholder="Opcional"></div>
     </div>
 
-    <div class="section-title" style="margin:1rem 0 0.75rem">Servicios que abona el propietario</div>
+    <div class="section-title" style="margin:1rem 0 0.75rem">Servicios que se rinden al propietario</div>
     <div style="display:flex;flex-wrap:wrap;gap:0.75rem;background:#f0f4ff;padding:1rem;border-radius:10px;margin-bottom:1rem">
       ${['EPE','Agua','TGIU','Internet','Expensas','Seguro'].map(s => {
         const checked = c.servicios_propietario?.includes(s) ? 'checked' : '';
@@ -3769,6 +3769,35 @@ async function actualizarContrato(id) {
       nuevaDesde !== (contratoOriginal.vigencia_desde?.substring(0,10)||'') ||
       nuevaHasta !== (contratoOriginal.vigencia_hasta?.substring(0,10)||'')
     );
+
+    // Generate missing months if vigencia was extended
+    if (nuevaHasta && fechasChanged) {
+      const hoja = contratoOriginal?.hoja || contratoOriginal?.titulo;
+      if (hoja) {
+        const hojaEncoded = encodeURIComponent(hoja);
+        const pagosExistentes = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.desc&limit=1`);
+        const ultimoMes = pagosExistentes[0]?.mes?.substring(0,7);
+        if (ultimoMes && ultimoMes < nuevaHasta.substring(0,7)) {
+          // Generate months from after last existing to new end
+          const mesesNuevos = [];
+          let [y, m] = ultimoMes.split('-').map(Number);
+          const [ey, em] = nuevaHasta.substring(0,7).split('-').map(Number);
+          m++; if (m > 12) { m = 1; y++; }
+          while (y < ey || (y === ey && m <= em)) {
+            const mesStr = `${y}-${String(m).padStart(2,'0')}-01`;
+            mesesNuevos.push({ hoja, mes: mesStr, corresponde_a_mes: mesStr, importe_alquiler: 0, total: 0, saldo: 0, pagado: '0' });
+            m++; if (m > 12) { m = 1; y++; }
+          }
+          if (mesesNuevos.length > 0) {
+            for (let i = 0; i < mesesNuevos.length; i += 50) {
+              await sbPost('pagos', mesesNuevos.slice(i, i+50));
+            }
+            toast(`${mesesNuevos.length} mes/es nuevos generados ✓`);
+          }
+        }
+      }
+    }
+
     if (nuevaDesde && nuevaHasta && fechasChanged) {
       const contrato = DB.contratos.find(x=>x.id===id);
       if (contrato) {
