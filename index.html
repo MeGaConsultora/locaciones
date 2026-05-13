@@ -2329,12 +2329,15 @@ function mostrarSolapa(id, btn) {
 function generarItemsCobro(p, extrasInq) {
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
   const items = [
-    { id:'alquiler', label:'Alquiler', val: p.importe_alquiler||0 },
-    { id:'epe', label:'EPE', val: p.monto_epe||0 },
-    { id:'agua', label:'Agua', val: p.monto_agua||0 },
-    { id:'tgiu', label:'TGIU', val: p.monto_tgiu||0 },
-    { id:'seguro', label:'Seguro', val: p.monto_seguro||0 },
-  ].filter(i => i.val > 0);
+  { id:'alquiler', label:'Alquiler', val:p.importe_alquiler||0 },
+  { id:'epe', label:'EPE', val:p.monto_epe||0 },
+  { id:'agua', label:'Agua', val:p.monto_agua||0 },
+  { id:'tgiu', label:'TGIU', val:p.monto_tgiu||0 },
+  { id:'seguro', label:'Seguro', val:p.monto_seguro||0 },
+
+  { id:'internet', label:'Internet', val:p.monto_internet||0 },
+  { id:'expensas', label:'Expensas', val:p.monto_expensas||0 },
+];
 
   return items.map(it => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
