@@ -1971,94 +1971,125 @@ async function cargarListaServicios(filtro='') {
 
 async function guardarServicios() {
   try {
-    const servicios = document.querySelectorAll('[data-servicio-id]');
+
+    const servicios =
+      document.querySelectorAll('[data-servicio-id]');
+
     const serviciosParaGuardar = [];
     const serviciosParaEliminar = [];
-    
+
     servicios.forEach(row => {
+
       const id = row.dataset.servicioId;
-      const importe = (row.querySelector('[data-field="importe"]')?.value || '').trim();
-      
-      // CORRECCIÓN: Si importe está vacío o es 0, ELIMINAR del BD (no guardar)
-      // Esto lo deja como "no cargado"
-      if (!importe || parseFloat(importe) === 0) {
+
+      const importeRaw =
+        row.querySelector('[data-field="importe"]')?.value || '';
+
+      const importe = parseFloat(importeRaw);
+
+      // vacío, NaN o 0 => eliminar/no guardar
+      if (
+        importeRaw.trim() === '' ||
+        isNaN(importe) ||
+        importe === 0
+      ) {
+
+        // si existe en BD => eliminar
         if (id && id !== 'new') {
           serviciosParaEliminar.push(parseInt(id));
         }
-      } else {
-        // Si tiene importe válido, guardar
-        serviciosParaGuardar.push({
-          id: id !== 'new' ? parseInt(id) : null,
-          importe: parseFloat(importe),
-          hoja: document.querySelector('[data-field="hoja"]')?.value,
-          mes: document.querySelector('[data-field="mes"]')?.value,
-          tipo_servicio: document.querySelector('[data-field="tipo_servicio"]')?.value,
-          // ... agregar otros campos según tu estructura
-        });
+
+        // si es nuevo y vacío => no hacer nada
+        return;
       }
+
+      // guardar/update
+      serviciosParaGuardar.push({
+        id: id !== 'new' ? parseInt(id) : null,
+
+        importe,
+
+        hoja:
+          row.querySelector('[data-field="hoja"]')?.value || null,
+
+        mes:
+          row.querySelector('[data-field="mes"]')?.value || null,
+
+        tipo_servicio:
+          row.querySelector('[data-field="tipo_servicio"]')?.value || null,
+      });
+
     });
 
-    // PASO 1: Eliminar servicios con importe 0 o vacío
+    console.log('GUARDAR:', serviciosParaGuardar);
+    console.log('ELIMINAR:', serviciosParaEliminar);
+
+    // ELIMINAR
     for (const id of serviciosParaEliminar) {
+
       try {
+
+        console.log('DELETE ID:', id);
+
         await sbDelete('servicios', id);
+
       } catch (e) {
-        console.error(`Error al eliminar servicio ${id}:`, e);
+
+        console.error('ERROR DELETE:', e);
+
       }
     }
 
-    // PASO 2: Guardar/actualizar servicios con importe válido
+    // GUARDAR / ACTUALIZAR
     for (const servicio of serviciosParaGuardar) {
+
       try {
+
+        console.log('UPSERT:', servicio);
+
+        // existente => update
         if (servicio.id) {
-          await sbPatch('servicios', servicio.id, servicio);
+
+          await sbPatch(
+            'servicios',
+            servicio.id,
+            servicio
+          );
+
         } else {
-          await sbPost('servicios', servicio);
+
+          // nuevo => insert
+          await sbPost(
+            'servicios',
+            servicio
+          );
         }
+
       } catch (e) {
-        console.error(`Error al guardar servicio:`, e);
+
+        console.error('ERROR GUARDAR:', e);
+
         throw e;
       }
     }
 
-    toast(`✓ ${serviciosParaGuardar.length} servicio${serviciosParaGuardar.length !== 1 ? 's' : ''} guardado${serviciosParaGuardar.length !== 1 ? 's' : ''}, ${serviciosParaEliminar.length} eliminado${serviciosParaEliminar.length !== 1 ? 's' : ''}`, 'success');
-    await loadAll();
-    closeModal();
-  } catch (e) {
-    console.error('Error en guardarServicios:', e);
-    toast('✗ Error al guardar servicios', 'error');
-  }
-}
+    toast(
+      `✓ Servicios actualizados`,
+      'success'
+    );
 
-function actualizarTotalPct(srv) {
-  const inq = parseFloat(document.getElementById(`f-pct-${srv}`)?.value)||0;
-  const prop = parseFloat(document.getElementById(`f-pct-prop-${srv}`)?.value)||0;
-  const total = inq + prop;
-  const el = document.getElementById(`pct-total-${srv}`);
-  if (el) {
-    el.textContent = total + '%';
-    el.style.color = total === 100 ? 'var(--green)' : 'var(--accent)';
-    el.closest('tr').style.background = total === 100 ? '' : '#fff3cd';
-    // Show warning below table if any row != 100
-    const allRows = ['epe','agua','tgiu','seguro','internet','expensas'];
-    const warnings = allRows.filter(s => {
-      const i = parseFloat(document.getElementById(`f-pct-${s}`)?.value)||0;
-      const p = parseFloat(document.getElementById(`f-pct-prop-${s}`)?.value)||0;
-      return Math.abs((i+p) - 100) > 0.5;
-    });
-    let warnEl = document.getElementById('pct-sum-warning');
-    if (!warnEl) {
-      warnEl = document.createElement('div');
-      warnEl.id = 'pct-sum-warning';
-      warnEl.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:0.6rem 1rem;margin-top:0.5rem;font-size:0.82rem;color:#856404';
-      el.closest('table').after(warnEl);
-    }
-    if (warnings.length) {
-      warnEl.style.display = 'block';
-      warnEl.textContent = `⚠ ${warnings.map(s=>s.toUpperCase()).join(', ')}: la suma de % inquilino + % propietario no da 100%. Revisá los porcentajes.`;
-    } else {
-      warnEl.style.display = 'none';
-    }
+    await loadAll();
+
+    closeModal();
+
+  } catch (e) {
+
+    console.error('ERROR GENERAL:', e);
+
+    toast(
+      '✗ Error al guardar servicios',
+      'error'
+    );
   }
 }
 
