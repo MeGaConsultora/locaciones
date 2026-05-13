@@ -1970,126 +1970,126 @@ async function cargarListaServicios(filtro='') {
 }
 
 async function guardarServicios() {
-  try {
+  const mesKey = document.getElementById('srv-mes')?.value;
+  if (!mesKey) return;
+  const mes = mesKey + '-01';
+  let guardados = 0;
+  const cambiosPorPago = {};
 
-    const servicios =
-      document.querySelectorAll('[data-servicio-id]');
+  for (const srv of ['epe', 'agua', 'tgiu', 'seguro', 'internet', 'expensas']) {
+    const inputs = document.querySelectorAll(`[id^="srv-${srv}-"]:not([id*="cuota"])`);
+    for (const input of inputs) {
+      const importe = parseFloat(input.value);
+      if (!importe) continue;
 
-    const serviciosParaGuardar = [];
-    const serviciosParaEliminar = [];
+      // Get hojas - grouped input has data-hojas, legacy has data-hoja
+      const hojas = input.dataset.hojas
+        ? input.dataset.hojas.split('|').filter(Boolean)
+        : input.dataset.hoja ? [input.dataset.hoja] : [];
 
-    servicios.forEach(row => {
-
-      const id = row.dataset.servicioId;
-
-      const importeRaw =
-        row.querySelector('[data-field="importe"]')?.value || '';
-
-      const importe = parseFloat(importeRaw);
-
-      // vacío, NaN o 0 => eliminar/no guardar
-      if (
-        importeRaw.trim() === '' ||
-        isNaN(importe) ||
-        importe === 0
-      ) {
-
-        // si existe en BD => eliminar
-        if (id && id !== 'new') {
-          serviciosParaEliminar.push(parseInt(id));
-        }
-
-        // si es nuevo y vacío => no hacer nada
-        return;
+      for (const hoja of hojas) {
+        try {
+          const hojaEncoded = encodeURIComponent(hoja);
+          const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
+          if (!pagos.length) continue;
+          const p = pagos[0];
+          if (!cambiosPorPago[p.id]) cambiosPorPago[p.id] = { pago: p, changes: {} };
+          cambiosPorPago[p.id].changes[`monto_${srv}`] = importe;
+        } catch(e) { console.error('Error finding pago:', e); }
       }
 
-      // guardar/update
-      serviciosParaGuardar.push({
-        id: id !== 'new' ? parseInt(id) : null,
+      // EPE cuota 2
+      if (srv === 'epe') {
+        const contratoId = input.id.replace('srv-epe-g-','').replace('srv-epe-','').split(',')[0];
+        const c2chk = document.getElementById(`srv-epe-cuota2-${contratoId}`);
+        if (c2chk?.checked && hojas.length > 0) {
+          const hoja = hojas[0];
+          const cActual = DB.contratos.find(x => x.hoja === hoja);
+          const mesNext = c2chk.dataset.next + '-01';
+          for (const h of hojas) {
+            try {
+              const hojaEncoded = encodeURIComponent(h);
+              const pagosNext = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesNext}&limit=1`);
+              if (!pagosNext.length) continue;
+              const pN = pagosNext[0];
+              if (!cambiosPorPago[pN.id]) cambiosPorPago[pN.id] = { pago: pN, changes: {} };
+              cambiosPorPago[pN.id].changes['monto_epe'] = importe;
+            } catch(e) {}
+          }
+        }
+      }
+    }
+  }
 
-        importe,
+  // Apply pct and save each pago
+  for (const [pagoId, {pago, changes}] of Object.entries(cambiosPorPago)) {
+    try {
+      // Fetch fresh pct from Supabase
+      const cPago = DB.contratos.find(x => x.hoja === pago.hoja);
+      let pctData = cPago;
+      try {
+        const fresh = await sbGet('contratos', `hoja=eq.${encodeURIComponent(pago.hoja)}&select=pct_epe,pct_agua,pct_tgiu,pct_seguro,pct_internet,pct_expensas&limit=1`);
+        if (fresh.length) pctData = { ...cPago, ...fresh[0] };
+      } catch(e) {}
 
-        hoja:
-          row.querySelector('[data-field="hoja"]')?.value || null,
+      const applyPct = (val, srv) => Math.round(val * (pctData?.['pct_'+srv] ?? 100) / 100);
 
-        mes:
-          row.querySelector('[data-field="mes"]')?.value || null,
+      const alq = pago.importe_alquiler || 0;
+      const epe     = 'monto_epe'      in changes ? applyPct(changes.monto_epe, 'epe')           : (pago.monto_epe ?? 0);
+      const agua    = 'monto_agua'     in changes ? applyPct(changes.monto_agua, 'agua')          : (pago.monto_agua ?? 0);
+      const tgiu    = 'monto_tgiu'     in changes ? applyPct(changes.monto_tgiu, 'tgiu')          : (pago.monto_tgiu ?? 0);
+      const seguro  = 'monto_seguro'   in changes ? applyPct(changes.monto_seguro, 'seguro')      : (pago.monto_seguro ?? 0);
+      const internet= 'monto_internet' in changes ? applyPct(changes.monto_internet, 'internet')  : (pago.monto_internet ?? 0);
+      const expensas= 'monto_expensas' in changes ? applyPct(changes.monto_expensas, 'expensas')  : (pago.monto_expensas ?? 0);
+      const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
+      const yaAbonado = (pago.total||0) - (pago.saldo||0);
+      const patch = { total: newTotal, saldo: Math.max(0, newTotal - yaAbonado) };
+      if ('monto_epe'      in changes) patch.monto_epe = epe;
+      if ('monto_agua'     in changes) patch.monto_agua = agua;
+      if ('monto_tgiu'     in changes) patch.monto_tgiu = tgiu;
+      if ('monto_seguro'   in changes) patch.monto_seguro = seguro;
+      if ('monto_internet' in changes) patch.monto_internet = internet;
+      if ('monto_expensas' in changes) patch.monto_expensas = expensas;
+      await sbPatch('pagos', parseInt(pagoId), patch);
+      guardados++;
+    } catch(e) { console.error('Error saving pago:', e); }
+  }
 
-        tipo_servicio:
-          row.querySelector('[data-field="tipo_servicio"]')?.value || null,
-      });
+  toast(`${guardados} servicio/s guardados ✓`);
+  await loadAll();
+  cargarListaServicios();
+}
 
+
+function actualizarTotalPct(srv) {
+  const inq = parseFloat(document.getElementById(`f-pct-${srv}`)?.value)||0;
+  const prop = parseFloat(document.getElementById(`f-pct-prop-${srv}`)?.value)||0;
+  const total = inq + prop;
+  const el = document.getElementById(`pct-total-${srv}`);
+  if (el) {
+    el.textContent = total + '%';
+    el.style.color = total === 100 ? 'var(--green)' : 'var(--accent)';
+    el.closest('tr').style.background = total === 100 ? '' : '#fff3cd';
+    // Show warning below table if any row != 100
+    const allRows = ['epe','agua','tgiu','seguro','internet','expensas'];
+    const warnings = allRows.filter(s => {
+      const i = parseFloat(document.getElementById(`f-pct-${s}`)?.value)||0;
+      const p = parseFloat(document.getElementById(`f-pct-prop-${s}`)?.value)||0;
+      return Math.abs((i+p) - 100) > 0.5;
     });
-
-    console.log('GUARDAR:', serviciosParaGuardar);
-    console.log('ELIMINAR:', serviciosParaEliminar);
-
-    // ELIMINAR
-    for (const id of serviciosParaEliminar) {
-
-      try {
-
-        console.log('DELETE ID:', id);
-
-        await sbDelete('servicios', id);
-
-      } catch (e) {
-
-        console.error('ERROR DELETE:', e);
-
-      }
+    let warnEl = document.getElementById('pct-sum-warning');
+    if (!warnEl) {
+      warnEl = document.createElement('div');
+      warnEl.id = 'pct-sum-warning';
+      warnEl.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:0.6rem 1rem;margin-top:0.5rem;font-size:0.82rem;color:#856404';
+      el.closest('table').after(warnEl);
     }
-
-    // GUARDAR / ACTUALIZAR
-    for (const servicio of serviciosParaGuardar) {
-
-      try {
-
-        console.log('UPSERT:', servicio);
-
-        // existente => update
-        if (servicio.id) {
-
-          await sbPatch(
-            'servicios',
-            servicio.id,
-            servicio
-          );
-
-        } else {
-
-          // nuevo => insert
-          await sbPost(
-            'servicios',
-            servicio
-          );
-        }
-
-      } catch (e) {
-
-        console.error('ERROR GUARDAR:', e);
-
-        throw e;
-      }
+    if (warnings.length) {
+      warnEl.style.display = 'block';
+      warnEl.textContent = `⚠ ${warnings.map(s=>s.toUpperCase()).join(', ')}: la suma de % inquilino + % propietario no da 100%. Revisá los porcentajes.`;
+    } else {
+      warnEl.style.display = 'none';
     }
-
-    toast(
-      `✓ Servicios actualizados`,
-      'success'
-    );
-
-    await loadAll();
-
-    closeModal();
-
-  } catch (e) {
-
-    console.error('ERROR GENERAL:', e);
-
-    toast(
-      '✗ Error al guardar servicios',
-      'error'
-    );
   }
 }
 
