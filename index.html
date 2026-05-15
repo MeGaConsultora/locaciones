@@ -2175,16 +2175,32 @@ async function verBoleta(pagoId, srv) {
     const page = await pdfDoc.getPage(pdfRec.pdf_pagina);
     const container = document.getElementById('pdf-viewer-container');
     const containerWidth = container ? container.clientWidth - 16 : 800;
+    const dpr = window.devicePixelRatio || 1;
     const baseViewport = page.getViewport({ scale: 1 });
     const scale = containerWidth / baseViewport.width;
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
+    canvas.width = viewport.width * dpr;
+    canvas.height = viewport.height * dpr;
     canvas.style.cssText = 'width:100%;height:auto;display:block';
     const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
     await page.render({ canvasContext: ctx, viewport }).promise;
     if (container) { container.innerHTML = ''; container.appendChild(canvas); }
+    // Generate single-page PDF for download
+    try {
+      const dlCanvas = document.createElement('canvas');
+      const dlViewport = page.getViewport({ scale: 2 });
+      dlCanvas.width = dlViewport.width;
+      dlCanvas.height = dlViewport.height;
+      await page.render({ canvasContext: dlCanvas.getContext('2d'), viewport: dlViewport }).promise;
+      dlCanvas.toBlob(blob => {
+        // Create a simple image download instead of full PDF
+        const url = URL.createObjectURL(blob);
+        const dlLink = document.getElementById('pdf-dl-link');
+        if (dlLink) { dlLink.href = url; dlLink.download = 'boleta.png'; }
+      }, 'image/png');
+    } catch(e) {}
   } catch(e) {
     toast('Error al cargar la boleta: ' + e.message, 'error');
     console.error(e);
