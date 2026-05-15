@@ -5192,7 +5192,7 @@ async function confirmarImportarPDF() {
       if (window._pdfFileName) {
         try {
           await fetch(`${SB_URL}/rest/v1/pagos_pdf?pago_id=eq.${p.id}&servicio=eq.${srv}`,
-            { method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' } });
+            { method: 'DELETE', headers: HEADERS });
           await sbPost('pagos_pdf', { pago_id: p.id, servicio: srv, pdf_path: window._pdfFileName, pdf_pagina: r.pagina });
         } catch(e) { console.error('Error saving pagos_pdf:', e); }
       }
