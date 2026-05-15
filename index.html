@@ -1460,8 +1460,8 @@ async function modificarAccesoInquilino(contratoId, hoja) {
 }
 
 async function crearAccesoInquilino(contratoId, hoja) {
-  const email = document.getElementById('mod-email').value.trim();
-  const nombre = document.getElementById('mod-nombre').value.trim();
+  const email = document.getElementById('acc-email').value.trim();
+  const nombre = document.getElementById('acc-nombre').value.trim();
   if (!email) { toast('Ingresá el email del inquilino','error'); return; }
 
   try {
