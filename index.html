@@ -5172,10 +5172,16 @@ async function confirmarImportarPDF() {
   const resultados = window._pdfResultados || [];
   const mes = window._pdfMes;
   const srv = window._pdfSrv;
+  console.log('confirmarImportarPDF called, resultados:', resultados.length, 'mes:', mes, 'srv:', srv);
+  resultados.forEach((r,i) => {
+    const chk = document.querySelector(`.pdf-chk[data-idx="${i}"]`);
+    console.log(`  r[${i}]: cuenta=${r.cuenta} importe=${r.importe} contrato=${r.contrato?.titulo} checked=${chk?.checked}`);
+  });
   const seleccionados = resultados.filter((r, i) => {
     const chk = document.querySelector(`.pdf-chk[data-idx="${i}"]`);
     return chk?.checked && r.contrato && r.importe;
   });
+  console.log('Seleccionados:', seleccionados.length);
   
   if (!seleccionados.length) { toast('Seleccioná al menos una boleta', 'error'); return; }
   
