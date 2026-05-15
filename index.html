@@ -4978,7 +4978,8 @@ function abrirImportarPDF() {
       <div id="pdf-resultados" style="display:none"></div>
     </div>
     <div class="form-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-secondary" onclick="closeModal()" style="margin-right:auto">Salir</button>
+      <button class="btn btn-secondary" id="btn-cancelar-pdf" onclick="resetImportarPDF()" style="display:none">← Cancelar</button>
       <button class="btn btn-primary" id="btn-main-pdf" onclick="procesarPDF()">🔍 Procesar PDF</button>
     </div>
   `;
@@ -5112,10 +5113,10 @@ function resetImportarPDF() {
   document.getElementById('pdf-file').value = '';
   window._pdfResultados = null;
   window._pdfFileName = null;
+  const btnC = document.getElementById('btn-cancelar-pdf');
+  if (btnC) btnC.style.display = 'none';
   const btn = document.getElementById('btn-main-pdf');
   if (btn) { btn.textContent = '🔍 Procesar PDF'; btn.onclick = procesarPDF; }
-  const btnV = document.getElementById('btn-volver-pdf');
-  if (btnV) btnV.remove();
 }
 
 function mostrarResultadosPDF(resultados, mes, srv) {
@@ -5174,21 +5175,14 @@ function mostrarResultadosPDF(resultados, mes, srv) {
   window._pdfResultados = resultados;
   window._pdfMes = mes;
   window._pdfSrv = srv;
-  // Swap the Procesar PDF button to Cargar seleccionados, add Volver
+  // Show Cancelar, swap Procesar to Cargar seleccionados
+  const btnCancelar = document.getElementById('btn-cancelar-pdf');
+  if (btnCancelar) btnCancelar.style.display = '';
   const btnProcesar = document.getElementById('btn-main-pdf');
   if (btnProcesar) {
     btnProcesar.textContent = '💾 Cargar seleccionados';
     btnProcesar.onclick = null;
     btnProcesar.addEventListener('click', confirmarImportarPDF);
-    // Add Volver button before it
-    if (!document.getElementById('btn-volver-pdf')) {
-      const btnVolver = document.createElement('button');
-      btnVolver.id = 'btn-volver-pdf';
-      btnVolver.className = 'btn btn-secondary';
-      btnVolver.textContent = '← Volver';
-      btnVolver.onclick = resetImportarPDF;
-      btnProcesar.parentNode.insertBefore(btnVolver, btnProcesar);
-    }
   }
 }
 
