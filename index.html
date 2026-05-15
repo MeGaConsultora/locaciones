@@ -5108,6 +5108,11 @@ async function procesarPDF() {
 function mostrarResultadosPDF(resultados, mes, srv) {
   const el = document.getElementById('pdf-resultados');
   el.style.display = 'block';
+  // Use setTimeout to ensure DOM is ready before attaching listener
+  setTimeout(() => {
+    const btnConfirmar = document.getElementById('btn-confirmar-pdf');
+    if (btnConfirmar) btnConfirmar.addEventListener('click', confirmarImportarPDF);
+  }, 50);
   
   const withContrato = resultados.filter(r => r.contrato).length;
   const sinContrato = resultados.filter(r => !r.contrato && r.cuenta).length;
