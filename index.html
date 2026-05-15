@@ -5003,17 +5003,30 @@ async function procesarPDF() {
     
     // Upload PDF to Supabase Storage
     const fileName = `${srv}/${mes}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
-    const uploadResp = await fetch(
-      `${SB_URL}/storage/v1/object/servicios/${fileName}`,
-      {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/pdf', 'x-upsert': 'true' },
-        body: file
+    console.log('Uploading to storage:', fileName);
+    try {
+      const uploadResp = await fetch(
+        `${SB_URL}/storage/v1/object/servicios/${fileName}`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/pdf', 'x-upsert': 'true' },
+          body: file
+        }
+      );
+      const uploadText = await uploadResp.text();
+      console.log('Upload status:', uploadResp.status, uploadText.substring(0,200));
+      if (!uploadResp.ok) {
+        toast('Aviso: no se pudo guardar el PDF en Storage (' + uploadResp.status + '). Se cargarán solo los importes.', 'warn');
+        window._pdfFileName = null;
+      } else {
+        window._pdfFileName = fileName;
+        toast('PDF subido correctamente ✓');
       }
-    );
-    if (!uploadResp.ok) throw new Error('Error al subir el PDF: ' + await uploadResp.text());
-    window._pdfFileName = fileName;
-    toast('PDF subido correctamente ✓');
+    } catch(uploadErr) {
+      console.error('Upload error:', uploadErr);
+      toast('Aviso: error al subir PDF. Se cargarán solo los importes.', 'warn');
+      window._pdfFileName = null;
+    }
 
     // Load PDF.js
     if (typeof pdfjsLib === 'undefined') {
