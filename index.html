@@ -1013,6 +1013,15 @@ async function recargarGrilla(c) {
         if (!extrasActuales[e.pago_id]) extrasActuales[e.pago_id] = [];
         extrasActuales[e.pago_id].push(e);
       });
+      // Load pagos_pdf for PDF buttons
+      window._pagosPdf = {};
+      try {
+        const pdfs = await sbGet('pagos_pdf', `pago_id=in.(${ids})`);
+        pdfs.forEach(r => {
+          if (!window._pagosPdf[r.pago_id]) window._pagosPdf[r.pago_id] = [];
+          window._pagosPdf[r.pago_id].push(r);
+        });
+      } catch(e) {}
     }
 
     const totalAlq = pagosActuales.reduce((s,p)=>s+(p.importe_alquiler||0),0);
