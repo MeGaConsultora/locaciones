@@ -4978,8 +4978,7 @@ function abrirImportarPDF() {
       <div id="pdf-resultados" style="display:none"></div>
     </div>
     <div class="form-actions">
-      <button class="btn btn-secondary" onclick="closeModal()" style="margin-right:auto">Salir</button>
-      <button class="btn btn-secondary" id="btn-cancelar-pdf" onclick="resetImportarPDF()" style="display:none">← Cancelar</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" id="btn-main-pdf" onclick="procesarPDF()">🔍 Procesar PDF</button>
     </div>
   `;
@@ -5002,6 +5001,13 @@ async function procesarPDF() {
     const file = fileInput.files[0];
     const arrayBuffer = await file.arrayBuffer();
     
+    // Check if already processed this session
+    if (!window._pdfArchivosSubidos) window._pdfArchivosSubidos = new Set();
+    if (window._pdfArchivosSubidos.has(file.name)) {
+      const reemplazar = confirm(`El archivo "${file.name}" ya fue procesado en esta sesión.\n\n¿Querés reemplazar el importe cargado anteriormente?`);
+      if (!reemplazar) return;
+    }
+
     // Upload PDF to Supabase Storage
     const fileName = `${srv}/${mes}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
     console.log('Uploading to storage:', fileName);
@@ -5021,6 +5027,7 @@ async function procesarPDF() {
         window._pdfFileName = null;
       } else {
         window._pdfFileName = fileName;
+        window._pdfArchivosSubidos.add(file.name);
         toast('PDF subido correctamente ✓');
       }
     } catch(uploadErr) {
@@ -5113,8 +5120,6 @@ function resetImportarPDF() {
   document.getElementById('pdf-file').value = '';
   window._pdfResultados = null;
   window._pdfFileName = null;
-  const btnC = document.getElementById('btn-cancelar-pdf');
-  if (btnC) btnC.style.display = 'none';
   const btn = document.getElementById('btn-main-pdf');
   if (btn) { btn.textContent = '🔍 Procesar PDF'; btn.onclick = procesarPDF; }
 }
@@ -5175,9 +5180,7 @@ function mostrarResultadosPDF(resultados, mes, srv) {
   window._pdfResultados = resultados;
   window._pdfMes = mes;
   window._pdfSrv = srv;
-  // Show Cancelar, swap Procesar to Cargar seleccionados
-  const btnCancelar = document.getElementById('btn-cancelar-pdf');
-  if (btnCancelar) btnCancelar.style.display = '';
+  // Swap Procesar to Cargar seleccionados
   const btnProcesar = document.getElementById('btn-main-pdf');
   if (btnProcesar) {
     btnProcesar.textContent = '💾 Cargar seleccionados';
