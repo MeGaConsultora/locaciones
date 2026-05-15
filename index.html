@@ -258,7 +258,7 @@
   .admin-table td { padding:0.65rem 1rem; border-bottom:1px solid var(--border); vertical-align:middle; }
   .admin-table tr:hover td { background:#faf7f2; }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 </head>
 <body>
 
@@ -2155,7 +2155,7 @@ async function verBoleta(pagoId, srv) {
     document.getElementById('modal-overlay').classList.add('open');
 
     // Render specific page with PDF.js
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
     const pdfDoc = await pdfjsLib.getDocument(signedUrl).promise;
     const page = await pdfDoc.getPage(pago.pdf_pagina);
     const viewport = page.getViewport({ scale: 1.5 });
@@ -5017,7 +5017,7 @@ async function procesarPDF() {
     if (typeof pdfjsLib === 'undefined') {
       throw new Error('PDF.js no disponible');
     }
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
     
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const totalPages = pdf.numPages;
@@ -5153,7 +5153,10 @@ function toggleTodosPDF(sel) {
   document.querySelectorAll('.pdf-chk:not([disabled])').forEach(chk => chk.checked = sel);
 }
 
-async function confirmarImportarPDF(resultados, mes, srv) {
+async function confirmarImportarPDF() {
+  const resultados = window._pdfResultados || [];
+  const mes = window._pdfMes;
+  const srv = window._pdfSrv;
   const seleccionados = resultados.filter((r, i) => {
     const chk = document.querySelector(`.pdf-chk[data-idx="${i}"]`);
     return chk?.checked && r.contrato && r.importe;
