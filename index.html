@@ -2158,12 +2158,14 @@ async function verBoleta(pagoId, srv) {
     document.getElementById('modal-subtitle').textContent = '';
     document.getElementById('modal-overlay').dataset.contratoId = '';
     document.getElementById('modal-body').innerHTML = `
-      <div id="pdf-viewer-container" style="width:100%;min-height:600px;display:flex;align-items:center;justify-content:center">
-        <div style="text-align:center;color:#888">⏳ Cargando boleta...</div>
+      <div id="pdf-viewer-container" style="width:100%;max-height:70vh;overflow-y:auto;display:flex;align-items:flex-start;justify-content:center;background:#f5f5f5;border-radius:8px;padding:0.5rem">
+        <div style="text-align:center;color:#888;padding:2rem">⏳ Cargando boleta...</div>
       </div>
-      <div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
-      <button class="btn btn-primary" onclick="document.getElementById('pdf-dl-link').click()">⬇ Descargar</button>
-      <a id="pdf-dl-link" style="display:none" href="${signedUrl}" download></a></div>
+      <div class="form-actions" style="margin-top:0.75rem">
+        <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+        <button class="btn btn-primary" onclick="document.getElementById('pdf-dl-link').click()">⬇ Descargar</button>
+        <a id="pdf-dl-link" style="display:none" href="${signedUrl}" download></a>
+      </div>
     `;
     document.getElementById('modal-overlay').classList.add('open');
 
@@ -2171,14 +2173,17 @@ async function verBoleta(pagoId, srv) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
     const pdfDoc = await pdfjsLib.getDocument(signedUrl).promise;
     const page = await pdfDoc.getPage(pdfRec.pdf_pagina);
-    const viewport = page.getViewport({ scale: 1.5 });
+    const container = document.getElementById('pdf-viewer-container');
+    const containerWidth = container ? container.clientWidth - 16 : 800;
+    const baseViewport = page.getViewport({ scale: 1 });
+    const scale = containerWidth / baseViewport.width;
+    const viewport = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
-    canvas.style.width = '100%';
+    canvas.style.cssText = 'width:100%;height:auto;display:block';
     const ctx = canvas.getContext('2d');
     await page.render({ canvasContext: ctx, viewport }).promise;
-    const container = document.getElementById('pdf-viewer-container');
     if (container) { container.innerHTML = ''; container.appendChild(canvas); }
   } catch(e) {
     toast('Error al cargar la boleta: ' + e.message, 'error');
