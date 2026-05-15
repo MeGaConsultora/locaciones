@@ -1933,21 +1933,32 @@ async function cargarListaServicios(filtro='') {
 
 
     // Build cargados HTML
-    const cargadosHtml = cargados.map(c => {
-      const pago = pagosPorHoja[c.hoja];
-      const nro = c[`nro_${srv}`] || '';
-      const totalBoleta = Math.round((pago[campo]||0) * 100 / (c['pct_'+srv]||100));
+    // Build cargados HTML - grouped by nro (same logic as sinCargar)
+    const cargadosGrupos = {};
+    cargados.forEach(c => {
+      const nro = c[`nro_${srv}`] || `_solo_${c.id}`;
+      if (!cargadosGrupos[nro]) cargadosGrupos[nro] = { nro: c[`nro_${srv}`]||'', contratos: [] };
+      cargadosGrupos[nro].contratos.push(c);
+    });
+    const cargadosHtml = Object.values(cargadosGrupos).map(g => {
+      const c0 = g.contratos[0];
+      const pago = pagosPorHoja[c0.hoja];
+      const nro = g.nro;
+      const totalBoleta = Math.round((pago?.[campo]||0) * 100 / (c0['pct_'+srv]||100));
+      const detalle = g.contratos.map(c => `${c.titulo||c.hoja} (${c['pct_'+srv]||100}%)`).join(', ');
+      const hojas = g.contratos.map(c => c.hoja).join('|');
+      const ids = g.contratos.map(c => c.id).join(',');
       return `<div class="ya-cargado-${srv}" style="display:none;background:#f0fff4;border:1.5px solid var(--green);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;flex-wrap:wrap">
-          <div>
-            <strong style="font-size:0.88rem">${c.titulo||c.hoja}</strong>
-            <div style="font-size:0.75rem;color:#888">${c._locatario||c.locatario||'—'}${nro?' · Cta: '+nro:''}</div>
+          <div style="flex:1">
+            <strong style="font-size:0.88rem">${nro ? 'Cta: '+nro : c0.titulo||c0.hoja}</strong>
+            <div style="font-size:0.75rem;color:#666;margin-top:2px">${detalle}</div>
           </div>
           <div>
-            <input type="number" id="srv-${srv}-${c.id}" data-hoja="${c.hoja}" data-pago-id="${pago?.id||''}"
-              data-pct="${c['pct_'+srv]||100}" value="${totalBoleta}"
-              placeholder="$ importe cuota" style="width:140px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem">
-            <div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Guardado: ${formatMoney(pago[campo])}</div>
+            <input type="number" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}"
+              value="${totalBoleta}"
+              placeholder="$ importe cuota" style="width:150px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem">
+            <div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Guardado: ${formatMoney(pago?.[campo]||0)}</div>
           </div>
         </div>
       </div>`;
@@ -1979,8 +1990,10 @@ async function guardarServicios() {
   for (const srv of ['epe', 'agua', 'tgiu', 'seguro', 'internet', 'expensas']) {
     const inputs = document.querySelectorAll(`[id^="srv-${srv}-"]:not([id*="cuota"])`);
     for (const input of inputs) {
-      const importe = parseFloat(input.value);
-      if (!importe) continue;
+      const importe = parseFloat(input.value) || 0;
+      // Process if has value OR if field was previously loaded (to allow clearing)
+      const yaTeníaValor = input.closest('[style*="f0fff4"]') !== null; // verde = ya cargado
+      if (!importe && !yaTeníaValor) continue;
 
       // Get hojas - grouped input has data-hojas, legacy has data-hoja
       const hojas = input.dataset.hojas
@@ -2329,18 +2342,12 @@ function mostrarSolapa(id, btn) {
 function generarItemsCobro(p, extrasInq) {
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
   const items = [
-  { id:'alquiler', label:'Alquiler', val:p.importe_alquiler || 0 },
-  { id:'epe', label:'EPE', val:p.monto_epe || 0 },
-  { id:'agua', label:'Agua', val:p.monto_agua || 0 },
-  { id:'tgiu', label:'TGIU', val:p.monto_tgiu || 0 },
-  { id:'seguro', label:'Seguro', val:p.monto_seguro || 0 },
-
-  { id:'internet', label:'Internet', val:p.monto_internet || 0 },
-  { id:'expensas', label:'Expensas', val:p.monto_expensas || 0 },
-
-  { id:'otros', label:'Otros', val:p.monto_otros || 0 }
-
-].filter(x => Number(x.val) > 0);
+    { id:'alquiler', label:'Alquiler', val: p.importe_alquiler||0 },
+    { id:'epe', label:'EPE', val: p.monto_epe||0 },
+    { id:'agua', label:'Agua', val: p.monto_agua||0 },
+    { id:'tgiu', label:'TGIU', val: p.monto_tgiu||0 },
+    { id:'seguro', label:'Seguro', val: p.monto_seguro||0 },
+  ].filter(i => i.val > 0);
 
   return items.map(it => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
@@ -3885,15 +3892,13 @@ function cargarItemsPago(impagos, pagoId, todosPagos) {
   const nroMes = todosPagos.findIndex(x => x.id == pagoId) + 1;
 
   const items = [
-  { id:'alquiler', label:'Alquiler',  val: pago.importe_alquiler },
-  { id:'epe',      label:'EPE',       val: pago.monto_epe },
-  { id:'agua',     label:'Agua',      val: pago.monto_agua },
-  { id:'tgiu',     label:'TGIU',      val: pago.monto_tgiu },
-  { id:'seguro',   label:'Seguro',    val: pago.monto_seguro },
-  { id:'internet', label:'Internet',  val: pago.monto_internet },
-  { id:'expensas', label:'Expensas',  val: pago.monto_expensas },
-  { id:'otros',    label:'Otros',     val: pago.monto_otros, concepto: pago.concepto_otros },
-].filter(it => it.val && it.val > 0);
+    { id:'alquiler', label:'Alquiler',  val: pago.importe_alquiler },
+    { id:'epe',      label:'EPE',       val: pago.monto_epe },
+    { id:'agua',     label:'Agua',      val: pago.monto_agua },
+    { id:'tgiu',     label:'TGIU',      val: pago.monto_tgiu },
+    { id:'seguro',   label:'Seguro',    val: pago.monto_seguro },
+    { id:'otros',    label:'Otros',     val: pago.monto_otros, concepto: pago.concepto_otros },
+  ].filter(it => it.val && it.val > 0);
 
   document.getElementById('items-pago').innerHTML = `
     <div class="section-title" style="margin-bottom:1rem">Mes ${nroMes} — ${formatDate(pago.mes)}</div>
