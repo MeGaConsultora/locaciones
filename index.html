@@ -5171,11 +5171,7 @@ function mostrarResultadosPDF(resultados, mes, srv) {
         </tbody>
       </table>
     </div>
-    <div class="form-actions" style="margin-top:1rem">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="confirmarImportarPDF(${JSON.stringify(resultados).replace(/</g,'\u003c')}, '${mes}', '${srv}')">💾 Cargar seleccionados</button>
-    </div>
-  `;
+    `;
   // Store for later
   window._pdfResultados = resultados;
   window._pdfMes = mes;
