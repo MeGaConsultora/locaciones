@@ -1956,7 +1956,7 @@ async function cargarListaServicios(filtro='') {
           </div>
           <div>
             <input type="number" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}"
-              value="${totalBoleta}"
+              value="${totalBoleta}" data-original="${totalBoleta}"
               placeholder="$ importe cuota" style="width:150px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem">
             <div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Guardado: ${formatMoney(pago?.[campo]||0)}</div>
           </div>
@@ -1991,9 +1991,9 @@ async function guardarServicios() {
     const inputs = document.querySelectorAll(`[id^="srv-${srv}-"]:not([id*="cuota"])`);
     for (const input of inputs) {
       const importe = parseFloat(input.value) || 0;
-      // Process if has value OR if field was previously loaded (to allow clearing)
-      const yaTeníaValor = input.closest('[style*="f0fff4"]') !== null; // verde = ya cargado
-      if (!importe && !yaTeníaValor) continue;
+      // Process if has value OR if had a previous value (data-original set on ya-cargados)
+      const teníaAnterior = input.dataset.original !== undefined;
+      if (!importe && !teníaAnterior) continue;
 
       // Get hojas - grouped input has data-hojas, legacy has data-hoja
       const hojas = input.dataset.hojas
