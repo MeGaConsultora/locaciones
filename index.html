@@ -2168,16 +2168,13 @@ async function verBoleta(pagoId, srv) {
       </div>
     `;
     document.getElementById('modal-overlay').classList.add('open');
-    // Wait for modal to render before loading PDF
-    await new Promise(r => setTimeout(r, 100));
 
     // Render specific page with PDF.js
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
     const pdfDoc = await pdfjsLib.getDocument(signedUrl).promise;
     const page = await pdfDoc.getPage(pdfRec.pdf_pagina);
     const container = document.getElementById('pdf-viewer-container');
-    const modalBox = document.querySelector('.modal-box');
-    const containerWidth = modalBox ? modalBox.clientWidth - 48 : (container ? container.clientWidth - 16 : 800);
+    const containerWidth = container ? container.clientWidth - 16 : 800;
     const dpr = window.devicePixelRatio || 1;
     const baseViewport = page.getViewport({ scale: 1 });
     const scale = containerWidth / baseViewport.width;
