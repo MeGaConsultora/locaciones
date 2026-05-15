@@ -576,7 +576,8 @@ async function sbPost(table, body) {
     r = await fetch(`${SB_URL}/rest/v1/${table}`, { method:'POST', headers: HEADERS, body: JSON.stringify(body) });
   }
   if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  const text = await r.text();
+  return text ? JSON.parse(text) : {};
 }
 async function sbPatch(table, id, body) {
   let r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'PATCH', headers: HEADERS, body: JSON.stringify(body) });
@@ -585,7 +586,8 @@ async function sbPatch(table, id, body) {
     r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'PATCH', headers: HEADERS, body: JSON.stringify(body) });
   }
   if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  const text2 = await r.text();
+  return text2 ? JSON.parse(text2) : {};
 }
 async function sbDelete(table, id) {
   const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'DELETE', headers: HEADERS });
