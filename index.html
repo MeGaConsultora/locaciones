@@ -5261,8 +5261,8 @@ async function confirmarImportarPDF() {
   }
   
   toast(`${cargados} boleta/s cargadas ✓`);
-  await loadAll();
   resetImportarPDF();
+  loadAll(); // async, no need to await
 }
 </script>
 
