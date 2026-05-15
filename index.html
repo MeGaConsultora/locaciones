@@ -1460,6 +1460,8 @@ async function modificarAccesoInquilino(contratoId, hoja) {
 }
 
 async function crearAccesoInquilino(contratoId, hoja) {
+  // Refresh token in case session expired
+  try { await refreshAdminToken(); } catch(e) {}
   const email = document.getElementById('acc-email').value.trim();
   const nombre = document.getElementById('acc-nombre').value.trim();
   if (!email) { toast('Ingresá el email del inquilino','error'); return; }
@@ -3353,6 +3355,20 @@ function _abrirFormularioContrato(c, esNuevo) {
   if (esNuevo) {
     agregarPersonaRol('propietario');
     agregarPersonaRol('inquilino');
+  } else {
+    // Populate existing personas
+    setTimeout(() => {
+      const propietarios = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'propietario');
+      const inquilinos = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'inquilino');
+      propietarios.forEach(cp => {
+        const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
+        if (p) mostrarPersonaEnLista('propietario', p);
+      });
+      inquilinos.forEach(cp => {
+        const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
+        if (p) mostrarPersonaEnLista('inquilino', p);
+      });
+    }, 50);
   }
   // Validate pct on load
   setTimeout(() => ['epe','agua','tgiu','seguro','internet','expensas'].forEach(s => actualizarTotalPct(s)), 100);
@@ -3421,6 +3437,23 @@ async function guardarPersonaInline(rol) {
     document.getElementById('inline-persona-form').innerHTML = '';
     toast(`${apellido} agregado/a ✓`);
   } catch(e) { toast('Error: '+e.message,'error'); }
+}
+
+function mostrarPersonaEnLista(rol, persona) {
+  const contenedor = document.getElementById(`lista-${rol === 'propietario' ? 'propietarios' : 'inquilinos'}`);
+  if (!contenedor) return;
+  const idx = contenedor.children.length;
+  const nombre = formatNombrePersona(persona);
+  const div = document.createElement('div');
+  div.dataset.rol = rol;
+  div.dataset.personaId = persona.id;
+  div.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem';
+  div.innerHTML = `
+    <input type="text" value="${nombre}" style="flex:1;padding:6px 10px;border:1.5px solid var(--green);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem;color:var(--green);font-weight:600" oninput="buscarPersonaEnLinea(this,'${rol}',${idx})">
+    <div id="sug-${rol}-${idx}" style="position:absolute;background:white;border:1px solid var(--border);border-radius:8px;margin-top:4px;display:none;max-height:150px;overflow-y:auto;z-index:300;min-width:300px"></div>
+    <button onclick="this.closest('[data-rol]').remove()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
+  `;
+  contenedor.appendChild(div);
 }
 
 function agregarPersonaRol(rol) {
@@ -4910,7 +4943,7 @@ async function darDeBaja(id, email) {
 }
 
 // Auto-refresh token every 45 minutes
-setInterval(refreshAdminToken, 45 * 60 * 1000);
+setInterval(refreshAdminToken, 20 * 60 * 1000);
 
 // ============================================================
 // START
