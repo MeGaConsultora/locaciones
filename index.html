@@ -5161,12 +5161,12 @@ function mostrarResultadosPDF(resultados, mes, srv) {
   window._pdfResultados = resultados;
   window._pdfMes = mes;
   window._pdfSrv = srv;
-  // Attach listener AFTER innerHTML is set
-  const btnConfirmar = document.getElementById('btn-confirmar-pdf');
-  if (btnConfirmar) {
-    btnConfirmar.addEventListener('click', confirmarImportarPDF);
-  } else {
-    console.error('btn-confirmar-pdf not found in DOM!');
+  // Swap the Procesar PDF button to Cargar seleccionados
+  const btnProcesar = document.querySelector('#modal-body .btn-primary');
+  if (btnProcesar) {
+    btnProcesar.textContent = '💾 Cargar seleccionados';
+    btnProcesar.onclick = null;
+    btnProcesar.addEventListener('click', confirmarImportarPDF);
   }
 }
 
