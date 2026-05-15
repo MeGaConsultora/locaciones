@@ -4985,11 +4985,13 @@ function abrirImportarPDF() {
   document.getElementById('modal-overlay').classList.add('open');
   // Single permanent listener - behavior changes via state
   window._pdfMode = 'procesar';
+  if (!window._pdfArchivosSubidos) window._pdfArchivosSubidos = new Set(); // Persist across modal opens
   const pdfBtn = document.getElementById('btn-main-pdf');
   if (pdfBtn) {
     const newBtn = pdfBtn.cloneNode(true);
     pdfBtn.parentNode.replaceChild(newBtn, pdfBtn);
     document.getElementById('btn-main-pdf').addEventListener('click', function() {
+      console.log('PDF btn clicked, mode:', window._pdfMode);
       if (window._pdfMode === 'procesar') procesarPDF();
       else confirmarImportarPDF();
     });
@@ -5013,7 +5015,6 @@ async function procesarPDF() {
     const arrayBuffer = await file.arrayBuffer();
     
     // Check if already processed this session
-    if (!window._pdfArchivosSubidos) window._pdfArchivosSubidos = new Set();
     if (window._pdfArchivosSubidos.has(file.name)) {
       const reemplazar = confirm(`El archivo "${file.name}" ya fue procesado en esta sesión.\n\n¿Querés reemplazar el importe cargado anteriormente?`);
       if (!reemplazar) {
