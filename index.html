@@ -5174,40 +5174,37 @@ async function confirmarImportarPDF() {
   
   for (const r of seleccionados) {
     try {
+      console.log('Procesando:', r.contrato.titulo, r.importe);
       const hoja = r.contrato.hoja;
       const hojaEncoded = encodeURIComponent(hoja);
       const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesStr}&limit=1`);
-      if (!pagos.length) continue;
+      console.log('Pagos:', pagos.length, mesStr);
+      if (!pagos.length) { console.log('Sin pago para', hoja, mesStr); continue; }
       const p = pagos[0];
       
-      // Fetch fresh pct
-      const fresh = await sbGet('contratos', `hoja=eq.${hojaEncoded}&select=pct_${srv},pct_prop_${srv}&limit=1`);
+      const fresh = await sbGet('contratos', `hoja=eq.${hojaEncoded}&select=pct_${srv}&limit=1`);
       const pct = fresh[0]?.[`pct_${srv}`] ?? 100;
+      console.log('PCT:', pct);
       const monto = Math.round(r.importe * pct / 100);
       
       const alq = p.importe_alquiler || 0;
-      const patch = {};
-      patch[`monto_${srv}`] = monto;
-      // Save PDF reference to pagos_pdf table (delete existing first to avoid duplicates)
-      if (window._pdfFileName) {
-        try {
-          await fetch(`${SB_URL}/rest/v1/pagos_pdf?pago_id=eq.${p.id}&servicio=eq.${srv}`,
-            { method: 'DELETE', headers: HEADERS });
-          await sbPost('pagos_pdf', { pago_id: p.id, servicio: srv, pdf_path: window._pdfFileName, pdf_pagina: r.pagina });
-        } catch(e) { console.error('Error saving pagos_pdf:', e); }
-      }
-      // Recalculate total
       const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
-      const newTotal = alq + servicios.reduce((s, sv) => {
-        if (sv === srv) return s + monto;
-        return s + (p[`monto_${sv}`] || 0);
-      }, 0);
-      patch.total = newTotal;
-      patch.saldo = Math.max(0, newTotal - ((p.total||0) - (p.saldo||0)));
+      const newTotal = alq + servicios.reduce((s, sv) => sv === srv ? s + monto : s + (p['monto_'+sv] || 0), 0);
+      const patch = { total: newTotal, saldo: Math.max(0, newTotal - ((p.total||0) - (p.saldo||0))) };
+      patch['monto_'+srv] = monto;
       
+      console.log('Patch:', JSON.stringify(patch));
       await sbPatch('pagos', p.id, patch);
+      console.log('Pago OK');
+
+      if (window._pdfFileName) {
+        const delResp = await fetch(`${SB_URL}/rest/v1/pagos_pdf?pago_id=eq.${p.id}&servicio=eq.${srv}`, { method: 'DELETE', headers: HEADERS });
+        console.log('Delete status:', delResp.status);
+        await sbPost('pagos_pdf', { pago_id: p.id, servicio: srv, pdf_path: window._pdfFileName, pdf_pagina: r.pagina });
+        console.log('Insert pagos_pdf OK');
+      }
       cargados++;
-    } catch(e) { console.error('Error cargando boleta:', e); }
+    } catch(e) { console.error('Error en boleta:', r.contrato?.titulo, e.message); }
   }
   
   toast(`${cargados} boleta/s cargadas ✓`);
