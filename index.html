@@ -4979,10 +4979,21 @@ function abrirImportarPDF() {
     </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" id="btn-main-pdf" onclick="procesarPDF()">🔍 Procesar PDF</button>
+      <button class="btn btn-primary" id="btn-main-pdf">🔍 Procesar PDF</button>
     </div>
   `;
   document.getElementById('modal-overlay').classList.add('open');
+  // Single permanent listener - behavior changes via state
+  window._pdfMode = 'procesar';
+  const pdfBtn = document.getElementById('btn-main-pdf');
+  if (pdfBtn) {
+    const newBtn = pdfBtn.cloneNode(true);
+    pdfBtn.parentNode.replaceChild(newBtn, pdfBtn);
+    document.getElementById('btn-main-pdf').addEventListener('click', function() {
+      if (window._pdfMode === 'procesar') procesarPDF();
+      else confirmarImportarPDF();
+    });
+  }
 }
 
 async function procesarPDF() {
@@ -5118,21 +5129,14 @@ async function procesarPDF() {
 }
 
 function resetImportarPDF() {
-  // Reset to initial state
   document.getElementById('pdf-resultados').style.display = 'none';
   document.getElementById('pdf-resultados').innerHTML = '';
   document.getElementById('pdf-file').value = '';
   window._pdfResultados = null;
   window._pdfFileName = null;
-  // Clone button to remove ALL event listeners
+  window._pdfMode = 'procesar';
   const btn = document.getElementById('btn-main-pdf');
-  if (btn) {
-    const newBtn = btn.cloneNode(true);
-    newBtn.textContent = '🔍 Procesar PDF';
-    newBtn.onclick = null;
-    newBtn.addEventListener('click', procesarPDF);
-    btn.parentNode.replaceChild(newBtn, btn);
-  }
+  if (btn) btn.textContent = '🔍 Procesar PDF';
 }
 
 function mostrarResultadosPDF(resultados, mes, srv) {
@@ -5187,13 +5191,10 @@ function mostrarResultadosPDF(resultados, mes, srv) {
   window._pdfResultados = resultados;
   window._pdfMes = mes;
   window._pdfSrv = srv;
-  // Swap Procesar to Cargar seleccionados
+  // Switch mode and update button text
+  window._pdfMode = 'cargar';
   const btnProcesar = document.getElementById('btn-main-pdf');
-  if (btnProcesar) {
-    btnProcesar.textContent = '💾 Cargar seleccionados';
-    btnProcesar.onclick = null;
-    btnProcesar.addEventListener('click', confirmarImportarPDF);
-  }
+  if (btnProcesar) btnProcesar.textContent = '💾 Cargar seleccionados';
 }
 
 function toggleTodosPDF(sel) {
