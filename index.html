@@ -4979,7 +4979,7 @@ function abrirImportarPDF() {
     </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="procesarPDF()">🔍 Procesar PDF</button>
+      <button class="btn btn-primary" id="btn-main-pdf" onclick="procesarPDF()">🔍 Procesar PDF</button>
     </div>
   `;
   document.getElementById('modal-overlay').classList.add('open');
@@ -5105,6 +5105,19 @@ async function procesarPDF() {
   }
 }
 
+function resetImportarPDF() {
+  // Reset to initial state
+  document.getElementById('pdf-resultados').style.display = 'none';
+  document.getElementById('pdf-resultados').innerHTML = '';
+  document.getElementById('pdf-file').value = '';
+  window._pdfResultados = null;
+  window._pdfFileName = null;
+  const btn = document.getElementById('btn-main-pdf');
+  if (btn) { btn.textContent = '🔍 Procesar PDF'; btn.onclick = procesarPDF; }
+  const btnV = document.getElementById('btn-volver-pdf');
+  if (btnV) btnV.remove();
+}
+
 function mostrarResultadosPDF(resultados, mes, srv) {
   const el = document.getElementById('pdf-resultados');
   el.style.display = 'block';
@@ -5161,12 +5174,21 @@ function mostrarResultadosPDF(resultados, mes, srv) {
   window._pdfResultados = resultados;
   window._pdfMes = mes;
   window._pdfSrv = srv;
-  // Swap the Procesar PDF button to Cargar seleccionados
-  const btnProcesar = document.querySelector('#modal-body .btn-primary');
+  // Swap the Procesar PDF button to Cargar seleccionados, add Volver
+  const btnProcesar = document.getElementById('btn-main-pdf');
   if (btnProcesar) {
     btnProcesar.textContent = '💾 Cargar seleccionados';
     btnProcesar.onclick = null;
     btnProcesar.addEventListener('click', confirmarImportarPDF);
+    // Add Volver button before it
+    if (!document.getElementById('btn-volver-pdf')) {
+      const btnVolver = document.createElement('button');
+      btnVolver.id = 'btn-volver-pdf';
+      btnVolver.className = 'btn btn-secondary';
+      btnVolver.textContent = '← Volver';
+      btnVolver.onclick = resetImportarPDF;
+      btnProcesar.parentNode.insertBefore(btnVolver, btnProcesar);
+    }
   }
 }
 
@@ -5234,7 +5256,7 @@ async function confirmarImportarPDF() {
   
   toast(`${cargados} boleta/s cargadas ✓`);
   await loadAll();
-  closeModal();
+  resetImportarPDF();
 }
 </script>
 
