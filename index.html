@@ -258,6 +258,7 @@
   .admin-table td { padding:0.65rem 1rem; border-bottom:1px solid var(--border); vertical-align:middle; }
   .admin-table tr:hover td { background:#faf7f2; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
 
@@ -318,6 +319,7 @@
       <button onclick="selectInforme('mensual')">📅 Resultados mensuales</button>
       <button onclick="selectInforme('vencimientos')">📋 Vencimientos de contratos</button>
       <button onclick="abrirCargarServicios()">⚡ Cargar servicios del mes</button>
+      <button onclick="abrirImportarPDF()">📄 Importar PDF de servicios</button>
       <button onclick="abrirActualizacionAlquileres()">🔄 Actualizar alquileres</button>
     </div>
   </div>
@@ -4877,6 +4879,236 @@ setInterval(async () => {
     document.getElementById('sync-status').textContent = 'Sin conexión';
   }
 }, 30000);
+
+// ============================================================
+// IMPORTAR PDF DE SERVICIOS
+// ============================================================
+function abrirImportarPDF() {
+  document.getElementById('modal-title').textContent = '📄 Importar PDF de servicios';
+  document.getElementById('modal-subtitle').textContent = '';
+  document.getElementById('modal-overlay').dataset.contratoId = '';
+  document.getElementById('modal-body').innerHTML = `
+    <div style="padding:0.5rem 0">
+      <p style="font-size:0.88rem;color:#666;margin-bottom:1.2rem">
+        Subí el PDF con las boletas. El sistema extrae automáticamente el N° de cuenta e importe por página.
+      </p>
+      <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.2rem">
+        <div class="form-group" style="margin:0;flex:1;min-width:200px">
+          <label>Mes al que corresponden</label>
+          <input type="month" id="pdf-mes" value="${TODAY.substring(0,7)}" style="margin-top:4px">
+        </div>
+        <div class="form-group" style="margin:0;flex:2;min-width:250px">
+          <label>Tipo de servicio</label>
+          <select id="pdf-servicio" style="margin-top:4px;padding:8px;border:1.5px solid var(--border);border-radius:8px;width:100%">
+            <option value="agua">Agua</option>
+            <option value="epe">EPE</option>
+            <option value="tgiu">TGIU</option>
+            <option value="seguro">Seguro</option>
+            <option value="internet">Internet</option>
+            <option value="expensas">Expensas</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:1.2rem">
+        <label>Archivo PDF</label>
+        <input type="file" id="pdf-file" accept=".pdf" style="margin-top:4px;width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px">
+      </div>
+      <div id="pdf-procesando" style="display:none;text-align:center;padding:2rem;color:#888">
+        <div style="font-size:2rem;margin-bottom:0.5rem">⏳</div>
+        Procesando páginas del PDF...
+      </div>
+      <div id="pdf-resultados" style="display:none"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="procesarPDF()">🔍 Procesar PDF</button>
+    </div>
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function procesarPDF() {
+  const fileInput = document.getElementById('pdf-file');
+  const mes = document.getElementById('pdf-mes').value;
+  const srv = document.getElementById('pdf-servicio').value;
+  
+  if (!fileInput.files.length) { toast('Seleccioná un archivo PDF', 'error'); return; }
+  if (!mes) { toast('Seleccioná el mes', 'error'); return; }
+
+  document.getElementById('pdf-procesando').style.display = 'block';
+  document.getElementById('pdf-resultados').style.display = 'none';
+  document.querySelector('#modal-body .form-actions button:last-child').disabled = true;
+
+  try {
+    const file = fileInput.files[0];
+    const arrayBuffer = await file.arrayBuffer();
+    
+    // Load PDF.js
+    if (typeof pdfjsLib === 'undefined') {
+      throw new Error('PDF.js no disponible');
+    }
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const totalPages = pdf.numPages;
+    const resultados = [];
+
+    for (let i = 1; i <= totalPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const text = textContent.items.map(item => item.str).join(' ');
+      
+      // Extract cuenta and importe using Anthropic API
+      try {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 200,
+            system: 'Extraé de este texto de boleta de servicio: 1) el número de cuenta del usuario (campo "Usuario" o número que aparece junto al nombre del cliente, generalmente 5-7 dígitos), 2) el importe del primer vencimiento (TOTAL1 o VENCIMIENTO 1). Respondé SOLO con JSON sin explicaciones ni backticks: {"cuenta": "198302", "importe": 21868.61}. Si no encontrás algún dato, usá null.',
+            messages: [{ role: 'user', content: text.substring(0, 3000) }]
+          })
+        });
+        const data = await response.json();
+        const rawText = data.content?.[0]?.text?.trim() || '{}';
+        let parsed = {};
+        try { parsed = JSON.parse(rawText); } catch(e) {}
+        
+        const contrato = parsed.cuenta ? DB.contratos.find(c => c[`nro_${srv}`] === String(parsed.cuenta)) : null;
+        resultados.push({
+          pagina: i,
+          cuenta: parsed.cuenta || null,
+          importe: parsed.importe || null,
+          contrato: contrato || null,
+          seleccionado: !!contrato
+        });
+      } catch(e) {
+        resultados.push({ pagina: i, cuenta: null, importe: null, contrato: null, seleccionado: false, error: e.message });
+      }
+    }
+
+    mostrarResultadosPDF(resultados, mes, srv);
+  } catch(e) {
+    toast('Error al procesar PDF: ' + e.message, 'error');
+    console.error(e);
+  } finally {
+    document.getElementById('pdf-procesando').style.display = 'none';
+    document.querySelector('#modal-body .form-actions button:last-child').disabled = false;
+  }
+}
+
+function mostrarResultadosPDF(resultados, mes, srv) {
+  const el = document.getElementById('pdf-resultados');
+  el.style.display = 'block';
+  
+  const withContrato = resultados.filter(r => r.contrato).length;
+  const sinContrato = resultados.filter(r => !r.contrato && r.cuenta).length;
+  const sinDatos = resultados.filter(r => !r.cuenta).length;
+
+  el.innerHTML = `
+    <div style="background:#f0f4ff;border-radius:10px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem">
+      ${resultados.length} páginas procesadas · 
+      <span style="color:var(--green)">${withContrato} con contrato</span> · 
+      <span style="color:var(--accent)">${sinContrato} sin contrato</span>
+      ${sinDatos ? ` · <span style="color:#aaa">${sinDatos} sin datos</span>` : ''}
+    </div>
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">
+      <button onclick="toggleTodosPDF(true)" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer">✓ Seleccionar todos</button>
+      <button onclick="toggleTodosPDF(false)" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer">✗ Deseleccionar todos</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:0.83rem">
+        <thead><tr style="background:var(--ink2);color:white">
+          <th style="padding:6px 8px;text-align:center">✓</th>
+          <th style="padding:6px 8px;text-align:left">Pág.</th>
+          <th style="padding:6px 8px;text-align:left">N° Cuenta</th>
+          <th style="padding:6px 8px;text-align:left">Contrato</th>
+          <th style="padding:6px 8px;text-align:right">Importe</th>
+          <th style="padding:6px 8px;text-align:right">A cargar</th>
+        </tr></thead>
+        <tbody>
+          ${resultados.map((r, i) => {
+            const pct = r.contrato ? (r.contrato[`pct_${srv}`] ?? 100) : 100;
+            const aCargar = r.importe ? Math.round(r.importe * pct / 100) : 0;
+            const rowColor = !r.cuenta ? '#f5f5f5' : !r.contrato ? '#fff8f8' : '';
+            return `<tr style="border-bottom:1px solid #eee;background:${rowColor}">
+              <td style="padding:6px 8px;text-align:center">
+                <input type="checkbox" class="pdf-chk" data-idx="${i}" ${r.seleccionado ? 'checked' : ''} ${!r.contrato ? 'disabled' : ''} style="width:15px;height:15px">
+              </td>
+              <td style="padding:6px 8px">${r.pagina}</td>
+              <td style="padding:6px 8px;font-weight:600">${r.cuenta || '<span style="color:#aaa">—</span>'}</td>
+              <td style="padding:6px 8px">${r.contrato ? r.contrato.titulo : r.cuenta ? '<span style="color:var(--accent)">Sin contrato</span>' : '<span style="color:#aaa">Sin datos</span>'}</td>
+              <td style="padding:6px 8px;text-align:right">${r.importe ? formatMoney(r.importe) : '—'}</td>
+              <td style="padding:6px 8px;text-align:right;color:var(--green)">${aCargar ? formatMoney(aCargar) : '—'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="form-actions" style="margin-top:1rem">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarImportarPDF(${JSON.stringify(resultados).replace(/</g,'\u003c')}, '${mes}', '${srv}')">💾 Cargar seleccionados</button>
+    </div>
+  `;
+  // Store for later
+  window._pdfResultados = resultados;
+  window._pdfMes = mes;
+  window._pdfSrv = srv;
+}
+
+function toggleTodosPDF(sel) {
+  document.querySelectorAll('.pdf-chk:not([disabled])').forEach(chk => chk.checked = sel);
+}
+
+async function confirmarImportarPDF(resultados, mes, srv) {
+  const seleccionados = resultados.filter((r, i) => {
+    const chk = document.querySelector(`.pdf-chk[data-idx="${i}"]`);
+    return chk?.checked && r.contrato && r.importe;
+  });
+  
+  if (!seleccionados.length) { toast('Seleccioná al menos una boleta', 'error'); return; }
+  
+  const btn = document.querySelector('#modal-body .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Cargando...'; }
+  
+  const mesStr = mes + '-01';
+  let cargados = 0;
+  
+  for (const r of seleccionados) {
+    try {
+      const hoja = r.contrato.hoja;
+      const hojaEncoded = encodeURIComponent(hoja);
+      const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesStr}&limit=1`);
+      if (!pagos.length) continue;
+      const p = pagos[0];
+      
+      // Fetch fresh pct
+      const fresh = await sbGet('contratos', `hoja=eq.${hojaEncoded}&select=pct_${srv},pct_prop_${srv}&limit=1`);
+      const pct = fresh[0]?.[`pct_${srv}`] ?? 100;
+      const monto = Math.round(r.importe * pct / 100);
+      
+      const alq = p.importe_alquiler || 0;
+      const patch = {};
+      patch[`monto_${srv}`] = monto;
+      // Recalculate total
+      const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
+      const newTotal = alq + servicios.reduce((s, sv) => {
+        if (sv === srv) return s + monto;
+        return s + (p[`monto_${sv}`] || 0);
+      }, 0);
+      patch.total = newTotal;
+      patch.saldo = Math.max(0, newTotal - ((p.total||0) - (p.saldo||0)));
+      
+      await sbPatch('pagos', p.id, patch);
+      cargados++;
+    } catch(e) { console.error('Error cargando boleta:', e); }
+  }
+  
+  toast(`${cargados} boleta/s cargadas ✓`);
+  await loadAll();
+  closeModal();
+}
 </script>
 
   <!-- MODAL2 for editing contracts from services screen -->
