@@ -2142,7 +2142,7 @@ async function verBoleta(pagoId, srv) {
   // Get signed URL from Supabase Storage (valid 1 hour)
   try {
     const resp = await fetch(
-      `${SB_URL}/storage/v1/object/sign/servicios/${pago.pdf_path}`,
+      `${SB_URL}/storage/v1/object/sign/servicios/${pdfRec.pdf_path}`,
       {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
@@ -2170,7 +2170,7 @@ async function verBoleta(pagoId, srv) {
     // Render specific page with PDF.js
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
     const pdfDoc = await pdfjsLib.getDocument(signedUrl).promise;
-    const page = await pdfDoc.getPage(pago.pdf_pagina);
+    const page = await pdfDoc.getPage(pdfRec.pdf_pagina);
     const viewport = page.getViewport({ scale: 1.5 });
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
