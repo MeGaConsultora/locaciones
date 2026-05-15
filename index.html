@@ -5137,7 +5137,7 @@ function resetImportarPDF() {
   window._pdfFileName = null;
   window._pdfMode = 'procesar';
   const btn = document.getElementById('btn-main-pdf');
-  if (btn) btn.textContent = '🔍 Procesar PDF';
+  if (btn) { btn.textContent = '🔍 Procesar PDF'; btn.disabled = false; }
 }
 
 function mostrarResultadosPDF(resultados, mes, srv) {
