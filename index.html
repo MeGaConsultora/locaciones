@@ -1115,7 +1115,7 @@ function renderGrilla(c) {
       <td onclick="event.stopPropagation()">
         <div class="grid-actions">
           ${(!p.saldo||p.saldo===0)?'':`<button class="grid-btn grid-btn-green" onclick="editarMesConSolapa('${c.hoja}',${c.id},'${p.mes?.substring(0,7)}','s2')">✓ Cobrar</button>`}
-          ${window._pagosPdf?.[p.id]?.length ? `<button class="grid-btn" style="background:var(--ink2);color:white" onclick="verBoleta(${p.id})" title="Ver boleta PDF">📄</button>` : ''}
+          ${window._pagosPdf?.[+p.id]?.length ? `<button class="grid-btn" style="background:var(--ink2);color:white" onclick="verBoleta(${p.id})" title="Ver boleta PDF">📄</button>` : ''}
         </div>
       </td>
     </tr>`;
