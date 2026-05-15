@@ -5005,7 +5005,11 @@ async function procesarPDF() {
     if (!window._pdfArchivosSubidos) window._pdfArchivosSubidos = new Set();
     if (window._pdfArchivosSubidos.has(file.name)) {
       const reemplazar = confirm(`El archivo "${file.name}" ya fue procesado en esta sesión.\n\n¿Querés reemplazar el importe cargado anteriormente?`);
-      if (!reemplazar) return;
+      if (!reemplazar) {
+        document.getElementById('pdf-procesando').style.display = 'none';
+        document.getElementById('btn-main-pdf')?.removeAttribute('disabled');
+        return;
+      }
     }
 
     // Upload PDF to Supabase Storage
@@ -5120,8 +5124,15 @@ function resetImportarPDF() {
   document.getElementById('pdf-file').value = '';
   window._pdfResultados = null;
   window._pdfFileName = null;
+  // Clone button to remove ALL event listeners
   const btn = document.getElementById('btn-main-pdf');
-  if (btn) { btn.textContent = '🔍 Procesar PDF'; btn.onclick = procesarPDF; }
+  if (btn) {
+    const newBtn = btn.cloneNode(true);
+    newBtn.textContent = '🔍 Procesar PDF';
+    newBtn.onclick = null;
+    newBtn.addEventListener('click', procesarPDF);
+    btn.parentNode.replaceChild(newBtn, btn);
+  }
 }
 
 function mostrarResultadosPDF(resultados, mes, srv) {
