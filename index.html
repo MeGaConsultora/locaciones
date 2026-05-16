@@ -4541,7 +4541,7 @@ function showTab(name, btn) {
   document.getElementById('panel-'+name).classList.add('active');
   if(name==='admin') loadUsuarios();
   if(name==='clientes') renderClientes();
-  if(name==='inmuebles') renderInmuebles();
+  if(name==='inmuebles') { if (!DB_INMUEBLES.length) loadAll().then(renderInmuebles); else renderInmuebles(); }
   if(name==='contratos') renderContratos();
   if(name==='informes') { populateInformeAnios(); }
   btn.classList.add('active');
@@ -5676,7 +5676,8 @@ async function guardarNuevoInmueble() {
   const body = _bodyInmueble();
   if (!body.calle) { toast('Ingresá al menos la calle', 'error'); return; }
   try {
-    await sbPost('inmuebles', body);
+    const r = await sbPost('inmuebles', body);
+    const nuevoId = Array.isArray(r) ? r[0]?.id : r?.id;
     toast('Inmueble guardado ✓');
     await loadAll();
     if (window._volverAContrato && window._contratoIdEditar) {
@@ -5684,15 +5685,14 @@ async function guardarNuevoInmueble() {
       const cid = window._contratoIdEditar;
       window._contratoIdEditar = null;
       closeModal();
-      // Reopen edit form and select the new inmueble
       setTimeout(async () => {
         await openEditContrato(cid);
         setTimeout(() => {
-          const nuevo = DB_INMUEBLES[DB_INMUEBLES.length - 1];
-          if (nuevo) {
+          if (nuevoId) {
+            const nuevo = DB_INMUEBLES.find(x => x.id === nuevoId);
             const input = document.getElementById('f-inmueble-input');
             const hidden = document.getElementById('f-inmueble-id');
-            if (input && hidden) { hidden.value = nuevo.id; input.value = formatDireccion(nuevo); }
+            if (input && hidden && nuevo) { hidden.value = nuevo.id; input.value = formatDireccion(nuevo); }
           }
         }, 200);
       }, 100);
