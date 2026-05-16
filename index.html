@@ -326,6 +326,7 @@
     </div>
   </div>
   <button class="tab-btn" onclick="showTab('clientes',this)">🧑‍🤝‍🧑 Clientes</button>
+  <button class="tab-btn" onclick="showTab('inmuebles',this)">🏠 Inmuebles</button>
   <button class="tab-btn" id="tab-admin" onclick="showTab('admin',this)" style="display:none;margin-left:auto">👥 Usuarios</button>
 </nav>
 
@@ -637,6 +638,7 @@ async function loadAll() {
     if (currentUser?.token) updateAuthHeaders(currentUser.token);
     const [contratos, pagos] = await Promise.all([
       sbGet('contratos', 'select=*&order=titulo.asc&limit=1000'),
+    sbGet('inmuebles', 'select=*&order=localidad.asc,calle.asc&limit=2000'),
       sbGetAll('pagos', 'select=*&order=mes.desc')
     ]);
     DB.contratos = contratos;
@@ -874,7 +876,7 @@ function renderContratos() {
           <td><strong>${c.titulo||c.hoja}</strong></td>
           <td>${c.locador||'—'}</td><td>${c.locatario||'—'}</td>
           <td>${formatDate(c.vigencia_hasta, true)}${alerta}</td>
-          <td><span class="tag-tipo">${normTipo(c.tipo_inmueble)}</span></td>
+          <td style="font-size:0.82rem">${(() => { const inm=DB_INMUEBLES.find(x=>x.id===c.inmueble_id); return inm ? formatDireccion(inm) : (c.tipo_inmueble?`<span class="tag-tipo">${normTipo(c.tipo_inmueble)}</span>`:'—'); })()}</td>
           <td class="num">${totalMes !== null ? formatMoney(totalMes) : '—'}</td>
           <td class="num ${saldoTotal>0?'saldo-pendiente':'saldo-ok'}">${saldoTotal>0?formatMoney(saldoTotal):'✓'}</td>
           <td><span class="badge ${est==='vigente'?'badge-green':est==='rescindido'?'badge-red':'badge-gray'}">${est}</span></td>
@@ -4522,6 +4524,7 @@ function showTab(name, btn) {
   document.getElementById('panel-'+name).classList.add('active');
   if(name==='admin') loadUsuarios();
   if(name==='clientes') renderClientes();
+  if(name==='inmuebles') renderInmuebles();
   if(name==='contratos') renderContratos();
   if(name==='informes') { populateInformeAnios(); }
   btn.classList.add('active');
