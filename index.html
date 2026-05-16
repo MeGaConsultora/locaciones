@@ -760,7 +760,7 @@ function populateFiltros() {
 function renderDashboard() {
   const vigentes = DB.contratos.filter(c => getEstado(c)==='vigente').length;
   const vencidos = DB.contratos.filter(c => getEstado(c)==='vencido').length;
-  const pendientes = DB.pagos.filter(p => p.saldo && p.saldo > 0);
+  const pendientes = DB.pagos.filter(p => p.saldo && p.saldo > 0 && p.mes && p.mes.substring(0,7) <= TODAY.substring(0,7));
   const totalPendiente = pendientes.reduce((s,p) => s+(p.saldo||0), 0);
   const proxVenc = DB.contratos.filter(c => { if(!c.vigencia_hasta) return false; const d=daysDiff(c.vigencia_hasta,TODAY); return d>=0&&d<=60; }).length;
 
@@ -811,7 +811,6 @@ function renderContratos() {
   if (statsEl) statsEl.innerHTML = `
     <div class="stat-card accent"><div class="stat-label">Total pendiente</div><div class="stat-val" style="font-size:1.3rem">${formatMoney(totalSaldo)}</div></div>
     <div class="stat-card warn"><div class="stat-label">Cuotas sin cobrar</div><div class="stat-val">${todosPend.length}</div></div>
-    <div class="stat-card"><div class="stat-label">Contratos afectados</div><div class="stat-val">${new Set(todosPend.map(p=>p.hoja)).size}</div></div>
     <div class="stat-card green"><div class="stat-label">Contratos vigentes</div><div class="stat-val">${DB.contratos.filter(c=>getEstado(c)==='vigente').length}</div></div>
   `;
 
@@ -837,16 +836,24 @@ function renderContratos() {
   const slice = contratosFiltrados.slice((PG.contratos-1)*PER_PAGE, PG.contratos*PER_PAGE);
 
   document.getElementById('tbody-contratos').innerHTML = slice.length === 0
-    ? `<tr><td colspan="8"><div class="empty-state"><div class="icon">🔍</div><p>Sin resultados</p></div></td></tr>`
+    ? `<tr><td colspan="10"><div class="empty-state"><div class="icon">🔍</div><p>Sin resultados</p></div></td></tr>`
     : slice.map(c => {
         const est = getEstado(c);
         const d = c.vigencia_hasta ? daysDiff(c.vigencia_hasta, TODAY) : null;
         const alerta = d!==null&&d>=0&&d<=30 ? `<span class="badge badge-yellow" style="margin-left:4px">⚠ ${d}d</span>` : '';
+        // Get current month pago for this contract
+        const mesActual = TODAY.substring(0,7);
+        const pagoActual = DB.pagos.filter(p => p.hoja===c.hoja && p.mes && p.mes.substring(0,7)===mesActual).sort((a,b)=>b.id-a.id)[0];
+        const totalMes = pagoActual ? (pagoActual.total||0) : null;
+        // Get total saldo (up to current month)
+        const saldoTotal = DB.pagos.filter(p => p.hoja===c.hoja && p.saldo>0 && p.mes && p.mes.substring(0,7)<=mesActual).reduce((s,p)=>s+(p.saldo||0),0);
         return `<tr onclick="openContrato(${c.id})">
           <td><strong>${c.titulo||c.hoja}</strong></td>
           <td>${c.locador||'—'}</td><td>${c.locatario||'—'}</td>
           <td>${formatDate(c.vigencia_hasta, true)}${alerta}</td>
           <td><span class="tag-tipo">${normTipo(c.tipo_inmueble)}</span></td>
+          <td class="num">${totalMes !== null ? formatMoney(totalMes) : '—'}</td>
+          <td class="num ${saldoTotal>0?'saldo-pendiente':'saldo-ok'}">${saldoTotal>0?formatMoney(saldoTotal):'✓'}</td>
           <td><span class="badge ${est==='vigente'?'badge-green':est==='rescindido'?'badge-red':'badge-gray'}">${est}</span></td>
         </tr>`;
       }).join('');
