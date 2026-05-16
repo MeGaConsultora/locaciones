@@ -2968,14 +2968,13 @@ async function renderInforme() {
 
   const mesesNombres = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
-  // Update header totals
-  const headerEl = document.getElementById('rep-totales-header');
-  if (headerEl) {
-    const filtroLabel = deudaFiltro === 'pendiente' ? 'Con deuda' : deudaFiltro === 'al-dia' ? 'Al día' : 'Todos';
-    headerEl.innerHTML = `
+  // Update header totals (mensual)
+  const headerElM = document.getElementById('rep-totales-header');
+  if (headerElM) {
+    headerElM.innerHTML = `
       <span><strong>${rows.length}</strong> contratos</span>
-      <span>Facturado: <strong>${formatMoney(totFacturado)}</strong></span>
-      <span>Cobrado: <strong>${formatMoney(totCobrado)}</strong></span>
+      <span>Total: <strong>${formatMoney(totTotal)}</strong></span>
+      <span>Abonado: <strong>${formatMoney(totAbonado)}</strong></span>
       <span style="color:${totSaldo>0?'#e63946':'#2d6a4f'}">Saldo: <strong>${formatMoney(totSaldo)}</strong></span>
     `;
   }
