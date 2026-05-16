@@ -4541,7 +4541,10 @@ function showTab(name, btn) {
   document.getElementById('panel-'+name).classList.add('active');
   if(name==='admin') loadUsuarios();
   if(name==='clientes') renderClientes();
-  if(name==='inmuebles') { if (!DB_INMUEBLES.length) loadAll().then(renderInmuebles); else renderInmuebles(); }
+  if(name==='inmuebles') {
+    document.getElementById('panel-inmuebles').style.display = '';
+    if (!DB_INMUEBLES.length) loadAll().then(renderInmuebles); else renderInmuebles();
+  }
   if(name==='contratos') renderContratos();
   if(name==='informes') { populateInformeAnios(); }
   btn.classList.add('active');
