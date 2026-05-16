@@ -385,7 +385,8 @@
           <th>Propietario</th><th>Inquilino</th>
           <th class="sortable" onclick="sortBy('contratos','vigencia_hasta')">Vence ↕</th>
           <th>Tipo</th>
-          <th class="num">Últ. alquiler</th>
+          <th>Dirección</th>
+          <th class="num">Total mes</th>
           <th class="num">Saldo</th>
           <th>Estado</th>
         </tr></thead>
@@ -889,7 +890,8 @@ function renderContratos() {
           <td><strong>${c.titulo||c.hoja}</strong></td>
           <td>${c.locador||'—'}</td><td>${c.locatario||'—'}</td>
           <td>${formatDate(c.vigencia_hasta, true)}${alerta}</td>
-          <td style="font-size:0.82rem">${(() => { const inm=DB_INMUEBLES.find(x=>x.id===c.inmueble_id); return inm ? formatDireccion(inm) : (c.tipo_inmueble?`<span class="tag-tipo">${normTipo(c.tipo_inmueble)}</span>`:'—'); })()}</td>
+          <td><span class="tag-tipo">${normTipo(c.tipo_inmueble||'')}</span></td>
+          <td style="font-size:0.82rem">${(() => { const inm=DB_INMUEBLES.find(x=>x.id===c.inmueble_id); return inm ? formatDireccion(inm) : '—'; })()}</td>
           <td class="num">${totalMes !== null ? formatMoney(totalMes) : '—'}</td>
           <td class="num ${saldoTotal>0?'saldo-pendiente':'saldo-ok'}">${saldoTotal>0?formatMoney(saldoTotal):'✓'}</td>
           <td><span class="badge ${est==='vigente'?'badge-green':est==='rescindido'?'badge-red':'badge-gray'}">${est}</span></td>
@@ -3463,10 +3465,17 @@ function _abrirFormularioContrato(c, esNuevo) {
       <div class="form-group"><label>Vigencia hasta</label><input id="f-hasta" type="date" value="${c.vigencia_hasta?.substring(0,10)||''}"></div>
       <div class="form-group" style="position:relative"><label>Inmueble</label>
     <input type="hidden" id="f-inmueble-id" value="${c.inmueble_id||''}">
-    <input id="f-inmueble-input" type="text"
-      value="${c.inmueble_id ? formatDireccion(DB_INMUEBLES.find(x=>x.id===c.inmueble_id)) : ''}"      placeholder="Buscar por calle o localidad..."
-      autocomplete="off"
-      style="margin-top:4px" oninput="buscarInmuebleEnLinea(this)">
+    <div style="display:flex;gap:6px;margin-top:4px;align-items:center">
+      <input id="f-inmueble-input" type="text"
+        value="${c.inmueble_id ? formatDireccion(DB_INMUEBLES.find(x=>x.id===c.inmueble_id)) : ''}"
+        placeholder="Buscar por calle o localidad..."
+        autocomplete="off"
+        style="flex:1" oninput="buscarInmuebleEnLinea(this)">
+      <button type="button" id="btn-limpiar-inmueble" onclick="limpiarInmueble()" 
+        style="display:${c.inmueble_id?'block':'none'};background:#f8d7da;border:1px solid #f5c6cb;color:#721c24;border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer;white-space:nowrap">
+        ✕ Quitar
+      </button>
+    </div>
     </div>
       <div class="form-group"><label>Modalidad de pago</label>
         <select id="f-modalidad">
@@ -5635,7 +5644,7 @@ function renderInmuebles() {
         '<td style="padding:7px 10px">' + (inm.tipo||'—') + '</td>' +
         '<td style="padding:7px 10px;color:#888;font-size:0.82rem">' + (inm.descripcion||'—') + '</td>' +
         '<td style="padding:7px 10px;text-align:center">' + (nContratos > 0 ? '<span style="background:var(--green);color:white;padding:2px 8px;border-radius:10px;font-size:0.78rem">' + nContratos + '</span>' : '—') + '</td>' +
-        '<td style="padding:7px 10px"><button class="btn btn-secondary" style="font-size:0.75rem;padding:4px 10px" onclick="abrirEditarInmueble(' + inm.id + ')">✏ Editar</button></td>' +
+        '<td style="padding:7px 10px;font-size:0.78rem;color:#888">clic para editar</td>' +
         '</tr>';
     }).join('') +
     '</tbody></table></div>';
@@ -5739,6 +5748,17 @@ async function confirmarEliminarInmueble(id) {
   catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
+function limpiarInmueble() {
+  const input = document.getElementById('f-inmueble-input');
+  const hidden = document.getElementById('f-inmueble-id');
+  const btn = document.getElementById('btn-limpiar-inmueble');
+  if (input) input.value = '';
+  if (hidden) hidden.value = '';
+  if (btn) btn.style.display = 'none';
+  const sug = document.getElementById('sug-inmueble');
+  if (sug) sug.style.display = 'none';
+}
+
 function buscarInmuebleEnLinea(input) {
   const q = input.value.toLowerCase().trim();
   let sug = document.getElementById('sug-inmueble');
@@ -5768,6 +5788,8 @@ function seleccionarInmueble(id) {
   document.getElementById('f-inmueble-input').value = formatDireccion(inm);
   const sug = document.getElementById('sug-inmueble');
   if (sug) sug.style.display = 'none';
+  const btn = document.getElementById('btn-limpiar-inmueble');
+  if (btn) btn.style.display = 'block';
 }
 
 function abrirNuevoInmuebleDesdeContrato() {
