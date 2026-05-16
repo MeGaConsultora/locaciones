@@ -417,7 +417,7 @@
         <option value="pendiente">Con deuda</option>
         <option value="al-dia">Al día</option>
       </select>
-      <button class="btn btn-secondary" onclick="exportarInformeCSV()">⬇ Exportar CSV</button>
+      <button class="btn btn-secondary" onclick="verReporteMensual()">🖨️ Ver Reporte</button>
     </div>
     <div id="informe-contenido">
       <div class="empty-state"><div class="icon">📊</div><p>Seleccioná un año y mes para ver el informe</p></div>
@@ -433,7 +433,8 @@
         <option value="pendiente">Con deuda</option>
         <option value="al-dia">Al día</option>
       </select>
-      <button class="btn btn-secondary" onclick="exportarReporteTotalCSV()">⬇ Exportar CSV</button>
+      <button class="btn btn-secondary" onclick="verReporteTotales()">🖨️ Ver Reporte</button>
+      <div id="rep-totales-header" style="margin-left:auto;font-size:0.82rem;color:#888;display:flex;gap:1.5rem"></div>
     </div>
     <div id="reporte-total-contenido">
       <div class="loading">Cargando...</div>
@@ -2967,6 +2968,18 @@ async function renderInforme() {
 
   const mesesNombres = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
+  // Update header totals
+  const headerEl = document.getElementById('rep-totales-header');
+  if (headerEl) {
+    const filtroLabel = deudaFiltro === 'pendiente' ? 'Con deuda' : deudaFiltro === 'al-dia' ? 'Al día' : 'Todos';
+    headerEl.innerHTML = `
+      <span><strong>${rows.length}</strong> contratos</span>
+      <span>Facturado: <strong>${formatMoney(totFacturado)}</strong></span>
+      <span>Cobrado: <strong>${formatMoney(totCobrado)}</strong></span>
+      <span style="color:${totSaldo>0?'var(--accent)':'var(--green)'}">Saldo: <strong>${formatMoney(totSaldo)}</strong></span>
+    `;
+  }
+
   cont.innerHTML = `
     <div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
       <div class="stat-card" style="background:#1a1a2e;color:white;min-width:140px">
@@ -3093,6 +3106,57 @@ function renderReporteTotal() {
         </tr></tfoot>
       </table>
     </div>`;
+}
+
+function verReporteMensual() {
+  const anio = document.getElementById('inf-anio')?.value;
+  const mes = document.getElementById('inf-mes')?.value;
+  if (!anio || !mes) { toast('Seleccioná un año y mes primero', 'error'); return; }
+  const contenido = document.getElementById('informe-contenido')?.innerHTML;
+  if (!contenido) return;
+  const ventana = window.open('', '_blank');
+  ventana.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>MeGa Consultora — Reportes mensuales</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>* { margin:0; padding:0; box-sizing:border-box; } body { font-family:'DM Sans',sans-serif; padding:20px; }
+    .no-print { text-align:center; padding:12px 0; } .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; font-size:0.82rem; }
+    th { background:#1a1a2e; color:white; padding:7px 10px; text-align:left; font-size:0.73rem; text-transform:uppercase; }
+    td { padding:6px 10px; border-bottom:1px solid #eee; }
+    h2 { font-size:1.1rem; margin-bottom:4px; } p { font-size:0.82rem; color:#888; margin-bottom:8px; }
+    @media print { .no-print { display:none; } body { padding:10px; } }
+    </style></head><body>
+    <div class="no-print"><button onclick="window.print()">🖨️ Imprimir</button></div>
+    <h2>MeGa Consultora — Reporte mensual ${mes}/${anio}</h2>
+    <p>Fecha: ${new Date().toLocaleDateString('es-AR')}</p>
+    ${contenido}
+    </body></html>`);
+  ventana.document.close();
+}
+
+function verReporteTotales() {
+  const contenido = document.getElementById('reporte-total-contenido')?.innerHTML;
+  if (!contenido) { toast('Generá el reporte primero', 'error'); return; }
+  const filtro = document.getElementById('rep-deuda')?.options[document.getElementById('rep-deuda').selectedIndex]?.text || 'Todos';
+  const ventana = window.open('', '_blank');
+  ventana.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>MeGa Consultora — Reporte total por contrato</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>* { margin:0; padding:0; box-sizing:border-box; } body { font-family:'DM Sans',sans-serif; padding:20px; }
+    .no-print { text-align:center; padding:12px 0; } .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; font-size:0.82rem; }
+    th { background:#1a1a2e; color:white; padding:7px 10px; text-align:left; font-size:0.73rem; text-transform:uppercase; }
+    td { padding:6px 10px; border-bottom:1px solid #eee; }
+    tfoot tr td { font-weight:700; background:#f5f5f5; border-top:2px solid #ddd; }
+    h2 { font-size:1.1rem; margin-bottom:4px; } p { font-size:0.82rem; color:#888; margin-bottom:8px; }
+    @media print { .no-print { display:none; } body { padding:10px; } }
+    </style></head><body>
+    <div class="no-print"><button onclick="window.print()">🖨️ Imprimir</button></div>
+    <h2>MeGa Consultora — Reporte total por contrato</h2>
+    <p>Filtro: ${filtro} · Fecha: ${new Date().toLocaleDateString('es-AR')}</p>
+    ${contenido}
+    </body></html>`);
+  ventana.document.close();
 }
 
 function exportarReporteTotalCSV() {
