@@ -3981,7 +3981,6 @@ async function actualizarContrato(id) {
     dia_vencimiento: parseInt(document.getElementById('f-dia-venc')?.value)||10,
     interes_punitorio: parseFloat(document.getElementById('f-interes')?.value)||0,
     importe_inicial: parseFloat(document.getElementById('f-importe-inicial')?.value)||0,
-    importe_inicial: parseFloat(document.getElementById('f-importe-inicial')?.value)||0,
     nro_epe: document.getElementById('f-nro-epe')?.value.trim()||null,
     nro_agua: document.getElementById('f-nro-agua')?.value.trim()||null,
     nro_tgiu: document.getElementById('f-nro-tgiu')?.value.trim()||null,
@@ -4538,11 +4537,14 @@ document.addEventListener('click', () => {
 function showTab(name, btn) {
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  // Reset inmuebles panel inline style so CSS takes over
+  const inmPanel = document.getElementById('panel-inmuebles');
+  if (inmPanel) inmPanel.style.display = name === 'inmuebles' ? 'block' : 'none';
   document.getElementById('panel-'+name).classList.add('active');
   if(name==='admin') loadUsuarios();
   if(name==='clientes') renderClientes();
   if(name==='inmuebles') {
-    document.getElementById('panel-inmuebles').style.display = '';
+    document.getElementById('panel-inmuebles').style.display = 'block';
     if (!DB_INMUEBLES.length) loadAll().then(renderInmuebles); else renderInmuebles();
   }
   if(name==='contratos') renderContratos();
@@ -5226,6 +5228,7 @@ setInterval(async () => {
     ]);
     DB.contratos = contratos;
     DB.pagos = pagos;
+    try { DB_INMUEBLES = await sbGet('inmuebles', 'select=*&order=localidad.asc,calle.asc&limit=2000'); } catch(e) {}
     document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR', {timeZone:'America/Argentina/Buenos_Aires'})}`;
     await loadPersonas();
     await loadContratosPersonas();
@@ -5291,8 +5294,7 @@ function abrirImportarPDF() {
     const newBtn = pdfBtn.cloneNode(true);
     pdfBtn.parentNode.replaceChild(newBtn, pdfBtn);
     document.getElementById('btn-main-pdf').addEventListener('click', function() {
-      console.log('PDF btn clicked, mode:', window._pdfMode);
-      if (window._pdfMode === 'procesar') procesarPDF();
+          if (window._pdfMode === 'procesar') procesarPDF();
       else confirmarImportarPDF();
     });
   }
@@ -5326,8 +5328,7 @@ async function procesarPDF() {
 
     // Upload PDF to Supabase Storage
     const fileName = `${srv}/${mes}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
-    console.log('Uploading to storage:', fileName);
-    try {
+      try {
       const uploadResp = await fetch(
         `${SB_URL}/storage/v1/object/servicios/${fileName}`,
         {
@@ -5337,8 +5338,7 @@ async function procesarPDF() {
         }
       );
       const uploadText = await uploadResp.text();
-      console.log('Upload status:', uploadResp.status, uploadText.substring(0,200));
-      if (!uploadResp.ok) {
+          if (!uploadResp.ok) {
         toast('Aviso: no se pudo guardar el PDF en Storage (' + uploadResp.status + '). Se cargarán solo los importes.', 'warn');
         window._pdfFileName = null;
       } else {
@@ -5531,16 +5531,13 @@ async function confirmarImportarPDF() {
   const resultados = window._pdfResultados || [];
   const mes = window._pdfMes;
   const srv = window._pdfSrv;
-  console.log('confirmarImportarPDF called, resultados:', resultados.length, 'mes:', mes, 'srv:', srv);
   resultados.forEach((r,i) => {
     const chk = document.querySelector(`.pdf-chk[data-idx="${i}"]`);
-    console.log(`  r[${i}]: cuenta=${r.cuenta} importe=${r.importe} contrato=${r.contrato?.titulo} checked=${chk?.checked}`);
-  });
+    });
   const seleccionados = resultados.filter((r, i) => {
     const chk = document.querySelector(`.pdf-chk[data-idx="${i}"]`);
     return chk?.checked && r.contrato && r.importe;
   });
-  console.log('Seleccionados:', seleccionados.length);
   
   if (!seleccionados.length) { toast('Seleccioná al menos una boleta', 'error'); return; }
   
@@ -5552,18 +5549,15 @@ async function confirmarImportarPDF() {
   
   for (const r of seleccionados) {
     try {
-      console.log('Procesando:', r.contrato.titulo, r.importe);
-      const hoja = r.contrato.hoja;
+          const hoja = r.contrato.hoja;
       const hojaEncoded = encodeURIComponent(hoja);
       const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesStr}&limit=1`);
-      console.log('Pagos:', pagos.length, mesStr);
-      if (!pagos.length) { console.log('Sin pago para', hoja, mesStr); continue; }
+          if (!pagos.length) { console.log('Sin pago para', hoja, mesStr); continue; }
       const p = pagos[0];
       
       const fresh = await sbGet('contratos', `hoja=eq.${hojaEncoded}&select=pct_${srv}&limit=1`);
       const pct = fresh[0]?.[`pct_${srv}`] ?? 100;
-      console.log('PCT:', pct);
-      const monto = Math.round(r.importe * pct / 100);
+          const monto = Math.round(r.importe * pct / 100);
       
       const alq = p.importe_alquiler || 0;
       const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
@@ -5571,16 +5565,12 @@ async function confirmarImportarPDF() {
       const patch = { total: newTotal, saldo: Math.max(0, newTotal - ((p.total||0) - (p.saldo||0))) };
       patch['monto_'+srv] = monto;
       
-      console.log('Patch:', JSON.stringify(patch));
-      await sbPatch('pagos', p.id, patch);
-      console.log('Pago OK');
-
+          await sbPatch('pagos', p.id, patch);
+    
       if (window._pdfFileName) {
         const delResp = await fetch(`${SB_URL}/rest/v1/pagos_pdf?pago_id=eq.${p.id}&servicio=eq.${srv}`, { method: 'DELETE', headers: HEADERS });
-        console.log('Delete status:', delResp.status);
-        await sbPost('pagos_pdf', { pago_id: p.id, servicio: srv, pdf_path: window._pdfFileName, pdf_pagina: r.pagina });
-        console.log('Insert pagos_pdf OK');
-      }
+              await sbPost('pagos_pdf', { pago_id: p.id, servicio: srv, pdf_path: window._pdfFileName, pdf_pagina: r.pagina });
+            }
       cargados++;
     } catch(e) { console.error('Error en boleta:', r.contrato?.titulo, e.message); }
   }
