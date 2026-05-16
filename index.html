@@ -4503,36 +4503,31 @@ function toggleInformesMenu(e) {
 function selectInforme(tipo) {
   document.getElementById('informes-menu').style.display = 'none';
 
-  // Hide all sub-panels
-  ['informes','reporte-total','vencimientos'].forEach(id => {
+  // First hide ALL main panels (same as showTab)
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','inmuebles','clientes','admin'];
+  allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
   });
 
-  // Show panel-informes parent so sub-panels are visible
-  const parent = document.getElementById('panel-informes');
-
-  // Show correct sub-panel
-  if (tipo === 'vencimientos') {
-    const el = document.getElementById('panel-vencimientos');
-    if (el) { el.style.display = 'block'; el.classList.add('active'); }
-    if (parent) { parent.style.display = 'block'; parent.classList.add('active'); }
-    renderVencimientos();
-  } else if (tipo === 'reporte-total') {
-    const el = document.getElementById('panel-reporte-total');
-    if (el) { el.style.display = 'block'; el.classList.add('active'); }
-    if (parent) { parent.style.display = 'block'; parent.classList.add('active'); }
-    renderReporteTotal();
-  } else {
-    if (parent) { parent.style.display = 'block'; parent.classList.add('active'); }
-    populateInformeAnios();
-    renderInforme();
-  }
-
-  // Update nav button
+  // Update nav buttons - highlight Informes
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  const informesBtn = document.querySelector("[onclick*=\"showTab('informes'\"]");
-  if (informesBtn) informesBtn.classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    if (b.textContent.includes('Informes')) b.classList.add('active');
+  });
+
+  // Show the correct sub-panel
+  let panelId = 'panel-informes';
+  if (tipo === 'reporte-total') panelId = 'panel-reporte-total';
+  else if (tipo === 'vencimientos') panelId = 'panel-vencimientos';
+
+  const el = document.getElementById(panelId);
+  if (el) { el.style.display = 'block'; el.classList.add('active'); }
+
+  // Run the content
+  if (tipo === 'vencimientos') renderVencimientos();
+  else if (tipo === 'reporte-total') renderReporteTotal();
+  else { populateInformeAnios(); renderInforme(); }
 }
 
 // Close dropdown on outside click
