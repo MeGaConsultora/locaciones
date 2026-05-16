@@ -318,11 +318,11 @@
     <button class="tab-btn" onclick="toggleInformesMenu(event)">📊 Informes ▾</button>
     <div class="tab-dropdown-menu" id="informes-menu" style="display:none">
       <button onclick="selectInforme('mensual')">📅 Reportes mensuales</button>
+      <button onclick="selectInforme('reporte-total')">📋 Reportes totales</button>
       <button onclick="selectInforme('vencimientos')">📋 Vencimientos de contratos</button>
       <button onclick="abrirCargarServicios()">⚡ Cargar servicios del mes</button>
       <button onclick="abrirImportarPDF()">📄 Importar PDF de servicios</button>
       <button onclick="abrirActualizacionAlquileres()">🔄 Actualizar alquileres</button>
-      <button onclick="selectInforme('reporte-total')">📋 Reportes totales</button>
     </div>
   </div>
   <button class="tab-btn" onclick="showTab('clientes',this)">🧑‍🤝‍🧑 Clientes</button>
@@ -4410,13 +4410,23 @@ function selectInforme(tipo) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelector('#dropdown-informes .tab-btn').classList.add('active');
   document.querySelector('#dropdown-informes').classList.add('active');
-  // Show panel
+  // Hide all panels
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  ['panel-informes','panel-reporte-total'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  // Show correct panel
   if (tipo === 'vencimientos') {
     document.getElementById('panel-vencimientos').classList.add('active');
     renderVencimientos();
+  } else if (tipo === 'reporte-total') {
+    const el = document.getElementById('panel-reporte-total');
+    if (el) { el.style.display = 'block'; el.classList.add('active'); }
+    renderReporteTotal();
   } else {
-    document.getElementById('panel-informes').classList.add('active');
+    const el = document.getElementById('panel-informes');
+    if (el) { el.style.display = 'block'; el.classList.add('active'); }
     populateInformeAnios();
     renderInforme();
   }
