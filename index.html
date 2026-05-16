@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gestión de Locaciones</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -902,7 +903,8 @@ function imprimirVencimientos() {
   }).join('');
 
   const ventana = window.open('', '_blank');
-  ventana.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Vencimientos de contratos</title>
+  ventana.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<link rel="icon" type="image/x-icon" href="favicon.ico"><title>Vencimientos de contratos</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>* { margin:0; padding:0; box-sizing:border-box; } body { font-family:'DM Sans',sans-serif; padding:20px; } 
     .no-print { text-align:center; padding:12px 0; } .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; }
@@ -3063,7 +3065,8 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
       </div>
     </div>`;
 
-  ventana.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo Propietario</title>
+  ventana.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<link rel="icon" type="image/x-icon" href="favicon.ico"><title>Recibo Propietario</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>* { margin:0; padding:0; box-sizing:border-box; } body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; padding:20px; gap:20px; } .no-print button { background:#1a1a2e; color:white; border:none; padding:10px 28px; border-radius:8px; font-size:1rem; cursor:pointer; } @media print { body { background:white; padding:0; gap:0; } .no-print { display:none; } }</style>
   </head><body>
@@ -3152,7 +3155,8 @@ async function imprimirHistorial(contratoId) {
 
   const ventana = window.open('', '_blank', 'width=1100,height=800');
   ventana.document.write(`<!DOCTYPE html><html><head>
-    <meta charset="UTF-8"><title>Historial - ${c.titulo}</title>
+    <meta charset="UTF-8">
+<link rel="icon" type="image/x-icon" href="favicon.ico"><title>Historial - ${c.titulo}</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }
@@ -4173,6 +4177,7 @@ function imprimirRecibo(data) {
   const ventana = window.open('about:blank', 'Recibo Nº '+String(data.nroMes).padStart(4,'0'));
   ventana.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
     <title>Recibo Nº ${String(data.nroMes).padStart(4,'0')}</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -4343,7 +4348,8 @@ function generarReporteMes() {
 
   const ventana = window.open('', '_blank', 'width=900,height=700');
   ventana.document.write(`<!DOCTYPE html><html><head>
-    <meta charset="UTF-8"><title>Reporte adeudado ${nombreMes} ${anio}</title>
+    <meta charset="UTF-8">
+<link rel="icon" type="image/x-icon" href="favicon.ico"><title>Reporte adeudado ${nombreMes} ${anio}</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }
