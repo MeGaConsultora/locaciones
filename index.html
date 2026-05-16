@@ -322,6 +322,7 @@
       <button onclick="abrirCargarServicios()">⚡ Cargar servicios del mes</button>
       <button onclick="abrirImportarPDF()">📄 Importar PDF de servicios</button>
       <button onclick="abrirActualizacionAlquileres()">🔄 Actualizar alquileres</button>
+      <button onclick="selectInforme('reporte-total')">📋 Reporte total por contrato</button>
     </div>
   </div>
   <button class="tab-btn" onclick="showTab('clientes',this)">🧑‍🤝‍🧑 Clientes</button>
@@ -410,6 +411,11 @@
         <option value="07">Julio</option><option value="08">Agosto</option>
         <option value="09">Septiembre</option><option value="10">Octubre</option>
         <option value="11">Noviembre</option><option value="12">Diciembre</option>
+      </select>
+      <select class="filter-select" id="inf-deuda" style="width:auto" onchange="renderInforme()">
+        <option value="">Todos</option>
+        <option value="pendiente">Con deuda</option>
+        <option value="al-dia">Al día</option>
       </select>
       <button class="btn btn-secondary" onclick="exportarInformeCSV()">⬇ Exportar CSV</button>
     </div>
@@ -2888,6 +2894,7 @@ function populateInformeAnios() {
 async function renderInforme() {
   const anio = document.getElementById('inf-anio')?.value;
   const mes = document.getElementById('inf-mes')?.value;
+  const deudaFiltro = document.getElementById('inf-deuda')?.value || '';
   const cont = document.getElementById('informe-contenido');
   if (!anio || !mes) { cont.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Seleccioná un año y mes</p></div>'; return; }
 
@@ -2895,7 +2902,15 @@ async function renderInforme() {
   cont.innerHTML = '<div class="loading">Cargando informe...</div>';
 
   // Get pagos for this month
-  const pagosMes = DB.pagos.filter(p => p.mes && p.mes.startsWith(mesKey));
+  let pagosMes = DB.pagos.filter(p => p.mes && p.mes.startsWith(mesKey));
+
+  // Apply deuda filter
+  if (deudaFiltro === 'pendiente') {
+    pagosMes = pagosMes.filter(p => (p.saldo||0) > 0);
+  } else if (deudaFiltro === 'al-dia') {
+    pagosMes = pagosMes.filter(p => !p.saldo || p.saldo <= 0);
+  }
+
   if (!pagosMes.length) { cont.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Sin datos para ese mes</p></div>'; return; }
 
   // Get extras for these pagos
@@ -2998,6 +3013,87 @@ async function renderInforme() {
   // Store for CSV export
   window._informeRows = rows;
   window._informeMesKey = mesKey;
+}
+
+function renderReporteTotal() {
+  const deudaFiltro = document.getElementById('rep-deuda')?.value || '';
+  const cont = document.getElementById('reporte-total-contenido');
+  cont.innerHTML = '<div class="loading">Calculando...</div>';
+
+  // Build summary per contract
+  let rows = DB.contratos.map(c => {
+    const pagos = DB.pagos.filter(p => p.hoja === c.hoja && p.mes && p.mes.substring(0,7) <= TODAY.substring(0,7));
+    const totalFacturado = pagos.reduce((s,p) => s+(p.total||0), 0);
+    const totalCobrado = pagos.reduce((s,p) => s+((p.total||0)-(p.saldo||0)), 0);
+    const saldoPendiente = pagos.reduce((s,p) => s+(p.saldo||0), 0);
+    const est = getEstado(c);
+    return { c, totalFacturado, totalCobrado, saldoPendiente, est };
+  });
+
+  // Apply filter
+  if (deudaFiltro === 'pendiente') rows = rows.filter(r => r.saldoPendiente > 0);
+  else if (deudaFiltro === 'al-dia') rows = rows.filter(r => r.saldoPendiente <= 0);
+
+  rows.sort((a,b) => (a.c.titulo||'').localeCompare(b.c.titulo||''));
+
+  const totFacturado = rows.reduce((s,r) => s+r.totalFacturado, 0);
+  const totCobrado = rows.reduce((s,r) => s+r.totalCobrado, 0);
+  const totSaldo = rows.reduce((s,r) => s+r.saldoPendiente, 0);
+
+  if (!rows.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>Sin resultados</p></div>';
+    return;
+  }
+
+  cont.innerHTML = `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+        <thead><tr style="background:var(--ink2);color:white;position:sticky;top:0">
+          <th style="padding:8px 10px;text-align:left">Contrato</th>
+          <th style="padding:8px 10px;text-align:left">Propietario</th>
+          <th style="padding:8px 10px;text-align:left">Inquilino</th>
+          <th style="padding:8px 10px;text-align:right">Total facturado</th>
+          <th style="padding:8px 10px;text-align:right">Total cobrado</th>
+          <th style="padding:8px 10px;text-align:right">Saldo pendiente</th>
+          <th style="padding:8px 10px;text-align:center">Estado</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(r => `<tr style="border-bottom:1px solid #eee;cursor:pointer;background:${r.saldoPendiente>0?'#fff8f0':''}" onclick="openContrato(${r.c.id})">
+            <td style="padding:7px 10px;font-weight:600">${r.c.titulo||r.c.hoja}</td>
+            <td style="padding:7px 10px;color:#666">${r.c.locador||'—'}</td>
+            <td style="padding:7px 10px;color:#666">${r.c.locatario||'—'}</td>
+            <td style="padding:7px 10px;text-align:right">${formatMoney(r.totalFacturado)}</td>
+            <td style="padding:7px 10px;text-align:right">${formatMoney(r.totalCobrado)}</td>
+            <td style="padding:7px 10px;text-align:right;font-weight:600;color:${r.saldoPendiente>0?'var(--accent)':'var(--green)'}">${r.saldoPendiente>0?formatMoney(r.saldoPendiente):'✓ Al día'}</td>
+            <td style="padding:7px 10px;text-align:center"><span class="badge ${r.est==='vigente'?'badge-green':r.est==='rescindido'?'badge-red':'badge-gray'}">${r.est}</span></td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot><tr style="background:#f5f5f5;font-weight:700;border-top:2px solid var(--border)">
+          <td colspan="3" style="padding:8px 10px">TOTALES (${rows.length} contratos)</td>
+          <td style="padding:8px 10px;text-align:right">${formatMoney(totFacturado)}</td>
+          <td style="padding:8px 10px;text-align:right">${formatMoney(totCobrado)}</td>
+          <td style="padding:8px 10px;text-align:right;color:${totSaldo>0?'var(--accent)':'var(--green)'}">${formatMoney(totSaldo)}</td>
+          <td></td>
+        </tr></tfoot>
+      </table>
+    </div>`;
+}
+
+function exportarReporteTotalCSV() {
+  const rows = [];
+  rows.push(['Contrato','Propietario','Inquilino','Total facturado','Total cobrado','Saldo pendiente','Estado']);
+  DB.contratos.forEach(c => {
+    const pagos = DB.pagos.filter(p => p.hoja===c.hoja && p.mes && p.mes.substring(0,7)<=TODAY.substring(0,7));
+    const totalFacturado = pagos.reduce((s,p)=>s+(p.total||0),0);
+    const totalCobrado = pagos.reduce((s,p)=>s+((p.total||0)-(p.saldo||0)),0);
+    const saldo = pagos.reduce((s,p)=>s+(p.saldo||0),0);
+    rows.push([c.titulo||c.hoja, c.locador||'', c.locatario||'', totalFacturado, totalCobrado, saldo, getEstado(c)]);
+  });
+  const csv = rows.map(r => r.map(v => '"'+String(v).replace(/"/g,'\"\"')+'"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
+  a.download = `reporte-total-${TODAY.substring(0,10)}.csv`;
+  a.click();
 }
 
 function exportarInformeCSV() {
