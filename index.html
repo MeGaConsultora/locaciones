@@ -2988,7 +2988,7 @@ async function renderInforme() {
       </div>
       <div class="stat-card accent"><div class="stat-label">Total mes</div><div class="stat-val" style="font-size:1.1rem">${formatMoney(totTotal)}</div></div>
       <div class="stat-card green"><div class="stat-label">Abonado</div><div class="stat-val" style="font-size:1.1rem">${formatMoney(totAbonado)}</div></div>
-      <div class="stat-card ${totSaldo>0?'accent':'green'}"><div class="stat-label">Saldo</div><div class="stat-val" style="font-size:1.1rem;color:${totSaldo>0?'var(--accent)':'var(--green)'}">${formatMoney(totSaldo)}</div></div>
+      <div class="stat-card ${totSaldo>0?'accent':'green'}"><div class="stat-label">Saldo</div><div class="stat-val" style="font-size:1.1rem;color:${totSaldo>0?'#e63946':'#2d6a4f'}">${formatMoney(totSaldo)}</div></div>
       <div class="stat-card"><div class="stat-label">% Cobrado</div><div class="stat-val">${pct}%</div></div>
       <div class="stat-card"><div class="stat-label">Comisiones</div><div class="stat-val" style="font-size:1.1rem">${formatMoney(totComision)}</div></div>
       <div class="stat-card"><div class="stat-label">Alquileres activos</div><div class="stat-val">${vigentes}</div></div>
@@ -3074,6 +3074,15 @@ function renderReporteTotal() {
     return;
   }
 
+  // Update header totals
+  const headerEl = document.getElementById('rep-totales-header');
+  if (headerEl) {
+    headerEl.innerHTML = `<span><strong>${rows.length}</strong> contratos</span>
+      <span>Facturado: <strong>${formatMoney(totFacturado)}</strong></span>
+      <span>Cobrado: <strong>${formatMoney(totCobrado)}</strong></span>
+      <span style="color:${totSaldo>0?'#e63946':'#2d6a4f'}">Saldo: <strong>${formatMoney(totSaldo)}</strong></span>`;
+  }
+
   cont.innerHTML = `
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:0.82rem">
@@ -3136,31 +3145,34 @@ function verReporteMensual() {
 
 function verReporteTotales() {
   const contenido = document.getElementById('reporte-total-contenido')?.innerHTML;
-  if (!contenido) { toast('Generá el reporte primero', 'error'); return; }
+  if (!contenido || contenido.includes('empty-state') || contenido.includes('Calculando')) { toast('Generá el reporte primero', 'error'); return; }
   const filtro = document.getElementById('rep-deuda')?.options[document.getElementById('rep-deuda').selectedIndex]?.text || 'Todos';
+  const headerHTML = document.getElementById('rep-totales-header')?.innerHTML || '';
   const ventana = window.open('', '_blank');
   ventana.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-    <title>MeGa Consultora — Reporte total por contrato</title>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>* { margin:0; padding:0; box-sizing:border-box; } body { font-family:'DM Sans',sans-serif; padding:20px; }
-    .no-print { text-align:center; padding:12px 0; } .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; }
-    table { width:100%; border-collapse:collapse; margin-top:12px; font-size:0.82rem; }
-    th { background:#1a1a2e; color:white; padding:7px 10px; text-align:left; font-size:0.73rem; text-transform:uppercase; }
-    td { padding:6px 10px; border-bottom:1px solid #eee; }
-    tfoot tr td { font-weight:700; background:#f5f5f5; border-top:2px solid #ddd; }
-    h2 { font-size:1.1rem; margin-bottom:4px; } p { font-size:0.82rem; color:#888; margin-bottom:8px; }
-    @media print { .no-print { display:none; } body { padding:10px; } }
+    <title>MeGa Consultora — Reportes totales</title>
+    <style>* { margin:0; padding:0; box-sizing:border-box; } body { font-family:sans-serif; padding:20px; font-size:13px; }
+    .no-print { text-align:center; padding:12px 0; } .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; cursor:pointer; }
+    table { width:100%; border-collapse:collapse; margin-top:8px; }
+    th { background:#1a1a2e; color:white; padding:6px 8px; text-align:left; font-size:11px; text-transform:uppercase; }
+    td { padding:5px 8px; border-bottom:1px solid #eee; }
+    tfoot td { font-weight:700; background:#f5f5f5; border-top:2px solid #ccc; }
+    .totales-header { display:flex; gap:2rem; padding:8px 0; margin-bottom:8px; border-bottom:2px solid #1a1a2e; font-size:12px; flex-wrap:wrap; }
+    h2 { font-size:16px; margin-bottom:4px; } p { font-size:12px; color:#888; margin-bottom:4px; }
+    .badge-green { background:#d4edda; color:#155724; padding:2px 8px; border-radius:10px; font-size:11px; }
+    .badge-red { background:#f8d7da; color:#721c24; padding:2px 8px; border-radius:10px; font-size:11px; }
+    .badge-gray { background:#e2e3e5; color:#383d41; padding:2px 8px; border-radius:10px; font-size:11px; }
+    @media print { .no-print { display:none; } }
     </style></head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir</button></div>
-    <h2>MeGa Consultora — Reporte total por contrato</h2>
+    <h2>MeGa Consultora — Reportes totales</h2>
     <p>Filtro: ${filtro} · Fecha: ${new Date().toLocaleDateString('es-AR')}</p>
-    <div style="display:flex;gap:2rem;padding:8px 0;margin-bottom:8px;border-bottom:2px solid #1a1a2e;font-size:0.85rem">
-      ${document.getElementById('rep-totales-header')?.innerHTML || ''}
-    </div>
+    <div class="totales-header">${headerHTML}</div>
     ${contenido}
     </body></html>`);
   ventana.document.close();
 }
+
 
 function exportarReporteTotalCSV() {
   const rows = [];
