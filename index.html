@@ -636,12 +636,13 @@ async function loadAll() {
   try {
     // Refresh token if needed before loading
     if (currentUser?.token) updateAuthHeaders(currentUser.token);
-    const [contratos, pagos] = await Promise.all([
+    const [contratos, inmuebles, pagos] = await Promise.all([
       sbGet('contratos', 'select=*&order=titulo.asc&limit=1000'),
     sbGet('inmuebles', 'select=*&order=localidad.asc,calle.asc&limit=2000'),
       sbGetAll('pagos', 'select=*&order=mes.desc')
     ]);
     DB.contratos = contratos;
+    DB_INMUEBLES = inmuebles || [];
     DB.pagos = pagos;
     document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR', {timeZone:'America/Argentina/Buenos_Aires'})}`;
     populateFiltros();
