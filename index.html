@@ -327,8 +327,6 @@
   </div>
   <button class="tab-btn" onclick="showTab('clientes',this)">🧑‍🤝‍🧑 Clientes</button>
   <button class="tab-btn" onclick="showTab('inmuebles',this)">🏠 Inmuebles</button>
-  <button class="tab-btn" onclick="showTab('inmuebles',this)">🏠 Inmuebles</button>
-  <button class="tab-btn" onclick="showTab('inmuebles',this)">🏠 Inmuebles</button>
   <button class="tab-btn" id="tab-admin" onclick="showTab('admin',this)" style="display:none;margin-left:auto">👥 Usuarios</button>
 </nav>
 
@@ -634,6 +632,7 @@ async function sbDelete(table, id) {
 // STATE
 // ============================================================
 let DB = { contratos: [], pagos: [] };
+let DB_INMUEBLES = [];
 const PG = { contratos:1, pagos:1, pendientes:1 };
 const PER_PAGE = 25;
 let sortState = { contratos:{col:'titulo',dir:'asc'}, pagos:{col:'hoja',dir:'asc'} };
@@ -3866,7 +3865,8 @@ async function guardarContrato() {
     locatario,
     vigencia_desde: vigDesde,
     vigencia_hasta: vigHasta,
-    tipo_inmueble: document.getElementById('f-tipo').value,
+    tipo_inmueble: (() => { const id=parseInt(document.getElementById('f-inmueble-id')?.value); const inm=DB_INMUEBLES.find(x=>x.id===id); return inm?.tipo||null; })(),
+    inmueble_id: parseInt(document.getElementById('f-inmueble-id')?.value)||null,
     modalidad_pago: document.getElementById('f-modalidad').value,
     periodicidad_actualizacion: document.getElementById('f-periodicidad').value||null,
     indice_actualizacion: document.getElementById('f-indice').value||null,
@@ -3968,7 +3968,8 @@ async function actualizarContrato(id) {
     locatario: inqPersonas.length ? formatPersonasFromCP(inqPersonas.map((p,i)=>({personas:p,orden:i+1}))) : undefined,
     vigencia_desde: document.getElementById('f-desde').value||null,
     vigencia_hasta: document.getElementById('f-hasta').value||null,
-    tipo_inmueble: document.getElementById('f-tipo').value,
+    tipo_inmueble: (() => { const id=parseInt(document.getElementById('f-inmueble-id')?.value); const inm=DB_INMUEBLES.find(x=>x.id===id); return inm?.tipo||null; })(),
+    inmueble_id: parseInt(document.getElementById('f-inmueble-id')?.value)||null,
     modalidad_pago: document.getElementById('f-modalidad').value,
     comision_porcentaje: parseFloat(document.getElementById('f-comision-pct').value)||8,
     periodicidad_actualizacion: document.getElementById('f-periodicidad')?.value||null,
