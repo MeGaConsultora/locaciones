@@ -4501,32 +4501,38 @@ function toggleInformesMenu(e) {
 }
 
 function selectInforme(tipo) {
-  // Close menu
   document.getElementById('informes-menu').style.display = 'none';
-  // Activate dropdown button visually
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelector('#dropdown-informes .tab-btn').classList.add('active');
-  document.querySelector('#dropdown-informes').classList.add('active');
-  // Hide all panels
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  ['panel-informes','panel-reporte-total'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = 'none';
+
+  // Hide all sub-panels
+  ['informes','reporte-total','vencimientos'].forEach(id => {
+    const el = document.getElementById('panel-' + id);
+    if (el) { el.classList.remove('active'); el.style.display = 'none'; }
   });
-  // Show correct panel
+
+  // Show panel-informes parent so sub-panels are visible
+  const parent = document.getElementById('panel-informes');
+
+  // Show correct sub-panel
   if (tipo === 'vencimientos') {
-    document.getElementById('panel-vencimientos').classList.add('active');
+    const el = document.getElementById('panel-vencimientos');
+    if (el) { el.style.display = 'block'; el.classList.add('active'); }
+    if (parent) { parent.style.display = 'block'; parent.classList.add('active'); }
     renderVencimientos();
   } else if (tipo === 'reporte-total') {
     const el = document.getElementById('panel-reporte-total');
     if (el) { el.style.display = 'block'; el.classList.add('active'); }
+    if (parent) { parent.style.display = 'block'; parent.classList.add('active'); }
     renderReporteTotal();
   } else {
-    const el = document.getElementById('panel-informes');
-    if (el) { el.style.display = 'block'; el.classList.add('active'); }
+    if (parent) { parent.style.display = 'block'; parent.classList.add('active'); }
     populateInformeAnios();
     renderInforme();
   }
+
+  // Update nav button
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  const informesBtn = document.querySelector("[onclick*=\"showTab('informes'\"]");
+  if (informesBtn) informesBtn.classList.add('active');
 }
 
 // Close dropdown on outside click
@@ -4535,21 +4541,27 @@ document.addEventListener('click', () => {
 });
 
 function showTab(name, btn) {
-  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-  // Reset inmuebles panel inline style so CSS takes over
-  const inmPanel = document.getElementById('panel-inmuebles');
-  if (inmPanel) inmPanel.style.display = name === 'inmuebles' ? 'block' : 'none';
-  document.getElementById('panel-'+name).classList.add('active');
-  if(name==='admin') loadUsuarios();
-  if(name==='clientes') renderClientes();
-  if(name==='inmuebles') {
-    document.getElementById('panel-inmuebles').style.display = 'block';
-    if (!DB_INMUEBLES.length) loadAll().then(renderInmuebles); else renderInmuebles();
-  }
-  if(name==='contratos') renderContratos();
-  if(name==='informes') { populateInformeAnios(); }
-  btn.classList.add('active');
+  // Hide ALL panels using both class and inline style
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','inmuebles','clientes','admin'];
+  allPanels.forEach(id => {
+    const el = document.getElementById('panel-' + id);
+    if (el) { el.classList.remove('active'); el.style.display = 'none'; }
+  });
+
+  // Show the selected panel
+  const target = document.getElementById('panel-' + name);
+  if (target) { target.classList.add('active'); target.style.display = 'block'; }
+
+  // Update nav buttons
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  // Tab-specific actions
+  if (name === 'admin') loadUsuarios();
+  if (name === 'clientes') renderClientes();
+  if (name === 'contratos') renderContratos();
+  if (name === 'informes') { populateInformeAnios(); document.getElementById('informes-menu').style.display = 'none'; }
+  if (name === 'inmuebles') { if (!DB_INMUEBLES.length) loadAll().then(renderInmuebles); else renderInmuebles(); }
 }
 
 
@@ -5217,6 +5229,15 @@ setInterval(refreshAdminToken, 20 * 60 * 1000);
 // ============================================================
 // START
 // ============================================================
+// Initialize panel visibility
+(function() {
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','inmuebles','clientes','admin'];
+  allPanels.forEach(id => {
+    const el = document.getElementById('panel-' + id);
+    if (el) el.style.display = id === 'dashboard' ? 'block' : 'none';
+  });
+})();
+
 checkSession();
 
 // Auto-refresh cada 30 segundos
