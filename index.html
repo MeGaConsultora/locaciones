@@ -5644,7 +5644,7 @@ function renderInmuebles() {
         '<td style="padding:7px 10px">' + (inm.tipo||'—') + '</td>' +
         '<td style="padding:7px 10px;color:#888;font-size:0.82rem">' + (inm.descripcion||'—') + '</td>' +
         '<td style="padding:7px 10px;text-align:center">' + (nContratos > 0 ? '<span style="background:var(--green);color:white;padding:2px 8px;border-radius:10px;font-size:0.78rem">' + nContratos + '</span>' : '—') + '</td>' +
-        '<td style="padding:7px 10px;font-size:0.78rem;color:#888">clic para editar</td>' +
+        '<td style="padding:7px 10px"><button class="btn btn-secondary" style="font-size:0.75rem;padding:4px 10px" onclick="abrirEditarInmueble(' + inm.id + ')">✏ Editar</button></td>' +
         '</tr>';
     }).join('') +
     '</tbody></table></div>';
