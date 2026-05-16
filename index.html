@@ -2976,7 +2976,7 @@ async function renderInforme() {
       <span><strong>${rows.length}</strong> contratos</span>
       <span>Facturado: <strong>${formatMoney(totFacturado)}</strong></span>
       <span>Cobrado: <strong>${formatMoney(totCobrado)}</strong></span>
-      <span style="color:${totSaldo>0?'var(--accent)':'var(--green)'}">Saldo: <strong>${formatMoney(totSaldo)}</strong></span>
+      <span style="color:${totSaldo>0?'#e63946':'#2d6a4f'}">Saldo: <strong>${formatMoney(totSaldo)}</strong></span>
     `;
   }
 
@@ -3093,7 +3093,7 @@ function renderReporteTotal() {
             <td style="padding:7px 10px;color:#666">${r.c.locatario||'—'}</td>
             <td style="padding:7px 10px;text-align:right">${formatMoney(r.totalFacturado)}</td>
             <td style="padding:7px 10px;text-align:right">${formatMoney(r.totalCobrado)}</td>
-            <td style="padding:7px 10px;text-align:right;font-weight:600;color:${r.saldoPendiente>0?'var(--accent)':'var(--green)'}">${r.saldoPendiente>0?formatMoney(r.saldoPendiente):'✓ Al día'}</td>
+            <td style="padding:7px 10px;text-align:right;font-weight:600;color:${r.saldoPendiente>0?'#e63946':'#2d6a4f'}">${r.saldoPendiente>0?formatMoney(r.saldoPendiente):'✓ Al día'}</td>
             <td style="padding:7px 10px;text-align:center"><span class="badge ${r.est==='vigente'?'badge-green':r.est==='rescindido'?'badge-red':'badge-gray'}">${r.est}</span></td>
           </tr>`).join('')}
         </tbody>
@@ -3101,7 +3101,7 @@ function renderReporteTotal() {
           <td colspan="3" style="padding:8px 10px">TOTALES (${rows.length} contratos)</td>
           <td style="padding:8px 10px;text-align:right">${formatMoney(totFacturado)}</td>
           <td style="padding:8px 10px;text-align:right">${formatMoney(totCobrado)}</td>
-          <td style="padding:8px 10px;text-align:right;color:${totSaldo>0?'var(--accent)':'var(--green)'}">${formatMoney(totSaldo)}</td>
+          <td style="padding:8px 10px;text-align:right;color:${totSaldo>0?'#e63946':'#2d6a4f'}">${formatMoney(totSaldo)}</td>
           <td></td>
         </tr></tfoot>
       </table>
@@ -3154,6 +3154,9 @@ function verReporteTotales() {
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir</button></div>
     <h2>MeGa Consultora — Reporte total por contrato</h2>
     <p>Filtro: ${filtro} · Fecha: ${new Date().toLocaleDateString('es-AR')}</p>
+    <div style="display:flex;gap:2rem;padding:8px 0;margin-bottom:8px;border-bottom:2px solid #1a1a2e;font-size:0.85rem">
+      ${document.getElementById('rep-totales-header')?.innerHTML || ''}
+    </div>
     ${contenido}
     </body></html>`);
   ventana.document.close();
@@ -3175,6 +3178,7 @@ function exportarReporteTotalCSV() {
   a.download = `reporte-total-${TODAY.substring(0,10)}.csv`;
   a.click();
 }
+
 
 function exportarInformeCSV() {
   const rows = window._informeRows;
