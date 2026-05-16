@@ -317,12 +317,12 @@
   <div class="tab-dropdown" id="dropdown-informes">
     <button class="tab-btn" onclick="toggleInformesMenu(event)">📊 Informes ▾</button>
     <div class="tab-dropdown-menu" id="informes-menu" style="display:none">
-      <button onclick="selectInforme('mensual')">📅 Resultados mensuales</button>
+      <button onclick="selectInforme('mensual')">📅 Reportes mensuales</button>
       <button onclick="selectInforme('vencimientos')">📋 Vencimientos de contratos</button>
       <button onclick="abrirCargarServicios()">⚡ Cargar servicios del mes</button>
       <button onclick="abrirImportarPDF()">📄 Importar PDF de servicios</button>
       <button onclick="abrirActualizacionAlquileres()">🔄 Actualizar alquileres</button>
-      <button onclick="selectInforme('reporte-total')">📋 Reporte total por contrato</button>
+      <button onclick="selectInforme('reporte-total')">📋 Reportes totales</button>
     </div>
   </div>
   <button class="tab-btn" onclick="showTab('clientes',this)">🧑‍🤝‍🧑 Clientes</button>
@@ -396,10 +396,10 @@
 
   <!-- Pagos panel merged into Contratos -->
 
-  <!-- INFORMES -->
-  <div id="panel-informes" class="panel">
+  <!-- REPORTES MENSUALES -->
+  <div id="panel-informes" class="panel" style="display:none">
     <div class="toolbar" style="margin-bottom:1rem">
-      <strong style="font-size:0.95rem">📊 Cuadro de resultados mensual</strong>
+      <strong style="font-size:0.95rem">📊 Reportes mensuales</strong>
       <select class="filter-select" id="inf-anio" style="width:auto" onchange="renderInforme()">
         <option value="">-- Año --</option>
       </select>
@@ -421,6 +421,22 @@
     </div>
     <div id="informe-contenido">
       <div class="empty-state"><div class="icon">📊</div><p>Seleccioná un año y mes para ver el informe</p></div>
+    </div>
+  </div>
+
+  <!-- REPORTES TOTALES -->
+  <div id="panel-reporte-total" class="panel" style="display:none">
+    <div class="toolbar" style="margin-bottom:1rem">
+      <strong style="font-size:0.95rem">📋 Reportes totales</strong>
+      <select class="filter-select" id="rep-deuda" style="width:auto" onchange="renderReporteTotal()">
+        <option value="">Todos</option>
+        <option value="pendiente">Con deuda</option>
+        <option value="al-dia">Al día</option>
+      </select>
+      <button class="btn btn-secondary" onclick="exportarReporteTotalCSV()">⬇ Exportar CSV</button>
+    </div>
+    <div id="reporte-total-contenido">
+      <div class="loading">Cargando...</div>
     </div>
   </div>
 
@@ -4418,7 +4434,7 @@ function showTab(name, btn) {
   if(name==='admin') loadUsuarios();
   if(name==='clientes') renderClientes();
   if(name==='contratos') renderContratos();
-  if(name==='informes') { populateInformeAnios(); renderInforme(); }
+  if(name==='informes') { populateInformeAnios(); }
   btn.classList.add('active');
 }
 
