@@ -462,7 +462,7 @@
 
 
   <!-- INMUEBLES -->
-  <div id="tab-inmuebles" class="tab-content" style="display:none">
+  <div id="panel-inmuebles" class="tab-content" style="display:none">
     <div class="toolbar">
       <input type="text" id="inmuebles-search" placeholder="Buscar por calle, localidad..." style="width:300px" oninput="filtrarInmuebles()">
       <button class="btn btn-primary" onclick="abrirNuevoInmueble()">+ Nuevo inmueble</button>
@@ -4539,7 +4539,7 @@ function showTab(name, btn) {
   document.getElementById('panel-'+name).classList.add('active');
   if(name==='admin') loadUsuarios();
   if(name==='clientes') renderClientes();
-  if(name==='inmuebles') { document.getElementById('tab-inmuebles').style.display='block'; renderInmuebles(); }
+  if(name==='inmuebles') renderInmuebles();
   if(name==='contratos') renderContratos();
   if(name==='informes') { populateInformeAnios(); }
   btn.classList.add('active');
@@ -5673,8 +5673,30 @@ function _abrirFormularioInmueble(inm) {
 async function guardarNuevoInmueble() {
   const body = _bodyInmueble();
   if (!body.calle) { toast('Ingresá al menos la calle', 'error'); return; }
-  try { await sbPost('inmuebles', body); toast('Inmueble guardado ✓'); await loadAll(); closeModal(); renderInmuebles(); }
-  catch(e) { toast('Error: ' + e.message, 'error'); }
+  try {
+    const r = await sbPost('inmuebles', body);
+    toast('Inmueble guardado ✓');
+    await loadAll();
+    if (window._volverAContrato) {
+      window._volverAContrato = false;
+      // Auto-select the new inmueble in the contract form
+      const nuevo = DB_INMUEBLES[DB_INMUEBLES.length - 1];
+      if (nuevo) {
+        document.getElementById('modal-overlay').classList.add('open');
+        setTimeout(() => {
+          const input = document.getElementById('f-inmueble-input');
+          const hidden = document.getElementById('f-inmueble-id');
+          if (input && hidden) {
+            hidden.value = nuevo.id;
+            input.value = formatDireccion(nuevo);
+          }
+        }, 100);
+      }
+    } else {
+      closeModal();
+      renderInmuebles();
+    }
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
 async function guardarInmueble(id) {
