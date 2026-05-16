@@ -327,6 +327,8 @@
   </div>
   <button class="tab-btn" onclick="showTab('clientes',this)">🧑‍🤝‍🧑 Clientes</button>
   <button class="tab-btn" onclick="showTab('inmuebles',this)">🏠 Inmuebles</button>
+  <button class="tab-btn" onclick="showTab('inmuebles',this)">🏠 Inmuebles</button>
+  <button class="tab-btn" onclick="showTab('inmuebles',this)">🏠 Inmuebles</button>
   <button class="tab-btn" id="tab-admin" onclick="showTab('admin',this)" style="display:none;margin-left:auto">👥 Usuarios</button>
 </nav>
 
@@ -460,6 +462,15 @@
 
 
 
+
+  <!-- INMUEBLES -->
+  <div id="tab-inmuebles" class="tab-content" style="display:none">
+    <div class="toolbar">
+      <input type="text" id="inmuebles-search" placeholder="Buscar por calle, localidad..." style="width:300px" oninput="filtrarInmuebles()">
+      <button class="btn btn-primary" onclick="abrirNuevoInmueble()">+ Nuevo inmueble</button>
+    </div>
+    <div id="inmuebles-container"><div class="loading">Cargando inmuebles...</div></div>
+  </div>
 
   <!-- CLIENTES -->
   <div id="panel-clientes" class="panel">
@@ -3449,11 +3460,13 @@ function _abrirFormularioContrato(c, esNuevo) {
       </div>
       <div class="form-group"><label>Vigencia desde</label><input id="f-desde" type="date" value="${c.vigencia_desde?.substring(0,10)||''}"></div>
       <div class="form-group"><label>Vigencia hasta</label><input id="f-hasta" type="date" value="${c.vigencia_hasta?.substring(0,10)||''}"></div>
-      <div class="form-group"><label>Tipo de inmueble</label>
-        <select id="f-tipo">
-          ${['Casa/Habitación','Departamento','Local Comercial','Galpón/Depósito','Cochera/Garaje','Consultorio','Otro'].map(t=>`<option ${normTipo(c.tipo_inmueble)===t?'selected':''}>${t}</option>`).join('')}
-        </select>
-      </div>
+      <div class="form-group" style="position:relative"><label>Inmueble</label>
+    <input type="hidden" id="f-inmueble-id" value="${c.inmueble_id||''}">
+    <input id="f-inmueble-input" type="text"
+      value="${c.inmueble_id ? formatDireccion(DB_INMUEBLES.find(x=>x.id===c.inmueble_id)) : ''}"      placeholder="Buscar por calle o localidad..."
+      autocomplete="off"
+      style="margin-top:4px" oninput="buscarInmuebleEnLinea(this)">
+    </div>
       <div class="form-group"><label>Modalidad de pago</label>
         <select id="f-modalidad">
           <option ${c.modalidad_pago==='ADELANTADO'||!c.modalidad_pago?'selected':''}>ADELANTADO</option>
@@ -4525,7 +4538,7 @@ function showTab(name, btn) {
   document.getElementById('panel-'+name).classList.add('active');
   if(name==='admin') loadUsuarios();
   if(name==='clientes') renderClientes();
-  if(name==='inmuebles') renderInmuebles();
+  if(name==='inmuebles') { document.getElementById('tab-inmuebles').style.display='block'; renderInmuebles(); }
   if(name==='contratos') renderContratos();
   if(name==='informes') { populateInformeAnios(); }
   btn.classList.add('active');
@@ -5569,6 +5582,164 @@ async function confirmarImportarPDF() {
   toast(`${cargados} boleta/s cargadas ✓`);
   resetImportarPDF();
   loadAll(); // async, no need to await
+}
+
+// ============================================================
+// INMUEBLES
+// ============================================================
+function formatDireccion(inm, short=false) {
+  if (!inm) return '—';
+  let dir = (inm.calle||'') + (inm.numero ? ' ' + inm.numero : '');
+  if (inm.piso) dir += ', P' + inm.piso;
+  if (inm.dpto) dir += ' D' + inm.dpto;
+  if (!short && inm.localidad) dir += ' — ' + inm.localidad;
+  return dir.trim() || '—';
+}
+
+function renderInmuebles() {
+  const q = (document.getElementById('inmuebles-search')?.value||'').toLowerCase();
+  const lista = DB_INMUEBLES.filter(inm => {
+    if (!q) return true;
+    return (inm.calle||'').toLowerCase().includes(q) ||
+           (inm.localidad||'').toLowerCase().includes(q) ||
+           (inm.numero||'').toLowerCase().includes(q);
+  });
+  const cont = document.getElementById('inmuebles-container');
+  if (!cont) return;
+  if (!lista.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">🏠</div><p>No se encontraron inmuebles</p></div>';
+    return;
+  }
+  cont.innerHTML = '<div style="overflow-x:auto"><table><thead><tr style="background:var(--ink2);color:white">' +
+    '<th style="padding:8px 10px">Dirección</th><th style="padding:8px 10px">Localidad</th>' +
+    '<th style="padding:8px 10px">Tipo</th><th style="padding:8px 10px">Descripción</th>' +
+    '<th style="padding:8px 10px">Contratos</th><th style="padding:8px 10px"></th>' +
+    '</tr></thead><tbody>' +
+    lista.map(inm => {
+      const nContratos = DB.contratos.filter(c => c.inmueble_id === inm.id).length;
+      return '<tr style="border-bottom:1px solid #eee">' +
+        '<td style="padding:7px 10px;font-weight:600">' + formatDireccion(inm, true) + '</td>' +
+        '<td style="padding:7px 10px">' + (inm.localidad||'—') + '</td>' +
+        '<td style="padding:7px 10px">' + (inm.tipo||'—') + '</td>' +
+        '<td style="padding:7px 10px;color:#888;font-size:0.82rem">' + (inm.descripcion||'—') + '</td>' +
+        '<td style="padding:7px 10px;text-align:center">' + (nContratos > 0 ? '<span style="background:var(--green);color:white;padding:2px 8px;border-radius:10px;font-size:0.78rem">' + nContratos + '</span>' : '—') + '</td>' +
+        '<td style="padding:7px 10px"><button class="btn btn-secondary" style="font-size:0.75rem;padding:4px 10px" onclick="abrirEditarInmueble(' + inm.id + ')">✏ Editar</button></td>' +
+        '</tr>';
+    }).join('') +
+    '</tbody></table></div>';
+}
+
+function filtrarInmuebles() { renderInmuebles(); }
+function abrirNuevoInmueble() { _abrirFormularioInmueble(null); }
+function abrirEditarInmueble(id) { const inm = DB_INMUEBLES.find(x => x.id === id); if (inm) _abrirFormularioInmueble(inm); }
+
+function _abrirFormularioInmueble(inm) {
+  const esNuevo = !inm;
+  document.getElementById('modal-title').textContent = esNuevo ? 'Nuevo inmueble' : 'Editar inmueble';
+  document.getElementById('modal-subtitle').textContent = esNuevo ? '' : formatDireccion(inm);
+  document.getElementById('modal-overlay').dataset.contratoId = '';
+  const tipos = ['Casa/Habitación','Departamento','Local Comercial','Galpón/Depósito','Cochera/Garaje','Granja/Quinta','Consultorio','Otro'];
+  document.getElementById('modal-body').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+      <div class="form-group" style="margin:0"><label>Tipo de inmueble</label>
+        <select id="inm-tipo" style="margin-top:4px;padding:8px;border:1.5px solid var(--border);border-radius:8px;width:100%">
+          <option value="">-- Seleccioná --</option>
+          ${tipos.map(t => `<option value="${t}"${inm?.tipo===t?' selected':''}>${t}</option>`).join('')}
+        </select></div>
+      <div class="form-group" style="margin:0"><label>Localidad</label>
+        <input id="inm-localidad" type="text" value="${inm?.localidad||''}" placeholder="Ej: Sunchales" style="margin-top:4px"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
+      <div class="form-group" style="margin:0"><label>Calle</label>
+        <input id="inm-calle" type="text" value="${inm?.calle||''}" placeholder="Ej: Sarmiento" style="margin-top:4px"></div>
+      <div class="form-group" style="margin:0"><label>N°</label>
+        <input id="inm-numero" type="text" value="${inm?.numero||''}" placeholder="167" style="margin-top:4px"></div>
+      <div class="form-group" style="margin:0"><label>Piso</label>
+        <input id="inm-piso" type="text" value="${inm?.piso||''}" placeholder="1" style="margin-top:4px"></div>
+      <div class="form-group" style="margin:0"><label>Dpto</label>
+        <input id="inm-dpto" type="text" value="${inm?.dpto||''}" placeholder="A" style="margin-top:4px"></div>
+    </div>
+    <div class="form-group" style="margin-bottom:1rem"><label>Descripción (opcional)</label>
+      <textarea id="inm-descripcion" rows="2" placeholder="Ej: Local en esquina..." style="margin-top:4px;width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;resize:vertical">${inm?.descripcion||''}</textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      ${!esNuevo ? `<button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="confirmarEliminarInmueble(${inm.id})">🗑 Eliminar</button>` : ''}
+      <button class="btn btn-primary" onclick="${esNuevo?'guardarNuevoInmueble()':'guardarInmueble('+inm.id+')'}">💾 Guardar</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function guardarNuevoInmueble() {
+  const body = _bodyInmueble();
+  if (!body.calle) { toast('Ingresá al menos la calle', 'error'); return; }
+  try { await sbPost('inmuebles', body); toast('Inmueble guardado ✓'); await loadAll(); closeModal(); renderInmuebles(); }
+  catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function guardarInmueble(id) {
+  const body = _bodyInmueble();
+  if (!body.calle) { toast('Ingresá al menos la calle', 'error'); return; }
+  try { await sbPatch('inmuebles', id, body); toast('Inmueble actualizado ✓'); await loadAll(); closeModal(); renderInmuebles(); }
+  catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function _bodyInmueble() {
+  return {
+    tipo: document.getElementById('inm-tipo')?.value||null,
+    localidad: document.getElementById('inm-localidad')?.value.trim()||null,
+    calle: document.getElementById('inm-calle')?.value.trim()||null,
+    numero: document.getElementById('inm-numero')?.value.trim()||null,
+    piso: document.getElementById('inm-piso')?.value.trim()||null,
+    dpto: document.getElementById('inm-dpto')?.value.trim()||null,
+    descripcion: document.getElementById('inm-descripcion')?.value.trim()||null,
+  };
+}
+
+async function confirmarEliminarInmueble(id) {
+  const nContratos = DB.contratos.filter(c => c.inmueble_id === id).length;
+  if (nContratos > 0) { toast('No se puede eliminar — tiene ' + nContratos + ' contrato/s asociado/s', 'error'); return; }
+  if (!confirm('¿Eliminar este inmueble?')) return;
+  try { await sbDelete('inmuebles', id); toast('Inmueble eliminado ✓'); await loadAll(); closeModal(); renderInmuebles(); }
+  catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function buscarInmuebleEnLinea(input) {
+  const q = input.value.toLowerCase().trim();
+  let sug = document.getElementById('sug-inmueble');
+  if (!sug) {
+    sug = document.createElement('div');
+    sug.id = 'sug-inmueble';
+    sug.style.cssText = 'position:absolute;background:white;border:1px solid var(--border);border-radius:8px;z-index:500;max-height:200px;overflow-y:auto;min-width:350px;box-shadow:var(--shadow);top:100%;left:0';
+    input.parentNode.appendChild(sug);
+  }
+  if (!q) { sug.style.display = 'none'; return; }
+  const matches = DB_INMUEBLES.filter(inm =>
+    (inm.calle||'').toLowerCase().includes(q) ||
+    (inm.localidad||'').toLowerCase().includes(q) ||
+    (inm.numero||'').toLowerCase().includes(q)
+  ).slice(0, 8);
+  sug.style.display = 'block';
+  sug.innerHTML = matches.map(inm =>
+    '<div onclick="seleccionarInmueble(' + inm.id + ')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0ece4;font-size:0.85rem" onmouseover="this.style.background=\'var(--cream)\'" onmouseout="this.style.background=\'\'">' +
+    '<strong>' + formatDireccion(inm, true) + '</strong><span style="color:#888;font-size:0.78rem"> — ' + (inm.localidad||'') + ' · ' + (inm.tipo||'') + '</span></div>'
+  ).join('') + '<div onclick="abrirNuevoInmuebleDesdeContrato()" style="padding:8px 12px;cursor:pointer;color:var(--accent);font-size:0.85rem;font-weight:600">+ Nuevo inmueble</div>';
+}
+
+function seleccionarInmueble(id) {
+  const inm = DB_INMUEBLES.find(x => x.id === id);
+  if (!inm) return;
+  document.getElementById('f-inmueble-id').value = id;
+  document.getElementById('f-inmueble-input').value = formatDireccion(inm);
+  const sug = document.getElementById('sug-inmueble');
+  if (sug) sug.style.display = 'none';
+}
+
+function abrirNuevoInmuebleDesdeContrato() {
+  const sug = document.getElementById('sug-inmueble');
+  if (sug) sug.style.display = 'none';
+  window._volverAContrato = true;
+  document.getElementById('modal-overlay').classList.remove('open');
+  _abrirFormularioInmueble(null);
 }
 </script>
 
