@@ -5707,6 +5707,21 @@ function _abrirFormularioInmueble(inm) {
     </div>
     <div class="form-group" style="margin-bottom:1rem"><label>Descripción (opcional)</label>
       <textarea id="inm-descripcion" rows="2" placeholder="Ej: Local en esquina..." style="margin-top:4px;width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;resize:vertical">${inm?.descripcion||''}</textarea></div>
+    <div class="section-title" style="margin:1rem 0 0.5rem;font-size:0.82rem;text-transform:uppercase;color:#888;letter-spacing:0.05em">Números de cuenta de servicios</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;margin-bottom:1rem">
+      <div class="form-group" style="margin:0"><label>N° EPE</label>
+        <input id="inm-nro-epe" type="text" value="${inm?.nro_epe||''}" placeholder="N° cuenta EPE" style="margin-top:4px"></div>
+      <div class="form-group" style="margin:0"><label>N° Agua</label>
+        <input id="inm-nro-agua" type="text" value="${inm?.nro_agua||''}" placeholder="N° cuenta Agua" style="margin-top:4px"></div>
+      <div class="form-group" style="margin:0"><label>N° TGIU</label>
+        <input id="inm-nro-tgiu" type="text" value="${inm?.nro_tgiu||''}" placeholder="N° TGIU" style="margin-top:4px"></div>
+      <div class="form-group" style="margin:0"><label>N° Seguro</label>
+        <input id="inm-nro-seguro" type="text" value="${inm?.nro_seguro||''}" placeholder="N° póliza" style="margin-top:4px"></div>
+      <div class="form-group" style="margin:0"><label>N° Internet</label>
+        <input id="inm-nro-internet" type="text" value="${inm?.nro_internet||''}" placeholder="N° cuenta" style="margin-top:4px"></div>
+      <div class="form-group" style="margin:0"><label>N° Expensas</label>
+        <input id="inm-nro-expensas" type="text" value="${inm?.nro_expensas||''}" placeholder="N° cuenta" style="margin-top:4px"></div>
+    </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
       ${!esNuevo ? `<button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="confirmarEliminarInmueble(${inm.id})">🗑 Eliminar</button>` : ''}
@@ -5762,6 +5777,12 @@ function _bodyInmueble() {
     piso: document.getElementById('inm-piso')?.value.trim()||null,
     dpto: document.getElementById('inm-dpto')?.value.trim()||null,
     descripcion: document.getElementById('inm-descripcion')?.value.trim()||null,
+    nro_epe: document.getElementById('inm-nro-epe')?.value.trim()||null,
+    nro_agua: document.getElementById('inm-nro-agua')?.value.trim()||null,
+    nro_tgiu: document.getElementById('inm-nro-tgiu')?.value.trim()||null,
+    nro_seguro: document.getElementById('inm-nro-seguro')?.value.trim()||null,
+    nro_internet: document.getElementById('inm-nro-internet')?.value.trim()||null,
+    nro_expensas: document.getElementById('inm-nro-expensas')?.value.trim()||null,
   };
 }
 
@@ -5782,6 +5803,15 @@ function limpiarInmueble() {
   if (btn) btn.style.display = 'none';
   const sug = document.getElementById('sug-inmueble');
   if (sug) sug.style.display = 'none';
+  // Clear autocompleted service fields (green hint ones)
+  ['epe','agua','tgiu','seguro','internet','expensas'].forEach(srv => {
+    const el = document.getElementById('f-nro-' + srv);
+    if (el && el.style.background === 'rgb(240, 250, 240)') {
+      el.value = '';
+      el.style.background = '';
+      el.title = '';
+    }
+  });
 }
 
 function buscarInmuebleEnLinea(input) {
@@ -5815,6 +5845,16 @@ function seleccionarInmueble(id) {
   if (sug) sug.style.display = 'none';
   const btn = document.getElementById('btn-limpiar-inmueble');
   if (btn) btn.style.display = 'block';
+  // Autocomplete service numbers from inmueble (only if field is empty)
+  const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
+  servicios.forEach(srv => {
+    const el = document.getElementById('f-nro-' + srv);
+    if (el && !el.value && inm['nro_' + srv]) {
+      el.value = inm['nro_' + srv];
+      el.style.background = '#f0faf0'; // subtle green hint
+      el.title = 'Completado desde el inmueble';
+    }
+  });
 }
 
 function abrirNuevoInmuebleDesdeContrato() {
