@@ -2424,6 +2424,7 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
   window._gpHoja = hoja;
   window._gpContratoId = c.id;
   window._gpComision = c.comision_porcentaje||8;
+  window._gpMesKey = mesKey;
   window._gpContratoActual = c;
 
   document.getElementById('modal-title').textContent = 'Gestión de Pago';
@@ -3484,8 +3485,10 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     await sbPatch('pagos', p.id, { recibo_prop_emitido: true, recibo_prop_fecha: now });
     const pLocal = DB.pagos.find(x => x.id === p.id);
     if (pLocal) { pLocal.recibo_prop_emitido = true; pLocal.recibo_prop_fecha = now; }
-    const contrato = DB.contratos.find(x => x.id === contratoId);
-    if (contrato) await recargarGrilla(contrato);
+    // Reload GP panel to show emitted indicator
+    if (window._gpHoja && window._gpContratoId && window._gpMesKey) {
+      await cargarPantallaGestionPago(window._gpHoja, window._gpContratoId, window._gpMesKey, window._gpMeses, window._gpComision, 's3');
+    }
   } catch(e) {}
 }
 
@@ -5834,11 +5837,10 @@ async function revertirReciboEmitido(pagoId) {
     const p = DB.pagos.find(x => x.id === pagoId);
     if (p) { p.recibo_prop_emitido = false; p.recibo_prop_fecha = null; }
     toast('Emisión revertida ✓');
-    // Find contrato and reload GP
-    const hoja = p?.hoja;
-    const contrato = DB.contratos.find(c => c.hoja === hoja);
-    if (contrato) await recargarGrilla(contrato);
-    else await loadAll();
+    // Reload GP panel if open
+    if (window._gpHoja && window._gpContratoId && window._gpMesKey) {
+      await cargarPantallaGestionPago(window._gpHoja, window._gpContratoId, window._gpMesKey, window._gpMeses, window._gpComision, 's3');
+    }
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
