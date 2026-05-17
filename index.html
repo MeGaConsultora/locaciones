@@ -2424,7 +2424,7 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
   window._gpHoja = hoja;
   window._gpContratoId = c.id;
   window._gpComision = c.comision_porcentaje||8;
-  window._gpMesKey = mesKey;
+  window._gpMesKey = mesPreseleccionado;
   window._gpContratoActual = c;
 
   document.getElementById('modal-title').textContent = 'Gestión de Pago';
@@ -2454,6 +2454,7 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
 }
 
 async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, solapaInicial='s1') {
+  window._gpMesKey = mesKey; // keep in sync when month changes
   if (!mesKey) { document.getElementById('gp-contenido').innerHTML=''; return; }
   const c = DB.contratos.find(x=>x.id===contratoId);
 
