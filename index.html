@@ -2652,7 +2652,6 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
     ${(() => {
       // Services rendered to propietario (paid by inquilino)
       const servRinde = (c?.servicios_rendir_propietario||'').toLowerCase();
-      const servPropAbona = (c?.servicios_propietario||'').toLowerCase();
       const srvList = [
         {key:'epe', label:'EPE', monto: p.monto_epe||0},
         {key:'agua', label:'Agua', monto: p.monto_agua||0},
@@ -2663,24 +2662,33 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
       ];
       let html = '';
       for (const srv of srvList) {
-        if (!srv.monto) continue;
+        if (!srv.monto && !(c?.['pct_prop_'+srv.key] > 0)) continue;
         const pctInq = c?.['pct_'+srv.key] ?? 100;
         const pctProp = c?.['pct_prop_'+srv.key] ?? 0;
         const seRinde = servRinde.includes(srv.key);
-        const propAbona = servPropAbona.includes(srv.key);
 
         if (seRinde) {
-          // Propietario paga la boleta — le rendimos lo que cobró el inquilino
+          // Sum monto from ALL contracts sharing same nro for this service
+          const nro = c?.['nro_'+srv.key];
+          let totalRendidoInq = srv.monto; // start with this contract
+          if (nro) {
+            const otrosContratos = DB.contratos.filter(x => x.id !== contratoId && x['nro_'+srv.key] === nro);
+            for (const oc of otrosContratos) {
+              // Find pago for this other contract in the same month
+              const ocPago = DB.pagos.find(pg => pg.hoja === oc.hoja && pg.mes && pg.mes.startsWith(mesKey));
+              if (ocPago) totalRendidoInq += ocPago['monto_'+srv.key] || 0;
+            }
+          }
           html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
             <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
-              <input type="checkbox" id="prop-chk-srv-${srv.key}" value="${srv.monto}" data-signo="1" checked onchange="recalcProp()" style="width:15px;height:15px">
-              ${srv.label} (a rendir)
+              <input type="checkbox" id="prop-chk-srv-${srv.key}" value="${totalRendidoInq}" data-signo="1" checked onchange="recalcProp()" style="width:15px;height:15px">
+              ${srv.label} (a rendir${nro?' — Cta '+nro:''})
             </label>
-            <span style="font-size:0.85rem;color:var(--green)">+ ${formatMoney(srv.monto)}</span>
+            <span style="font-size:0.85rem;color:var(--green)">+ ${formatMoney(totalRendidoInq)}</span>
           </div>`;
-        } else if (propAbona && pctProp > 0 && pctInq > 0) {
-          // Inmobiliaria paga — descontamos solo la parte del propietario
-          const totalBill = Math.round(srv.monto * 100 / pctInq);
+        } else if (pctProp > 0) {
+          // Propietario pays his % — deduct from liquidation
+          const totalBill = pctInq > 0 ? Math.round(srv.monto * 100 / pctInq) : srv.monto;
           const montoProp = Math.round(totalBill * pctProp / 100);
           if (montoProp > 0) {
             html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
