@@ -948,7 +948,7 @@ function renderContratos() {
         // Get total saldo (up to current month)
         const saldoTotal = DB.pagos.filter(p => p.hoja===c.hoja && p.saldo>0 && p.mes && p.mes.substring(0,7)<=mesActual).reduce((s,p)=>s+(p.saldo||0),0);
         // Gastos de inicio pendientes
-        const gastosCuotas = DB_GASTOS_CUOTAS.filter(g => g.contrato_id === c.id && g.mes && g.mes.substring(0,7) <= mesActual);
+        const gastosCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id && g.mes && g.mes.substring(0,7) <= mesActual);
         const gastosSaldoInq = gastosCuotas.reduce((s,g) => s + Math.max(0,(g.monto_inquilino||0)-(g.pagado_inquilino||0)), 0);
         const saldoTotalConGastos = saldoTotal + gastosSaldoInq;
         return `<tr onclick="openContrato(${c.id})">
@@ -2448,7 +2448,7 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
   document.getElementById('modal-body').innerHTML = `
     ${(() => {
       // Gastos de inicio summary
-      const cuotas = DB_GASTOS_CUOTAS.filter(g => g.contrato_id === c.id);
+      const cuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id);
       if (!cuotas.length) return '';
       const totalInq = cuotas.reduce((s,g) => s+(g.monto_inquilino||0), 0);
       const pagadoInq = cuotas.reduce((s,g) => s+(g.pagado_inquilino||0), 0);
@@ -2542,10 +2542,10 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
         <div class="form-group"><label>Comisión (${comisionPct}%)</label><input id="gp-comision" type="number" value="${comisionMonto.toFixed(2)}" placeholder="0" readonly style="background:#f5f5f5"></div>
         ${(() => {
           // Gastos de inicio cuota for this month
-          const gastoCuota = DB_GASTOS_CUOTAS.find(g => g.contrato_id === contratoId && g.mes && g.mes.startsWith(mesKey));
+          const gastoCuota = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey));
           if (!gastoCuota || (!gastoCuota.monto_inquilino && !gastoCuota.monto_propietario)) return '';
-          const cuotaNum = DB_GASTOS_CUOTAS.filter(g => g.contrato_id === contratoId).findIndex(g => g.mes && g.mes.startsWith(mesKey)) + 1;
-          const totalCuotas = DB_GASTOS_CUOTAS.filter(g => g.contrato_id === contratoId).length;
+          const cuotaNum = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).findIndex(g => g.mes && g.mes.startsWith(mesKey)) + 1;
+          const totalCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).length;
           return `<div class="form-group" style="grid-column:1/-1">
             <label>Gastos de inicio (cuota ${cuotaNum}/${totalCuotas})</label>
             <div style="display:flex;gap:0.75rem;margin-top:4px">
@@ -2784,10 +2784,10 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
     })()}
     ${(() => {
       // Gastos de inicio - propietario share
-      const gc = DB_GASTOS_CUOTAS.find(g => g.contrato_id === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7)));
+      const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7)));
       if (!gc || !gc.monto_propietario) return '';
-      const cuotaNum = DB_GASTOS_CUOTAS.filter(g => g.contrato_id === c?.id).findIndex(g => g.mes && g.mes.startsWith(p.mes?.substring(0,7))) + 1;
-      const totalCuotas = DB_GASTOS_CUOTAS.filter(g => g.contrato_id === c?.id).length;
+      const cuotaNum = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c?.id).findIndex(g => g.mes && g.mes.startsWith(p.mes?.substring(0,7))) + 1;
+      const totalCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c?.id).length;
       const montoProp = gc.monto_propietario;
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
         <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
@@ -5984,25 +5984,35 @@ async function generarGastosCuotas(contratoId, body) {
   const montoInq = Math.round(montoPorCuota * pctInq / 100);
   const montoProp = Math.round(montoPorCuota * pctProp / 100);
 
-  // Get existing cuotas to avoid duplicates
   const existing = await sbGet('gastos_inicio_cuotas', `contrato_id=eq.${contratoId}&order=mes.asc`);
 
-  // Calculate months
   const desde = body.gastos_desde_mes || body.vigencia_desde;
   if (!desde) return;
   const [sy, sm] = desde.substring(0,7).split('-').map(Number);
-  const rows = [];
+
   for (let i = 0; i < cuotas; i++) {
     let m = sm + i;
     let y = sy;
     while (m > 12) { m -= 12; y++; }
     const mes = `${y}-${String(m).padStart(2,'0')}-01`;
     const existingRow = existing.find(r => r.mes && r.mes.startsWith(mes.substring(0,7)));
-    if (!existingRow) {
-      rows.push({ contrato_id: contratoId, mes, monto_inquilino: montoInq, monto_propietario: montoProp, pagado_inquilino: 0, pagado_propietario: 0 });
+    if (existingRow) {
+      // Update existing row (preserve pagado values)
+      await sbPatch('gastos_inicio_cuotas', existingRow.id, { monto_inquilino: montoInq, monto_propietario: montoProp });
+    } else {
+      await sbPost('gastos_inicio_cuotas', { contrato_id: contratoId, mes, monto_inquilino: montoInq, monto_propietario: montoProp, pagado_inquilino: 0, pagado_propietario: 0 });
     }
   }
-  if (rows.length) await Promise.all(rows.map(r => sbPost('gastos_inicio_cuotas', r)));
+  // Delete rows beyond the new cuotas count
+  const mesKeys = Array.from({length: cuotas}, (_, i) => {
+    let m = sm + i, y = sy;
+    while (m > 12) { m -= 12; y++; }
+    return `${y}-${String(m).padStart(2,'0')}`;
+  });
+  const toDelete = existing.filter(r => !mesKeys.some(k => r.mes?.startsWith(k)));
+  if (toDelete.length) await Promise.all(toDelete.map(r => 
+    fetch(`${SB_URL}/rest/v1/gastos_inicio_cuotas?id=eq.${r.id}`, {method:'DELETE', headers:HEADERS})
+  ));
 }
 
 // ============================================================
