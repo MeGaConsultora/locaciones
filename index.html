@@ -3711,7 +3711,7 @@ function openNuevoContrato() {
     vigencia_desde: null, vigencia_hasta: null,
     tipo_inmueble: 'Casa/Habitación', modalidad_pago: 'ADELANTADO',
     comision_porcentaje: 8, periodicidad_actualizacion: '', indice_actualizacion: '',
-    gastos_inicio: 0, dia_vencimiento: 10, interes_punitorio: 0,
+    gastos_inicio: 0, gastos_cuotas: 1, gastos_pct_inquilino: 100, gastos_pct_propietario: 0, dia_vencimiento: 10, interes_punitorio: 0,
     importe_inicial: 0, servicios_inquilino: '',
     nro_epe: '', nro_agua: '', nro_tgiu: '', nro_seguro: '', nro_internet: '', nro_expensas: '',
     fecha_rescision: null
@@ -3775,7 +3775,7 @@ function _abrirFormularioContrato(c, esNuevo) {
           ${['IPC (Índice de Precios al Consumidor)','ICL (Índice Contratos de Locación)','IRL (Índice de Referencia de Locaciones)','Kg de novillos','Dólar oficial','Acuerdo entre partes','Otro'].map(i=>`<option ${c.indice_actualizacion===i?'selected':''}>${i}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group"><label>Gastos inicio</label><input id="f-gastos" type="number" value="${c.gastos_inicio||0}" placeholder="0"></div>
+
       <div class="form-group"><label>Importe inicial alquiler</label><input id="f-importe-inicial" type="number" value="${c.importe_inicial||''}" placeholder="0" style="border-color:var(--green)"></div>
       <div class="form-group"><label>Día vencimiento (del mes)</label><input id="f-dia-venc" type="number" min="1" max="31" value="10" placeholder="10"></div>
       <div class="form-group"><label>Interés punitorio diario (%)</label><input id="f-interes" type="number" min="0" step="0.001" value="0" placeholder="0"></div>
@@ -4174,7 +4174,7 @@ async function guardarContrato() {
     periodicidad_actualizacion: document.getElementById('f-periodicidad').value||null,
     indice_actualizacion: document.getElementById('f-indice').value||null,
     servicios_inquilino: servicios||null,
-    gastos_inicio: parseFloat(document.getElementById('f-gastos').value)||0,
+
     gastos_pagado: 0,
     propietario_id: propId||null,
     inquilino_id: inqId||null,
@@ -4282,9 +4282,9 @@ async function actualizarContrato(id) {
     comision_porcentaje: parseFloat(document.getElementById('f-comision-pct').value)||8,
     periodicidad_actualizacion: document.getElementById('f-periodicidad')?.value||null,
     indice_actualizacion: document.getElementById('f-indice')?.value||null,
-    gastos_inicio: parseFloat(document.getElementById('f-gastos')?.value)||0,
     notas: document.getElementById('f-notas')?.value.trim()||null,
     gastos_inicio: parseFloat(document.getElementById('f-gastos-inicio')?.value)||0,
+    vigencia_desde: document.getElementById('f-vigencia-desde')?.value||null,
     gastos_cuotas: parseInt(document.getElementById('f-gastos-cuotas')?.value)||1,
     gastos_desde_mes: document.getElementById('f-gastos-desde')?.value ? document.getElementById('f-gastos-desde').value+'-01' : null,
     gastos_pct_inquilino: parseFloat(document.getElementById('f-gastos-pct-inq')?.value)??100,
