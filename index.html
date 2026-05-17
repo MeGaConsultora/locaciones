@@ -700,7 +700,7 @@ async function loadAll() {
     if (currentUser?.token) updateAuthHeaders(currentUser.token);
     const [contratos, pagos] = await Promise.all([
       sbGet('contratos', 'select=*&order=titulo.asc&limit=1000'),
-      sbGetAll('pagos', 'select=*&order=mes.desc')
+      sbGetAll('pagos', 'select=*,recibo_prop_emitido,recibo_prop_fecha&order=mes.desc')
     ]);
     DB.contratos = contratos;
     DB.pagos = pagos;
@@ -3457,9 +3457,9 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     </style>
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
-    <div class="recibo-mitad"><div class="recibo-inner" id="rp1">${reciboHtml}</div></div>
+    <div class="recibo-mitad"><div style="padding:3px 18px 0;font-size:0.62rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em;background:white">Original</div><div class="recibo-inner" id="rp1" style="padding:6px 18px 10px">${reciboHtml}</div></div>
     <hr class="separador">
-    <div class="recibo-mitad"><div class="recibo-inner" id="rp2" style="position:relative">${reciboHtml}<div style="position:absolute;bottom:6px;right:14px;font-size:0.65rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em">Duplicado</div></div></div>
+    <div class="recibo-mitad"><div style="padding:3px 18px 0;font-size:0.62rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em;background:white">Duplicado</div><div class="recibo-inner" id="rp2" style="padding:6px 18px 10px">${reciboHtml}</div></div>
     <script>
       function ajustarEscala(id) {
         const wrap = document.getElementById(id);
@@ -4613,9 +4613,9 @@ function imprimirRecibo(data) {
       }</style>
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
-    <div class="recibo-mitad"><div class="recibo-inner" id="ri1" style="padding:10px 16px">${recibo}</div></div>
+    <div class="recibo-mitad"><div style="padding:3px 16px 0;font-size:0.62rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em;background:white">Original</div><div class="recibo-inner" id="ri1" style="padding:6px 16px 10px">${recibo}</div></div>
     <hr class="separador">
-    <div class="recibo-mitad"><div class="recibo-inner" id="ri2" style="padding:10px 16px;position:relative">${recibo}<div style="position:absolute;bottom:6px;right:14px;font-size:0.65rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em">Duplicado</div></div></div>
+    <div class="recibo-mitad"><div style="padding:3px 16px 0;font-size:0.62rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em;background:white">Duplicado</div><div class="recibo-inner" id="ri2" style="padding:6px 16px 10px">${recibo}</div></div>
     <script>
       function ajustarEscala(id) {
         const wrap = document.getElementById(id);
@@ -5461,7 +5461,7 @@ setInterval(async () => {
   try {
     const [contratos, pagos] = await Promise.all([
       sbGet('contratos', 'select=*&order=titulo.asc&limit=1000'),
-      sbGetAll('pagos', 'select=*&order=mes.desc')
+      sbGetAll('pagos', 'select=*,recibo_prop_emitido,recibo_prop_fecha&order=mes.desc')
     ]);
     DB.contratos = contratos;
     DB.pagos = pagos;
@@ -5818,8 +5818,194 @@ async function confirmarImportarPDF() {
 }
 
 // ============================================================
-// INMUEBLES
+// RECIBOS A EMITIR
 // ============================================================
+function populateRecibosAnios() {
+  const sel = document.getElementById('recibos-anio');
+  if (!sel || sel.options.length > 1) return;
+  const anios = [...new Set(DB.pagos.map(p => p.mes?.substring(0,4)).filter(Boolean))].sort().reverse();
+  anios.forEach(a => { const o = document.createElement('option'); o.value=a; o.textContent=a; sel.appendChild(o); });
+}
+
+function renderRecibosEmitir() {
+  const anio = document.getElementById('recibos-anio')?.value;
+  const mes = document.getElementById('recibos-mes')?.value;
+  const cont = document.getElementById('recibos-emitir-contenido');
+  const btnSel = document.getElementById('btn-sel-todos-recibos');
+  const btnDesel = document.getElementById('btn-desel-todos-recibos');
+  const btnGen = document.getElementById('btn-generar-recibos');
+  if (!anio || !mes) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">🖨️</div><p>Seleccioná un año y mes</p></div>';
+    [btnSel,btnDesel,btnGen].forEach(b => b && (b.style.display='none'));
+    return;
+  }
+  const mesKey = anio + '-' + mes;
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const fechaMes = meses[parseInt(mes)-1] + ' ' + anio;
+  const pagos = DB.pagos.filter(p =>
+    p.mes && p.mes.startsWith(mesKey) &&
+    (!p.saldo || p.saldo === 0) &&
+    !p.recibo_prop_emitido
+  );
+  if (!pagos.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">✓</div><p>No hay recibos pendientes de emisión para ese período</p></div>';
+    [btnSel,btnDesel,btnGen].forEach(b => b && (b.style.display='none'));
+    return;
+  }
+  [btnSel,btnDesel,btnGen].forEach(b => b && (b.style.display=''));
+  cont.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+    <thead><tr style="background:var(--ink2);color:white">
+      <th style="padding:8px 10px;width:40px"><input type="checkbox" id="chk-all-recibos" onchange="seleccionarTodosRecibos(this.checked)" style="width:15px;height:15px"></th>
+      <th style="padding:8px 10px;text-align:left">Contrato</th>
+      <th style="padding:8px 10px;text-align:left">Propietario</th>
+      <th style="padding:8px 10px;text-align:left">Inquilino</th>
+      <th style="padding:8px 10px;text-align:right">Total</th>
+      <th style="padding:8px 10px;text-align:center">Período</th>
+    </tr></thead>
+    <tbody>
+      ${pagos.map(p => {
+        const c = DB.contratos.find(x => x.hoja === p.hoja);
+        return `<tr style="border-bottom:1px solid #eee">
+          <td style="padding:7px 10px;text-align:center"><input type="checkbox" class="chk-recibo" data-pago-id="${p.id}" data-hoja="${p.hoja}" style="width:15px;height:15px" onchange="actualizarBtnGenerar()"></td>
+          <td style="padding:7px 10px;font-weight:600">${c?.titulo||p.hoja}</td>
+          <td style="padding:7px 10px">${c?.locador||'—'}</td>
+          <td style="padding:7px 10px">${c?.locatario||'—'}</td>
+          <td style="padding:7px 10px;text-align:right">${formatMoney(p.total||0)}</td>
+          <td style="padding:7px 10px;text-align:center">${fechaMes}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table></div>`;
+}
+
+function seleccionarTodosRecibos(sel) {
+  document.querySelectorAll('.chk-recibo').forEach(c => c.checked = sel);
+  const chkAll = document.getElementById('chk-all-recibos');
+  if (chkAll) chkAll.checked = sel;
+  actualizarBtnGenerar();
+}
+
+function actualizarBtnGenerar() {
+  const sel = document.querySelectorAll('.chk-recibo:checked').length;
+  const btn = document.getElementById('btn-generar-recibos');
+  if (btn) btn.textContent = sel > 0 ? `🖨️ Generar ${sel} recibo/s` : '🖨️ Generar seleccionados';
+}
+
+async function generarRecibosSeleccionados() {
+  const checks = [...document.querySelectorAll('.chk-recibo:checked')];
+  if (!checks.length) { toast('Seleccioná al menos un recibo', 'error'); return; }
+  if (!confirm(`¿Generar e imprimir ${checks.length} recibo/s? Se marcarán como emitidos.`)) return;
+  const anio = document.getElementById('recibos-anio')?.value;
+  const mes = document.getElementById('recibos-mes')?.value;
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const fechaMes = meses[parseInt(mes)-1] + ' ' + anio;
+  const ventana = window.open('', 'Recibos Propietario');
+  let allHtml = '';
+  const pagoIds = [];
+  for (const [idx, chk] of checks.entries()) {
+    const pagoId = parseInt(chk.dataset.pagoId);
+    const hoja = chk.dataset.hoja;
+    const c = DB.contratos.find(x => x.hoja === hoja);
+    const p = DB.pagos.find(x => x.id === pagoId);
+    if (!c || !p) continue;
+    pagoIds.push(pagoId);
+    let extras = [];
+    try { extras = await sbGet('pagos_extras', `pago_id=eq.${pagoId}&order=id.asc`); } catch(e) {}
+    const extrasProp = extras.filter(e => e.a_cargo_de === 'propietario');
+    const comisionPct = c.comision_porcentaje || 8;
+    const reciboHtml = generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes);
+    if (idx > 0) allHtml += '<div style="page-break-before:always"></div>';
+    allHtml += `
+      <div style="font-size:0.62rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em;padding:3px 18px 0;background:white">Original</div>
+      <div class="recibo-mitad"><div class="recibo-inner">${reciboHtml}</div></div>
+      <hr class="separador">
+      <div style="font-size:0.62rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em;padding:3px 18px 0;background:white">Duplicado</div>
+      <div class="recibo-mitad"><div class="recibo-inner">${reciboHtml}</div></div>`;
+  }
+  ventana.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8"><title>Recibos Propietario — ${fechaMes}</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { background:white; font-family:'DM Sans',Arial,sans-serif; }
+      .no-print { text-align:center; padding:12px 0; }
+      .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; }
+      .recibo-mitad { width:194mm; height:135mm; overflow:hidden; background:white; }
+      .recibo-inner { transform-origin:top left; padding:8px 18px; }
+      .separador { width:194mm; border:none; border-top:2px dashed #999; margin:0; }
+      @page { size: A4 portrait; margin: 8mm 10mm; }
+      @media print { .no-print { display:none; } }
+    </style>
+  </head><body>
+    <div class="no-print"><button onclick="window.print()">🖨️ Imprimir todos</button></div>
+    ${allHtml}
+    <script>
+      window.addEventListener('load', () => {
+        document.querySelectorAll('.recibo-inner').forEach(wrap => {
+          const parent = wrap.parentElement;
+          const avail = parent.clientHeight - 10;
+          const actual = wrap.scrollHeight;
+          if (actual > avail) { const s = avail/actual; wrap.style.transform='scale('+s+')'; wrap.style.width=(100/s)+'%'; }
+        });
+      });
+    <\/script>
+  </body></html>`);
+  ventana.document.close();
+  const now = new Date().toISOString();
+  await Promise.all(pagoIds.map(id => sbPatch('pagos', id, { recibo_prop_emitido: true, recibo_prop_fecha: now })));
+  pagoIds.forEach(id => { const p = DB.pagos.find(x => x.id === id); if (p) { p.recibo_prop_emitido = true; p.recibo_prop_fecha = now; } });
+  toast(`${pagoIds.length} recibo/s marcados como emitidos ✓`);
+  renderRecibosEmitir();
+}
+
+function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes) {
+  const alquiler = p.importe_alquiler || 0;
+  const comision = Math.round(alquiler * comisionPct / 100);
+  const neto = alquiler - comision;
+  let totalRendir = neto;
+  let itemsHtml = `
+    <tr style="background:#f5f0e8"><td style="padding:5px 10px">Alquiler</td><td style="padding:5px 10px;text-align:right">${formatMoney(alquiler)}</td></tr>
+    <tr><td style="padding:5px 10px">Comisión inmobiliaria (${comisionPct}%)</td><td style="padding:5px 10px;text-align:right;color:#c8483a">− ${formatMoney(comision)}</td></tr>`;
+  const servRinde = (c?.servicios_rendir_propietario||'').toLowerCase();
+  ['epe','agua','tgiu','seguro','internet','expensas'].forEach(srv => {
+    const monto = p['monto_'+srv] || 0;
+    const pctProp = c?.['pct_prop_'+srv] ?? 0;
+    const pctInq = c?.['pct_'+srv] ?? 100;
+    if (servRinde.includes(srv) && monto > 0) {
+      totalRendir += monto;
+      itemsHtml += `<tr style="background:#f5f0e8"><td style="padding:5px 10px">${srv.charAt(0).toUpperCase()+srv.slice(1)} (a rendir)</td><td style="padding:5px 10px;text-align:right;color:#2d7a4f">+ ${formatMoney(monto)}</td></tr>`;
+    } else if (!servRinde.includes(srv) && pctProp > 0 && monto > 0) {
+      const totalBill = pctInq > 0 ? Math.round(monto * 100 / pctInq) : monto;
+      const montoProp = Math.round(totalBill * pctProp / 100);
+      if (montoProp > 0) { totalRendir -= montoProp; itemsHtml += `<tr><td style="padding:5px 10px">${srv.charAt(0).toUpperCase()+srv.slice(1)} (prop. ${pctProp}%)</td><td style="padding:5px 10px;text-align:right;color:#c8483a">− ${formatMoney(montoProp)}</td></tr>`; }
+    }
+  });
+  extrasProp.forEach(e => {
+    const signo = e.tipo === 'credito' ? 1 : -1;
+    totalRendir += signo * (e.importe||0);
+    itemsHtml += `<tr style="background:#f5f0e8"><td style="padding:5px 10px">${e.concepto||'Extra'}</td><td style="padding:5px 10px;text-align:right;color:${signo>0?'#2d7a4f':'#c8483a'}">${signo>0?'+ ':'− '}${formatMoney(Math.abs(e.importe||0))}</td></tr>`;
+  });
+  return `<div style="font-family:'DM Sans',Arial,sans-serif;border:1.5px solid #1a1a2e;border-radius:4px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1.5px solid #1a1a2e;padding:8px 12px 6px">
+      <div><div style="font-size:1rem;font-weight:700;color:#1a1a2e">MeGa Consultora</div><div style="font-size:0.68rem;color:#666">Recibo de Rendición al Propietario</div></div>
+      <div style="text-align:right"><div style="font-size:0.65rem;color:#888">Período</div><div style="font-size:0.9rem;font-weight:700">${fechaMes}</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:6px 12px;font-size:0.75rem">
+      <div><span style="color:#888;font-size:0.62rem;display:block">Propietario</span>${c?.locador||'—'}</div>
+      <div><span style="color:#888;font-size:0.62rem;display:block">Inmueble</span>${c?.titulo||'—'}</div>
+      <div><span style="color:#888;font-size:0.62rem;display:block">Inquilino</span>${c?.locatario||'—'}</div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:0.75rem">
+      <thead><tr style="background:#1a1a2e;color:white"><th style="padding:4px 10px;text-align:left;font-size:0.62rem">Concepto</th><th style="padding:4px 10px;text-align:right;font-size:0.62rem">Importe</th></tr></thead>
+      <tbody>${itemsHtml}</tbody>
+      <tfoot><tr style="border-top:1.5px solid #1a1a2e"><td style="padding:5px 10px;font-weight:700;font-size:0.82rem">TOTAL A RECIBIR</td><td style="padding:5px 10px;text-align:right;font-weight:700;font-size:0.92rem;color:#2d7a4f">${formatMoney(totalRendir)}</td></tr></tfoot>
+    </table>
+    <div style="padding:6px 12px 8px;margin-top:4px">
+      <div style="max-width:180px;margin:0 auto;text-align:center"><div style="border-top:1px solid #333;padding-top:4px;font-size:0.68rem;color:#666;margin-top:18px">Firma propietario</div></div>
+    </div>
+  </div>`;
+}
+
 function formatDireccion(inm, short=false) {
   if (!inm) return '—';
   let dir = (inm.calle||'') + (inm.numero ? ' ' + inm.numero : '');
