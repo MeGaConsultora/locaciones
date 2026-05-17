@@ -905,7 +905,7 @@ function renderContratos() {
   // Gastos de inicio pendientes
   const gastosPend = DB_GASTOS_CUOTAS.filter(g => g.mes && g.mes.substring(0,7) <= TODAY.substring(0,7) && 
     ((g.monto_inquilino||0) > (g.pagado_inquilino||0) || (g.monto_propietario||0) > (g.pagado_propietario||0)));
-  const totalGastosPend = gastosPend.reduce((s,g) => s + Math.max(0,(g.monto_inquilino||0)-(g.pagado_inquilino||0)) + Math.max(0,(g.monto_propietario||0)-(g.pagado_propietario||0)), 0);
+  const totalGastosPend = gastosPend.reduce((s,g) => s + Math.max(0,(g.monto_inquilino||0)-(parseFloat(g.pagado_inquilino)||0)) + Math.max(0,(g.monto_propietario||0)-(parseFloat(g.pagado_propietario)||0)), 0);
   const statsEl = document.getElementById('stats-pendientes');
   if (statsEl) statsEl.innerHTML = `
     <div class="stat-card accent"><div class="stat-label">Total pendiente</div><div class="stat-val" style="font-size:1.3rem">${formatMoney(totalSaldo)}</div></div>
@@ -948,9 +948,8 @@ function renderContratos() {
         // Get total saldo (up to current month)
         const saldoTotal = DB.pagos.filter(p => p.hoja===c.hoja && p.saldo>0 && p.mes && p.mes.substring(0,7)<=mesActual).reduce((s,p)=>s+(p.saldo||0),0);
         // Gastos de inicio pendientes
-        const gastosCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id && g.mes && g.mes.substring(0,7) <= mesActual);
-        console.log('gastos debug', c.id, c.titulo, 'DB_GASTOS_CUOTAS.length=', DB_GASTOS_CUOTAS.length, 'gastosCuotas=', gastosCuotas.length, 'mesActual=', mesActual);
-        const gastosSaldoInq = gastosCuotas.reduce((s,g) => s + Math.max(0,(g.monto_inquilino||0)-(g.pagado_inquilino||0)), 0);
+        const gastosCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id);
+        const gastosSaldoInq = gastosCuotas.reduce((s,g) => s + Math.max(0,(g.monto_inquilino||0)-(parseFloat(g.pagado_inquilino)||0)), 0);
         const saldoTotalConGastos = saldoTotal + gastosSaldoInq;
         return `<tr onclick="openContrato(${c.id})">
           <td><strong>${c.titulo||c.hoja}</strong></td>
@@ -2541,22 +2540,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
           return fields;
         })()}
         <div class="form-group"><label>Comisión (${comisionPct}%)</label><input id="gp-comision" type="number" value="${comisionMonto.toFixed(2)}" placeholder="0" readonly style="background:#f5f5f5"></div>
-        ${(() => {
-          // Gastos de inicio cuota for this month
-          const gastoCuota = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey));
-          if (!gastoCuota || (!gastoCuota.monto_inquilino && !gastoCuota.monto_propietario)) return '';
-          const cuotaNum = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).findIndex(g => g.mes && g.mes.startsWith(mesKey)) + 1;
-          const totalCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).length;
-          return `<div class="form-group" style="grid-column:1/-1">
-            <label>Gastos de inicio (cuota ${cuotaNum}/${totalCuotas})</label>
-            <div style="display:flex;gap:0.75rem;margin-top:4px">
-              ${gastoCuota.monto_inquilino > 0 ? `<div style="flex:1"><div style="font-size:0.72rem;color:#666;margin-bottom:2px">Inquilino — debe: ${formatMoney(gastoCuota.monto_inquilino)} · pagado: ${formatMoney(gastoCuota.pagado_inquilino||0)}</div>
-              <input id="gp-gastos-inq" type="number" value="${gastoCuota.pagado_inquilino||''}" placeholder="0" data-gastos-id="${gastoCuota.id}" data-tipo="inquilino" oninput="recalcGP(${comisionPct})" style="width:100%"></div>` : ''}
-              ${gastoCuota.monto_propietario > 0 ? `<div style="flex:1"><div style="font-size:0.72rem;color:#666;margin-bottom:2px">Propietario — debe: ${formatMoney(gastoCuota.monto_propietario)} · pagado: ${formatMoney(gastoCuota.pagado_propietario||0)}</div>
-              <input id="gp-gastos-prop" type="number" value="${gastoCuota.pagado_propietario||''}" placeholder="0" data-gastos-id="${gastoCuota.id}" data-tipo="propietario" oninput="recalcGP(${comisionPct})" style="width:100%"></div>` : ''}
-            </div>
-          </div>`;
-        })()}
+
 
       </div>
 
@@ -2981,18 +2965,7 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
   const internet = parseFloat(document.getElementById('gp-internet')?.value)||0;
   const expensas = parseFloat(document.getElementById('gp-expensas')?.value)||0;
   
-  // Gastos de inicio
-  const gastosInqEl = document.getElementById('gp-gastos-inq');
-  const gastosPropEl = document.getElementById('gp-gastos-prop');
-  const gastosId = gastosInqEl?.dataset?.gastosId || gastosPropEl?.dataset?.gastosId;
-  const gastosInqPagado = parseFloat(gastosInqEl?.value)||0;
-  const gastosPropPagado = parseFloat(gastosPropEl?.value)||0;
-  
-  // Gastos inquilino add to total
-  const gastoCuota = gastosId ? DB_GASTOS_CUOTAS.find(g => g.id === parseInt(gastosId)) : null;
-  const gastosInqMonto = gastoCuota?.monto_inquilino || 0;
-  
-  const total = alq+epe+agua+tgiu+seguro+internet+expensas+extrasInqTotal+gastosInqMonto;
+  const total = alq+epe+agua+tgiu+seguro+internet+expensas+extrasInqTotal;
 
   try {
     const hojaEncoded = encodeURIComponent(hoja);
@@ -3023,16 +2996,7 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       pagoId = r[0]?.id;
     }
     toast('Importes guardados ✓');
-    // Save gastos inicio pagado
-    if (gastosId) {
-      const updates = {};
-      if (gastosInqEl) updates.pagado_inquilino = gastosInqPagado;
-      if (gastosPropEl) updates.pagado_propietario = gastosPropPagado;
-      await sbPatch('gastos_inicio_cuotas', parseInt(gastosId), updates);
-      // Update local cache
-      const gc = DB_GASTOS_CUOTAS.find(g => g.id === parseInt(gastosId));
-      if (gc) { if (gastosInqEl) gc.pagado_inquilino = gastosInqPagado; if (gastosPropEl) gc.pagado_propietario = gastosPropPagado; }
-    }
+
     const c = DB.contratos.find(x=>x.id===contratoId);
     if (c) {
       await recargarGrilla(c);
@@ -4584,20 +4548,32 @@ function cargarItemsPago(impagos, pagoId, todosPagos) {
     { id:'otros',    label:'Otros',     val: pago.monto_otros, concepto: pago.concepto_otros },
   ].filter(it => it.val && it.val > 0);
 
+  // Add gastos de inicio cuota if applicable
+  const contrato = DB.contratos.find(c => c.hoja === pago.hoja);
+  const gastoCuota = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contrato?.id && g.mes && g.mes.startsWith(pago.mes?.substring(0,7)));
+  const cuotaNum = gastoCuota ? DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contrato?.id).findIndex(g => g.mes && g.mes.startsWith(pago.mes?.substring(0,7))) + 1 : 0;
+  const totalCuotas = gastoCuota ? DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contrato?.id).length : 0;
+  if (gastoCuota?.monto_inquilino > 0) {
+    items.push({ id:'gastos-inicio', label:`Gastos de inicio (cuota ${cuotaNum}/${totalCuotas})`, val: gastoCuota.monto_inquilino, gastosId: gastoCuota.id, editable: true });
+  }
+
   document.getElementById('items-pago').innerHTML = `
     <div class="section-title" style="margin-bottom:1rem">Mes ${nroMes} — ${formatDate(pago.mes)}</div>
     <p style="font-size:0.82rem;color:#888;margin-bottom:1rem">Marcá los ítems que abona en este momento:</p>
     <div style="background:var(--cream);border-radius:10px;padding:1rem;margin-bottom:1rem">
       ${items.map(it => `
         <div style="padding:0.5rem 0;border-bottom:1px solid var(--border)">
-          <div style="display:flex;align-items:center;justify-content:space-between">
-            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9rem;flex:1">
               <input type="checkbox" id="chk-${it.id}" value="${it.val}" checked
+                ${it.gastosId ? `data-gastos-id="${it.gastosId}"` : ''}
                 style="width:16px;height:16px;cursor:pointer"
                 onchange="recalcularTotal()">
               ${it.label}
             </label>
-            <span style="font-weight:600">${formatMoney(it.val)}</span>
+            ${it.editable 
+              ? `<input type="number" id="val-${it.id}" value="${it.val}" style="width:110px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.88rem;text-align:right" oninput="document.getElementById('chk-${it.id}').value=this.value;recalcularTotal()">`
+              : `<span style="font-weight:600">${formatMoney(it.val)}</span>`}
           </div>
           ${it.id==='otros' ? `<input type="text" id="concepto-otros" placeholder="Describí el concepto..." value="${it.concepto||''}"
             style="width:100%;margin-top:6px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem;font-family:'DM Sans',sans-serif">` : ''}
@@ -4660,6 +4636,16 @@ async function confirmarPago(pagoId, hoja, nroMes) {
     });
 
     toast('Pago registrado ✓');
+
+    // Save gastos pagado if applicable
+    const gastosChk = document.getElementById('chk-gastos-inicio');
+    if (gastosChk && gastosChk.dataset.gastosId) {
+      const gastosId = parseInt(gastosChk.dataset.gastosId);
+      const gastosPagado = gastosChk.checked ? (parseFloat(gastosChk.value)||0) : 0;
+      await sbPatch('gastos_inicio_cuotas', gastosId, { pagado_inquilino: gastosPagado });
+      const gc = DB_GASTOS_CUOTAS.find(g => g.id === gastosId);
+      if (gc) gc.pagado_inquilino = gastosPagado;
+    }
 
     // Generar recibo
     imprimirRecibo({
