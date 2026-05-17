@@ -1937,9 +1937,24 @@ async function cargarListaServicios(filtro='') {
       continue;
     }
 
-    // Split into loaded and not loaded
-    const contratos = todosConServicio.filter(c => { const p = pagosPorHoja[c.hoja]; return !p || !p[campo] || p[campo] === 0; });
-    const cargados = todosConServicio.filter(c => { const p = pagosPorHoja[c.hoja]; return p && p[campo] > 0; });
+    // Split by nro group: if ANY contract in a nro group has importe, whole group is "cargado"
+    const nrosConImporte = new Set();
+    todosConServicio.forEach(c => {
+      const p = pagosPorHoja[c.hoja];
+      if (p && p[campo] > 0 && c[`nro_${srv}`]) nrosConImporte.add(c[`nro_${srv}`]);
+    });
+    const contratos = todosConServicio.filter(c => {
+      const p = pagosPorHoja[c.hoja];
+      const nro = c[`nro_${srv}`];
+      if (nro && nrosConImporte.has(nro)) return false; // group already loaded
+      return !p || !p[campo] || p[campo] === 0;
+    });
+    const cargados = todosConServicio.filter(c => {
+      const nro = c[`nro_${srv}`];
+      if (nro && nrosConImporte.has(nro)) return true; // group has importe
+      const p = pagosPorHoja[c.hoja];
+      return p && p[campo] > 0;
+    });
     const sinCargar = contratos.length;
 
     const mesNext = (() => {
@@ -3592,7 +3607,7 @@ function _abrirFormularioContrato(c, esNuevo) {
         const checked = c.servicios_inquilino?.includes(s) ? 'checked' : '';
         return `<label style="display:flex;align-items:center;gap:6px;font-size:0.88rem;cursor:pointer">
           <input type="checkbox" class="serv-chk serv-edit-chk" value="${s}" ${checked} style="width:15px;height:15px"
-            onchange="actualizarTotalPct('${s.toLowerCase()}')">  ${s}
+            onchange="actualizarTotalPct(this.value.toLowerCase())">  ${s}
         </label>`;
       }).join('')}
     </div>
