@@ -4056,6 +4056,17 @@ async function actualizarContrato(id) {
 
     await sbPatch('contratos', id, body);
 
+    // Propagate nro_* to inmueble and other active contracts with same inmueble_id
+    if (body.inmueble_id) {
+      const nros = { nro_epe: body.nro_epe||null, nro_agua: body.nro_agua||null, nro_tgiu: body.nro_tgiu||null,
+                     nro_seguro: body.nro_seguro||null, nro_internet: body.nro_internet||null, nro_expensas: body.nro_expensas||null };
+      if (Object.values(nros).some(v => v)) {
+        await sbPatch('inmuebles', body.inmueble_id, nros);
+        const otrosContratos = DB.contratos.filter(c => c.inmueble_id === body.inmueble_id && c.id !== id && getEstado(c) === 'vigente');
+        if (otrosContratos.length) await Promise.all(otrosContratos.map(c => sbPatch('contratos', c.id, nros)));
+      }
+    }
+
     // Recalculate existing unpaid pagos if pct changed
     if (pctCambiados.length > 0) {
       const hoja = oldContrato?.hoja || oldContrato?.titulo;
