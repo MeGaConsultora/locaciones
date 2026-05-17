@@ -2796,11 +2796,6 @@ function recalcCobro() {
 }
 
 function recalcProp() {
-  // Check if already emitted
-  if (p.recibo_prop_emitido) {
-    const fecha = p.recibo_prop_fecha ? new Date(p.recibo_prop_fecha).toLocaleDateString('es-AR') : 'fecha desconocida';
-    if (!confirm(`⚠ Este recibo ya fue emitido el ${fecha}.\n\n¿Querés generarlo nuevamente de todas formas?`)) return;
-  }
   const checks = document.querySelectorAll('[id^="prop-chk-"]');
   let total = 0;
   checks.forEach(c => {
@@ -3391,6 +3386,12 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
   const p = existing[0];
   const c = DB.contratos.find(x=>x.id===contratoId);
 
+  // Check if already emitted
+  if (p.recibo_prop_emitido) {
+    const fecha = p.recibo_prop_fecha ? new Date(p.recibo_prop_fecha).toLocaleDateString('es-AR') : 'fecha desconocida';
+    if (!confirm(`⚠ Este recibo ya fue emitido el ${fecha}.\n\n¿Querés generarlo nuevamente de todas formas?`)) return;
+  }
+
   const checks = document.querySelectorAll('[id^="prop-chk-"]');
   let totalRendir = 0;
   const items = [];
@@ -3477,6 +3478,15 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     <\/script>
   </body></html>`);
   ventana.document.close();
+  // Mark as emitted
+  try {
+    const now = new Date().toISOString();
+    await sbPatch('pagos', p.id, { recibo_prop_emitido: true, recibo_prop_fecha: now });
+    const pLocal = DB.pagos.find(x => x.id === p.id);
+    if (pLocal) { pLocal.recibo_prop_emitido = true; pLocal.recibo_prop_fecha = now; }
+    const contrato = DB.contratos.find(x => x.id === contratoId);
+    if (contrato) await recargarGrilla(contrato);
+  } catch(e) {}
 }
 
 async function guardarNuevoMes(hoja, contratoId) {
