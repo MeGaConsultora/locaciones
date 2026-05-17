@@ -2206,6 +2206,7 @@ function validarPctAlGuardar(contratoId) {
 function actualizarTotalPct(srv) {
   const inq = parseFloat(document.getElementById(`f-pct-${srv}`)?.value)||0;
   const prop = parseFloat(document.getElementById(`f-pct-prop-${srv}`)?.value)||0;
+  console.log('actualizarTotalPct', srv, 'inq=', inq, 'prop=', prop, 'field value=', document.getElementById(`f-pct-${srv}`)?.value);
   const total = inq + prop;
   const el = document.getElementById(`pct-total-${srv}`);
   if (el) {
@@ -2247,6 +2248,7 @@ function actualizarTotalPct(srv) {
         const vp = (c[`pct_prop_${s}`] !== null && c[`pct_prop_${s}`] !== undefined) ? c[`pct_prop_${s}`] : 0;
         return sum + v + vp;
       }, 0);
+      console.log('sharedWarning', s, 'nro=', nroActual, 'pctInq=', pctInq, 'pctProp=', pctProp, 'otros=', otrosContratos.map(c=>({titulo:c.titulo, pct:c['pct_'+s], pct_prop:c['pct_prop_'+s]})), 'total=', totalGrupo);
       if (Math.abs(totalGrupo - 100) > 0.5) {
         sharedWarnings.push(`${s.toUpperCase()} (grupo N°${nroActual} suma ${totalGrupo}%)`);
       }
@@ -3602,7 +3604,8 @@ function _abrirFormularioContrato(c, esNuevo) {
       ${['EPE','Agua','TGIU','Internet','Expensas','Seguro'].map(s => {
         const checked = c.servicios_inquilino?.includes(s) ? 'checked' : '';
         return `<label style="display:flex;align-items:center;gap:6px;font-size:0.88rem;cursor:pointer">
-          <input type="checkbox" class="serv-chk serv-edit-chk" value="${s}" ${checked} style="width:15px;height:15px"> ${s}
+          <input type="checkbox" class="serv-chk serv-edit-chk" value="${s}" ${checked} style="width:15px;height:15px"
+            onchange="onServicioChange(this)"> ${s}
         </label>`;
       }).join('')}
     </div>
@@ -5881,6 +5884,18 @@ async function confirmarEliminarInmueble(id) {
   if (!confirm('¿Eliminar este inmueble?')) return;
   try { await sbDelete('inmuebles', id); toast('Inmueble eliminado ✓'); await loadAll(); closeModal(); renderInmuebles(); }
   catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function onServicioChange(chk) {
+  const s = chk.value.toLowerCase();
+  const pctEl = document.getElementById('f-pct-' + s);
+  const pctPropEl = document.getElementById('f-pct-prop-' + s);
+  if (chk.checked) {
+    // If being checked and value is still default 100, reset to 0
+    if (pctEl && parseFloat(pctEl.value) === 100) pctEl.value = 0;
+    if (pctPropEl && parseFloat(pctPropEl.value) === 0) pctPropEl.value = 0;
+  }
+  actualizarTotalPct(s);
 }
 
 function limpiarInmueble() {
