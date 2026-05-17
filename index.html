@@ -3893,15 +3893,17 @@ async function guardarPersonaInline(rol) {
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
+let _personaIdxCounter = 0;
+
 function mostrarPersonaEnLista(rol, persona) {
   const contenedor = document.getElementById(`lista-${rol === 'propietario' ? 'propietarios' : 'inquilinos'}`);
   if (!contenedor) return;
-  const idx = contenedor.children.length;
+  const idx = _personaIdxCounter++;
   const nombre = formatNombrePersona(persona);
   const div = document.createElement('div');
   div.dataset.rol = rol;
   div.dataset.personaId = persona.id;
-  div.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem';
+  div.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem;position:relative';
   div.innerHTML = `
     <input type="text" value="${nombre}" style="flex:1;padding:6px 10px;border:1.5px solid var(--green);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem;color:var(--green);font-weight:600" oninput="buscarPersonaEnLinea(this,'${rol}',${idx})">
     <div id="sug-${rol}-${idx}" style="position:absolute;background:white;border:1px solid var(--border);border-radius:8px;margin-top:4px;display:none;max-height:150px;overflow-y:auto;z-index:300;min-width:300px"></div>
@@ -3912,11 +3914,11 @@ function mostrarPersonaEnLista(rol, persona) {
 
 function agregarPersonaRol(rol) {
   const contenedor = document.getElementById(`lista-${rol === 'propietario' ? 'propietarios' : 'inquilinos'}`);
-  const idx = contenedor.children.length;
+  const idx = _personaIdxCounter++;
   const div = document.createElement('div');
   div.dataset.rol = rol;
   div.dataset.personaId = '';
-  div.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem';
+  div.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem;position:relative';
   div.innerHTML = `
     <input type="text" placeholder="Buscar apellido o DNI..." style="flex:1;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem" oninput="buscarPersonaEnLinea(this,'${rol}',${idx})">
     <div id="sug-${rol}-${idx}" style="position:absolute;background:white;border:1px solid var(--border);border-radius:8px;margin-top:4px;display:none;max-height:150px;overflow-y:auto;z-index:300;min-width:300px"></div>
@@ -3934,12 +3936,12 @@ async function buscarPersonaEnLinea(input, rol, idx) {
   if (q.length < 2) { div.style.display='none'; return; }
   const res = DB_PERSONAS.filter(p => `${p.apellido||''} ${p.nombre||''} ${p.dni||''}`.toLowerCase().includes(q.toLowerCase())).slice(0,8);
   if (!res.length) { div.style.display='none'; return; }
-  // Position div below input
-  const rect = input.getBoundingClientRect();
   div.style.display='block';
-  div.style.top = (rect.bottom + window.scrollY) + 'px';
-  div.style.left = rect.left + 'px';
-  div.style.position = 'fixed';
+  div.style.position = 'absolute';
+  div.style.top = input.offsetHeight + 'px';
+  div.style.left = '0';
+  div.style.width = input.offsetWidth + 'px';
+  input.parentElement.style.position = 'relative';
   div.innerHTML = res.map(p => `
     <div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0ece4;font-size:0.85rem"
       onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background='white'"
