@@ -2216,7 +2216,9 @@ function actualizarTotalPct(srv) {
     const allRows = ['epe','agua','tgiu','seguro','internet','expensas'];
     const serviciosInq = [...document.querySelectorAll('.serv-edit-chk:checked')].map(x => x.value.toLowerCase());
     const warnings = allRows.filter(s => {
-      if (!serviciosInq.includes(s)) return false; // not assigned to inquilino
+      if (!serviciosInq.includes(s)) return false;
+      const nroS = document.getElementById(`f-nro-${s}`)?.value?.trim();
+      if (nroS) return false; // shared service - handled by sharedWarnings
       const i = parseFloat(document.getElementById(`f-pct-${s}`)?.value)||0;
       const p = parseFloat(document.getElementById(`f-pct-prop-${s}`)?.value)||0;
       return Math.abs((i+p) - 100) > 0.5;
@@ -2243,6 +2245,7 @@ function actualizarTotalPct(srv) {
       const pctProp = pctPropVal !== '' ? parseFloat(pctPropVal) : 0;
       const otrosContratos = DB.contratos.filter(c => contratoId !== null && c.id !== contratoId && c[`nro_${s}`] === nroActual);
       if (!otrosContratos.length) return;
+      if (pctInq === 0 && pctProp === 0) return; // user hasn't set pct yet, skip
       const totalGrupo = pctInq + pctProp + otrosContratos.reduce((sum, c) => {
         const v = (c[`pct_${s}`] !== null && c[`pct_${s}`] !== undefined) ? c[`pct_${s}`] : 100;
         const vp = (c[`pct_prop_${s}`] !== null && c[`pct_prop_${s}`] !== undefined) ? c[`pct_prop_${s}`] : 0;
