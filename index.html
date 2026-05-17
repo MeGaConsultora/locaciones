@@ -696,7 +696,7 @@ let vencFiltro = '30';
 // LOAD DATA
 // ============================================================
 async function loadAll() {
-  document.getElementById('sync-status').textContent = 'Actualizando... v2.1';
+  document.getElementById('sync-status').textContent = 'Actualizando...';
   try {
     // Refresh token if needed before loading
     if (currentUser?.token) updateAuthHeaders(currentUser.token);
@@ -1226,6 +1226,7 @@ function renderGrilla(c) {
       ${serviciosInquilino.seguro?`<td class="num">${p.monto_seguro>0?formatMoney(p.monto_seguro):'—'}</td>`:''}
       ${serviciosInquilino.internet?`<td class="num">${p.monto_internet>0?formatMoney(p.monto_internet):'—'}</td>`:''}
       ${serviciosInquilino.expensas?`<td class="num">${p.monto_expensas>0?formatMoney(p.monto_expensas):'—'}</td>`:''}
+      ${(() => { if (!DB_GASTOS_CUOTAS.some(g => parseInt(g.contrato_id) === c?.id)) return ''; const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7))); return `<td class="num">${gc?.monto_inquilino>0?formatMoney(gc.monto_inquilino):'—'}</td>`; })()}
       <td style="font-size:0.78rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasLabel}">${extrasLabel}</td>
       <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>
       <td class="num" id="abonado-${p.id}">${(() => { const ab = (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
@@ -1253,6 +1254,7 @@ function renderGrilla(c) {
           ${serviciosInquilino.seguro?'<th class="r">Seguro</th>':''}
           ${serviciosInquilino.internet?'<th class="r">Internet</th>':''}
           ${serviciosInquilino.expensas?'<th class="r">Expensas</th>':''}
+          ${DB_GASTOS_CUOTAS.some(g => parseInt(g.contrato_id) === c?.id) ? '<th class="r">Gs. inicio</th>' : ''}
           <th>Extras</th>
           <th class="r">Total</th>
           <th class="r">Abonado</th>
@@ -2598,7 +2600,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       <div style="background:#d4edda;border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.75rem;text-align:center;font-size:0.85rem;color:#155724">
         ✓ Este mes está completamente pagado
       </div>` : ''}
-      <div id="gp-cobro-items">${generarItemsCobro(p, extrasInq)}</div>
+      <div id="gp-cobro-items">${generarItemsCobro(p, extrasInq, contratoId, mesKey)}</div>
       ${c?.interes_punitorio > 0 ? `
       <div style="background:#fff8e1;border:1px solid #ffc107;border-radius:8px;padding:0.75rem 1rem;margin-top:0.75rem">
         <div style="font-size:0.82rem;font-weight:600;color:#856404;margin-bottom:6px">⏱ Interés punitorio (${c.interes_punitorio}% diario s/alquiler)</div>
@@ -2663,7 +2665,7 @@ function mostrarSolapa(id, btn) {
   document.getElementById(id)?.classList.add('active');
 }
 
-function generarItemsCobro(p, extrasInq) {
+function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
   const items = [
     { id:'alquiler', label:'Alquiler', val: p.importe_alquiler||0 },
@@ -2671,12 +2673,24 @@ function generarItemsCobro(p, extrasInq) {
     { id:'agua', label:'Agua', val: p.monto_agua||0 },
     { id:'tgiu', label:'TGIU', val: p.monto_tgiu||0 },
     { id:'seguro', label:'Seguro', val: p.monto_seguro||0 },
+    { id:'internet', label:'Internet', val: p.monto_internet||0 },
+    { id:'expensas', label:'Expensas', val: p.monto_expensas||0 },
   ].filter(i => i.val > 0);
+
+  // Add gastos de inicio cuota
+  if (contratoId && mesKey) {
+    const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey));
+    if (gc?.monto_inquilino > 0) {
+      const cuotaNum = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).findIndex(g => g.mes && g.mes.startsWith(mesKey)) + 1;
+      const totalCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).length;
+      items.push({ id:'gastos-inicio', label:`Gastos de inicio (cuota ${cuotaNum}/${totalCuotas})`, val: gc.monto_inquilino, gastosId: gc.id });
+    }
+  }
 
   return items.map(it => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
-        <input type="checkbox" id="cobro-chk-${it.id}" value="${it.val}" data-signo="1" checked onchange="recalcCobro()" style="width:15px;height:15px">
+        <input type="checkbox" id="cobro-chk-${it.id}" value="${it.val}" data-signo="1" ${it.gastosId?`data-gastos-id="${it.gastosId}"`:''}  checked onchange="recalcCobro()" style="width:15px;height:15px">
         ${it.label}
       </label>
       <span id="cobro-lbl-${it.id}" style="font-size:0.85rem;color:#666">${formatMoney(it.val)}</span>
@@ -3123,6 +3137,16 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   });
 
   toast('Cobro registrado ✓');
+
+  // Save gastos pagado if applicable
+  const gastosChkCobro = document.getElementById('cobro-chk-gastos-inicio');
+  if (gastosChkCobro?.dataset?.gastosId) {
+    const gastosId = parseInt(gastosChkCobro.dataset.gastosId);
+    const gastosPagado = gastosChkCobro.checked ? (parseFloat(gastosChkCobro.value)||0) : 0;
+    await sbPatch('gastos_inicio_cuotas', gastosId, { pagado_inquilino: gastosPagado });
+    const gc = DB_GASTOS_CUOTAS.find(g => g.id === gastosId);
+    if (gc) gc.pagado_inquilino = gastosPagado;
+  }
 
   // Generate receipt
   imprimirRecibo({
