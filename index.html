@@ -3398,9 +3398,8 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
         </tbody>
         <tfoot><tr style="border-top:2px solid #1a1a2e"><td style="padding:10px;font-weight:700">TOTAL A RECIBIR</td><td style="padding:10px;text-align:right;font-weight:700;font-size:1.1rem;color:#2d7a4f">${formatMoney(totalRendir)}</td></tr></tfoot>
       </table>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:20px;padding-top:16px;border-top:1px dashed #ccc">
-        <div style="text-align:center"><div style="border-top:1px solid #333;padding-top:6px;font-size:0.78rem;color:#666;margin-top:24px">Firma propietario</div></div>
-        <div style="text-align:center"><div style="border-top:1px solid #333;padding-top:6px;font-size:0.78rem;color:#666;margin-top:24px">Firma inmobiliaria</div></div>
+      <div style="margin-top:16px;padding-top:12px;border-top:1px dashed #ccc;max-width:220px;margin-left:auto;margin-right:auto;text-align:center">
+        <div style="border-top:1px solid #333;padding-top:6px;font-size:0.78rem;color:#666;margin-top:24px">Firma propietario</div>
       </div>
     </div>`;
 
@@ -3410,24 +3409,24 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }
-      body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; padding:12px; gap:0; font-family:'DM Sans',Arial,sans-serif; }
+      body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; padding:12px; gap:0; font-family:'DM Sans',Arial,sans-serif; }
       .no-print { text-align:center; padding:10px 0; width:100%; }
       .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; font-family:'DM Sans',sans-serif; font-weight:600; }
-      .recibo-mitad { background:white; width:190mm; height:135mm; overflow:hidden; }
+      .recibo-mitad { background:white; width:190mm; height:138mm; overflow:hidden; }
       .recibo-inner { transform-origin:top left; padding:12px 18px; }
-      .separador { width:190mm; text-align:center; padding:3px 0; font-size:0.65rem; color:#aaa; border-top:2px dashed #bbb; border-bottom:2px dashed #bbb; margin:0; background:white; }
-      @page { size: A4 portrait; margin: 8mm; }
+      .separador { width:190mm; height:1px; border:none; border-top:2px dashed #999; margin:0; background:none; }
+      @page { size: A4 portrait; margin: 8mm 10mm; }
       @media print {
-        html, body { width:210mm; height:297mm; background:white; padding:0; }
+        html, body { width:210mm; height:297mm; background:white; padding:0; margin:0; justify-content:flex-start; }
         .no-print { display:none; }
-        .recibo-mitad { width:100%; height:133mm; }
-        .separador { width:100%; }
+        .recibo-mitad { width:194mm; height:138mm; }
+        .separador { width:194mm; }
       }
     </style>
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
     <div class="recibo-mitad"><div class="recibo-inner" id="rp1">${reciboHtml}</div></div>
-    <div class="separador">✂ &nbsp;&nbsp; DUPLICADO &nbsp;&nbsp; ✂</div>
+    <hr class="separador">
     <div class="recibo-mitad"><div class="recibo-inner" id="rp2">${reciboHtml}</div></div>
     <script>
       function ajustarEscala(id) {
@@ -4566,24 +4565,24 @@ function imprimirRecibo(data) {
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }
-      body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; padding:12px; gap:0; font-family:'DM Sans',Arial,sans-serif; }
+      body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; padding:12px; gap:0; font-family:'DM Sans',Arial,sans-serif; }
       .no-print { text-align:center; padding:10px 0; width:100%; }
       .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; font-family:'DM Sans',sans-serif; font-weight:600; }
       .no-print button:hover { background:#c8483a; }
-      .recibo-mitad { background:white; width:190mm; height:135mm; overflow:hidden; display:flex; flex-direction:column; }
-      .recibo-inner { flex:1; overflow:hidden; transform-origin:top left; }
-      .separador { width:190mm; text-align:center; padding:3px 0; font-size:0.65rem; color:#aaa; border-top:2px dashed #bbb; border-bottom:2px dashed #bbb; margin:0; background:white; }
-      @page { size: A4 portrait; margin: 8mm; }
+      .recibo-mitad { background:white; width:190mm; height:138mm; overflow:hidden; }
+      .recibo-inner { transform-origin:top left; padding:10px 16px; }
+      .separador { width:190mm; height:1px; border:none; border-top:2px dashed #999; margin:0; background:none; }
+      @page { size: A4 portrait; margin: 8mm 10mm; }
       @media print {
-        html, body { width:210mm; height:297mm; background:white; padding:0; }
+        html, body { width:210mm; height:297mm; background:white; padding:0; margin:0; justify-content:flex-start; }
         .no-print { display:none; }
-        .recibo-mitad { width:100%; height:133mm; }
-        .separador { width:100%; }
+        .recibo-mitad { width:194mm; height:138mm; }
+        .separador { width:194mm; }
       }</style>
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
     <div class="recibo-mitad"><div class="recibo-inner" id="ri1" style="padding:10px 16px">${recibo}</div></div>
-    <div class="separador">✂ &nbsp;&nbsp; DUPLICADO &nbsp;&nbsp; ✂</div>
+    <hr class="separador">
     <div class="recibo-mitad"><div class="recibo-inner" id="ri2" style="padding:10px 16px">${recibo}</div></div>
     <script>
       function ajustarEscala(id) {
@@ -5403,6 +5402,11 @@ async function darDeBaja(id, email) {
 
 // Auto-refresh token every 45 minutes
 setInterval(refreshAdminToken, 20 * 60 * 1000);
+
+// Refresh token when tab becomes visible again (browser may have paused timers)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshAdminToken();
+});
 
 // ============================================================
 // START
