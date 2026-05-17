@@ -3777,17 +3777,19 @@ function _abrirFormularioContrato(c, esNuevo) {
 
     <div class="section-title" style="margin:1.2rem 0 0.75rem">Propietario/s</div>
     <div id="lista-propietarios"></div>
-    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap">
       <button class="btn btn-secondary" style="font-size:0.82rem" onclick="agregarPersonaRol('propietario')">+ Buscar propietario</button>
       <button class="btn btn-secondary" style="font-size:0.82rem;color:var(--green);border-color:var(--green)" onclick="abrirNuevaPersonaInline('propietario')">+ Nueva persona</button>
     </div>
+    <div id="inline-persona-form-propietario"></div>
 
     <div class="section-title" style="margin:1.2rem 0 0.75rem">Inquilino/s</div>
     <div id="lista-inquilinos"></div>
-    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap">
       <button class="btn btn-secondary" style="font-size:0.82rem" onclick="agregarPersonaRol('inquilino')">+ Buscar inquilino</button>
       <button class="btn btn-secondary" style="font-size:0.82rem;color:var(--green);border-color:var(--green)" onclick="abrirNuevaPersonaInline('inquilino')">+ Nueva persona</button>
     </div>
+    <div id="inline-persona-form-inquilino"></div>
 
     <div id="inline-persona-form"></div>
 
@@ -3829,13 +3831,14 @@ function _abrirFormularioContrato(c, esNuevo) {
 }
 
 function abrirNuevaPersonaInline(rol) {
-  const div = document.getElementById('inline-persona-form');
+  const formId = `inline-persona-form-${rol}`;
+  const div = document.getElementById(formId) || document.getElementById('inline-persona-form');
   if (!div) return;
   div.innerHTML = `
     <div style="background:#f0fff4;border:1.5px solid var(--green);border-radius:10px;padding:1.2rem;margin-bottom:1rem">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
         <strong style="font-size:0.9rem">Nueva persona — ${rol === 'propietario' ? 'Propietario' : 'Inquilino'}</strong>
-        <button onclick="document.getElementById('inline-persona-form').innerHTML=''" style="background:none;border:none;cursor:pointer;color:#999;font-size:1rem">✕</button>
+        <button onclick="document.getElementById('${formId}').innerHTML=''" style="background:none;border:none;cursor:pointer;color:#999;font-size:1rem">✕</button>
       </div>
       <div class="form-grid">
         <div class="form-group"><label>Apellido/s *</label><input id="ip-apellido" type="text" placeholder="Obligatorio"></div>
@@ -3851,7 +3854,6 @@ function abrirNuevaPersonaInline(rol) {
       </div>
     </div>
   `;
-  // Scroll to form
   div.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
@@ -3888,7 +3890,8 @@ async function guardarPersonaInline(rol) {
         contenedor.appendChild(divP);
       }
     }
-    document.getElementById('inline-persona-form').innerHTML = '';
+    const formDiv = document.getElementById(`inline-persona-form-${rol}`) || document.getElementById('inline-persona-form');
+    if (formDiv) formDiv.innerHTML = '';
     toast(`${apellido} agregado/a ✓`);
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
