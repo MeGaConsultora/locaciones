@@ -2181,7 +2181,7 @@ function validarPctAlGuardar(contratoId) {
     const ownTotal = inq + prop;
 
     if (nro) {
-      const otrosContratos = DB.contratos.filter(c => c.id !== contratoId && c['nro_'+s] === nro);
+      const otrosContratos = DB.contratos.filter(c => contratoId !== null && c.id !== contratoId && c['nro_'+s] === nro);
       const totalGrupo = ownTotal + otrosContratos.reduce((sum, c) => {
         // Use actual stored value, default 100 only if truly null/undefined
         const v = (c['pct_'+s] !== null && c['pct_'+s] !== undefined) ? c['pct_'+s] : 100;
@@ -2206,7 +2206,6 @@ function validarPctAlGuardar(contratoId) {
 function actualizarTotalPct(srv) {
   const inq = parseFloat(document.getElementById(`f-pct-${srv}`)?.value)||0;
   const prop = parseFloat(document.getElementById(`f-pct-prop-${srv}`)?.value)||0;
-  console.log('actualizarTotalPct', srv, 'inq=', inq, 'prop=', prop, 'field value=', document.getElementById(`f-pct-${srv}`)?.value);
   const total = inq + prop;
   const el = document.getElementById(`pct-total-${srv}`);
   if (el) {
@@ -2231,7 +2230,8 @@ function actualizarTotalPct(srv) {
     }
 
     // Also check shared nros — other contracts with same nro
-    const contratoId = parseInt(document.getElementById('modal-overlay')?.dataset?.contratoId);
+    const contratoIdRaw = document.getElementById('modal-overlay')?.dataset?.contratoId;
+    const contratoId = contratoIdRaw ? parseInt(contratoIdRaw) : null;
     const sharedWarnings = [];
     allRows.forEach(s => {
       if (!serviciosInq.includes(s)) return;
@@ -2241,14 +2241,13 @@ function actualizarTotalPct(srv) {
       const pctPropVal = document.getElementById(`f-pct-prop-${s}`)?.value;
       const pctInq = pctInqVal !== '' ? parseFloat(pctInqVal) : 100;
       const pctProp = pctPropVal !== '' ? parseFloat(pctPropVal) : 0;
-      const otrosContratos = DB.contratos.filter(c => c.id !== contratoId && c[`nro_${s}`] === nroActual);
+      const otrosContratos = DB.contratos.filter(c => contratoId !== null && c.id !== contratoId && c[`nro_${s}`] === nroActual);
       if (!otrosContratos.length) return;
       const totalGrupo = pctInq + pctProp + otrosContratos.reduce((sum, c) => {
         const v = (c[`pct_${s}`] !== null && c[`pct_${s}`] !== undefined) ? c[`pct_${s}`] : 100;
         const vp = (c[`pct_prop_${s}`] !== null && c[`pct_prop_${s}`] !== undefined) ? c[`pct_prop_${s}`] : 0;
         return sum + v + vp;
       }, 0);
-      console.log('sharedWarning', s, 'nro=', nroActual, 'pctInq=', pctInq, 'pctProp=', pctProp, 'otros=', otrosContratos.map(c=>({titulo:c.titulo, pct:c['pct_'+s], pct_prop:c['pct_prop_'+s]})), 'total=', totalGrupo);
       if (Math.abs(totalGrupo - 100) > 0.5) {
         sharedWarnings.push(`${s.toUpperCase()} (grupo N°${nroActual} suma ${totalGrupo}%)`);
       }
