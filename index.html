@@ -1295,6 +1295,9 @@ function verDetallePago(pagoId, hoja) {
       ${p.monto_agua>0?`<span style="color:#666">Agua</span><span style="text-align:right">${formatMoney(p.monto_agua)}</span>`:''}
       ${p.monto_tgiu>0?`<span style="color:#666">TGIU</span><span style="text-align:right">${formatMoney(p.monto_tgiu)}</span>`:''}
       ${p.monto_seguro>0?`<span style="color:#666">Seguro</span><span style="text-align:right">${formatMoney(p.monto_seguro)}</span>`:''}
+      ${p.monto_internet>0?`<span style="color:#666">Internet</span><span style="text-align:right">${formatMoney(p.monto_internet)}</span>`:''}
+      ${p.monto_expensas>0?`<span style="color:#666">Expensas</span><span style="text-align:right">${formatMoney(p.monto_expensas)}</span>`:''}
+      ${(() => { const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7))); return gc?.monto_inquilino>0 ? `<span style="color:#666">Gastos inicio</span><span style="text-align:right">${formatMoney(gc.monto_inquilino)}</span>` : ''; })()}
     </div>
     ${extrasHtml ? `<div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">${extrasHtml}</div>` : ''}
     <div style="display:flex;justify-content:space-between;padding-top:0.6rem;margin-top:0.5rem;border-top:2px solid var(--ink);font-weight:700">
@@ -2541,6 +2544,13 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
           fields += mkSrvField('gp-seguro','Seguro', p?.monto_seguro, 'seguro');
           if (servs.includes('internet')) fields += mkSrvField('gp-internet','Internet', p?.monto_internet, 'internet');
           if (servs.includes('expensas')) fields += mkSrvField('gp-expensas','Expensas', p?.monto_expensas, 'expensas');
+          // Gastos de inicio cuota
+          const gastoCuotaGP = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey));
+          if (gastoCuotaGP?.monto_inquilino > 0) {
+            const cuotaNumGP = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).findIndex(g => g.mes && g.mes.startsWith(mesKey)) + 1;
+            const totalCuotasGP = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).length;
+            fields += `<div class="form-group"><label>Gastos inicio (cuota ${cuotaNumGP}/${totalCuotasGP})</label><input id="gp-gastos-inicio" type="number" value="${gastoCuotaGP.monto_inquilino}" placeholder="0" data-gastos-id="${gastoCuotaGP.id}" oninput="recalcGP(${comisionPct})" style="margin-top:4px"></div>`;
+          }
           return fields;
         })()}
         <div class="form-group"><label>Comisión (${comisionPct}%)</label><input id="gp-comision" type="number" value="${comisionMonto.toFixed(2)}" placeholder="0" readonly style="background:#f5f5f5"></div>
@@ -2968,8 +2978,10 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
   
   const internet = parseFloat(document.getElementById('gp-internet')?.value)||0;
   const expensas = parseFloat(document.getElementById('gp-expensas')?.value)||0;
-  
-  const total = alq+epe+agua+tgiu+seguro+internet+expensas+extrasInqTotal;
+  const gastosInicio = parseFloat(document.getElementById('gp-gastos-inicio')?.value)||0;
+  const gastosId = document.getElementById('gp-gastos-inicio')?.dataset?.gastosId;
+
+  const total = alq+epe+agua+tgiu+seguro+internet+expensas+gastosInicio+extrasInqTotal;
 
   try {
     const hojaEncoded = encodeURIComponent(hoja);
@@ -3000,6 +3012,12 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       pagoId = r[0]?.id;
     }
     toast('Importes guardados ✓');
+    // Save gastos inicio monto
+    if (gastosId && gastosInicio > 0) {
+      await sbPatch('gastos_inicio_cuotas', parseInt(gastosId), { monto_inquilino: gastosInicio });
+      const gc = DB_GASTOS_CUOTAS.find(g => g.id === parseInt(gastosId));
+      if (gc) gc.monto_inquilino = gastosInicio;
+    }
 
     const c = DB.contratos.find(x=>x.id===contratoId);
     if (c) {
