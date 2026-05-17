@@ -2488,13 +2488,13 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
           <div class="extra-item" id="gp-extra-${e.id}" style="flex-wrap:wrap;gap:6px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #f0ece4">
             <input type="text" id="gpe-concepto-${e.id}" value="${e.concepto||''}" placeholder="Concepto" style="flex:2;min-width:120px" onchange="guardarExtraGP(${e.id})">
             <input type="number" id="gpe-importe-${e.id}" value="${e.importe||''}" placeholder="$" style="width:90px" onchange="guardarExtraGP(${e.id})">
-            <select id="gpe-cargo-${e.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="guardarExtraGP(${e.id})">
+            <select id="gpe-cargo-${e.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="actualizarLabelsTipoExtra(${e.id}); guardarExtraGP(${e.id})">
               <option value="inquilino" ${e.a_cargo_de!=='propietario'?'selected':''}>Inquilino</option>
               <option value="propietario" ${e.a_cargo_de==='propietario'?'selected':''}>Propietario</option>
             </select>
             <select id="gpe-tipo-${e.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="guardarExtraGP(${e.id})">
-              <option value="debito" ${e.tipo!=='credito'?'selected':''}>Débito</option>
-              <option value="credito" ${e.tipo==='credito'?'selected':''}>Crédito</option>
+              <option value="debito" ${e.tipo!=='credito'?'selected':''}>${e.a_cargo_de==='propietario'?'Debitar':'Cargo extra'}</option>
+              <option value="credito" ${e.tipo==='credito'?'selected':''}>${e.a_cargo_de==='propietario'?'Acreditar':'Descuento'}</option>
             </select>
             <button class="grid-btn grid-btn-red" onclick="eliminarExtraGP(${e.id},'${hoja}',${contratoId},'${mesKey}',${comisionPct})">✕</button>
           </div>
@@ -2502,7 +2502,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       </div>
       <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarExtraGP('${hoja}',${contratoId},'${mesKey}',${p?.id||0},${comisionPct})">+ Agregar concepto</button>
       <div style="font-size:0.78rem;color:#888;background:#faf7f2;padding:0.6rem 1rem;border-radius:8px;margin-bottom:1rem">
-        <strong>Inquilino:</strong> Débito suma a lo que paga · Crédito resta<br>
+        <strong>Inquilino:</strong> Cargo extra suma · Descuento resta<br>
         <strong>Propietario:</strong> Débito resta a lo que cobra · Crédito suma
       </div>
       <div class="form-actions">
@@ -2820,19 +2820,28 @@ async function agregarExtraGP(hoja, contratoId, mesKey, pagoId, comisionPct) {
       el.innerHTML = `
         <input type="text" id="gpe-concepto-${extra.id}" value="" placeholder="Concepto" style="flex:2;min-width:120px" onchange="guardarExtraGP(${extra.id})">
         <input type="number" id="gpe-importe-${extra.id}" value="" placeholder="$" style="width:90px" onchange="guardarExtraGP(${extra.id})">
-        <select id="gpe-cargo-${extra.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="guardarExtraGP(${extra.id})">
+        <select id="gpe-cargo-${extra.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="actualizarLabelsTipoExtra(${extra.id}); guardarExtraGP(${extra.id})">
           <option value="inquilino" selected>Inquilino</option>
           <option value="propietario">Propietario</option>
         </select>
         <select id="gpe-tipo-${extra.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="guardarExtraGP(${extra.id})">
-          <option value="debito" selected>Débito (resta)</option>
-          <option value="credito">Crédito (suma)</option>
+          <option value="debito" selected>Cargo extra</option>
+          <option value="credito">Descuento</option>
         </select>
         <button class="grid-btn grid-btn-red" onclick="eliminarExtraGP(${extra.id},'${hoja}',${contratoId},'${mesKey}',${comisionPct})">✕</button>
       `;
       div.appendChild(el);
     }
   } catch(e) { toast('Error: '+e.message,'error'); }
+}
+
+function actualizarLabelsTipoExtra(id) {
+  const cargo = document.getElementById(`gpe-cargo-${id}`)?.value;
+  const tipo = document.getElementById(`gpe-tipo-${id}`);
+  if (!tipo) return;
+  const esProp = cargo === 'propietario';
+  tipo.options[0].text = esProp ? 'Debitar' : 'Cargo extra';
+  tipo.options[1].text = esProp ? 'Acreditar' : 'Descuento';
 }
 
 async function eliminarExtraGP(extraId, hoja, contratoId, mesKey, comisionPct) {
