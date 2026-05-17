@@ -2188,9 +2188,32 @@ function actualizarTotalPct(srv) {
       warnEl.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:0.6rem 1rem;margin-top:0.5rem;font-size:0.82rem;color:#856404';
       el.closest('table').after(warnEl);
     }
-    if (warnings.length) {
+
+    // Also check shared nros — other contracts with same nro
+    const contratoId = parseInt(document.getElementById('modal-overlay')?.dataset?.contratoId);
+    const contratoActual = DB.contratos.find(c => c.id === contratoId);
+    const sharedWarnings = [];
+    if (contratoActual) {
+      allRows.forEach(s => {
+        const nroActual = contratoActual[`nro_${s}`] || document.getElementById(`f-nro-${s}`)?.value;
+        if (!nroActual) return;
+        const pctInq = parseFloat(document.getElementById(`f-pct-${s}`)?.value)||0;
+        const pctProp = parseFloat(document.getElementById(`f-pct-prop-${s}`)?.value)||0;
+        const otrosContratos = DB.contratos.filter(c => c.id !== contratoId && c[`nro_${s}`] === nroActual);
+        if (!otrosContratos.length) return;
+        const totalGrupo = pctInq + pctProp + otrosContratos.reduce((sum, c) => sum + (c[`pct_${s}`]||100) + (c[`pct_prop_${s}`]||0), 0);
+        if (Math.abs(totalGrupo - 100) > 0.5) {
+          sharedWarnings.push(`${s.toUpperCase()} (grupo N°${nroActual} suma ${totalGrupo}%)`);
+        }
+      });
+    }
+
+    const allWarnings = [...warnings.map(s => s.toUpperCase()), ...sharedWarnings];
+    if (allWarnings.length) {
       warnEl.style.display = 'block';
-      warnEl.textContent = `⚠ ${warnings.map(s=>s.toUpperCase()).join(', ')}: la suma de % inquilino + % propietario no da 100%. Revisá los porcentajes.`;
+      const baseMsg = warnings.length ? `⚠ ${warnings.map(s=>s.toUpperCase()).join(', ')}: la suma de % no da 100%. ` : '';
+      const sharedMsg = sharedWarnings.length ? `⚠ Servicio compartido: ${sharedWarnings.join('; ')}. Revisá los % de los contratos del grupo.` : '';
+      warnEl.textContent = baseMsg + sharedMsg;
     } else {
       warnEl.style.display = 'none';
     }
