@@ -710,6 +710,9 @@ async function loadAll() {
     try {
       DB_INMUEBLES = await sbGet('inmuebles', 'select=*&order=localidad.asc,calle.asc&limit=2000');
     } catch(e) { console.error('Error loading inmuebles:', e); DB_INMUEBLES = []; }
+    try {
+      DB_GASTOS_CUOTAS = await sbGet('gastos_inicio_cuotas', 'select=*&order=mes.asc&limit=5000');
+    } catch(e) { DB_GASTOS_CUOTAS = []; }
     document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR', {timeZone:'America/Argentina/Buenos_Aires'})}`;
     populateFiltros();
     await loadPersonas();
