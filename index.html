@@ -3426,9 +3426,9 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     </style>
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
-    <div class="recibo-mitad"><div class="recibo-inner" id="rp1">\${reciboHtml}</div></div>
+    <div class="recibo-mitad"><div class="recibo-inner" id="rp1">${reciboHtml}</div></div>
     <div class="separador">✂ &nbsp;&nbsp; DUPLICADO &nbsp;&nbsp; ✂</div>
-    <div class="recibo-mitad"><div class="recibo-inner" id="rp2">\${reciboHtml}</div></div>
+    <div class="recibo-mitad"><div class="recibo-inner" id="rp2">${reciboHtml}</div></div>
     <script>
       function ajustarEscala(id) {
         const wrap = document.getElementById(id);
