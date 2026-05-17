@@ -315,7 +315,7 @@
   <button class="tab-btn active" onclick="showTab('dashboard',this)">📊 Dashboard</button>
   <button class="tab-btn" onclick="showTab('contratos',this)">📋 Contratos</button>
   <div class="tab-dropdown" id="dropdown-informes">
-    <button class="tab-btn" onclick="toggleInformesMenu(event)">📊 Informes ▾</button>
+    <button class="tab-btn" onclick="toggleInformesMenu(event)">⚙️ Gestión ▾</button>
     <div class="tab-dropdown-menu" id="informes-menu" style="display:none">
       <button onclick="selectInforme('mensual')">📅 Reportes mensuales</button>
       <button onclick="selectInforme('reporte-total')">📋 Reportes totales</button>
@@ -323,6 +323,7 @@
       <button onclick="abrirCargarServicios()">⚡ Cargar servicios del mes</button>
       <button onclick="abrirImportarPDF()">📄 Importar PDF de servicios</button>
       <button onclick="abrirActualizacionAlquileres()">🔄 Actualizar alquileres</button>
+      <button onclick="selectInforme('recibos-emitir')">🖨️ Recibos a emitir</button>
     </div>
   </div>
   <button class="tab-btn" onclick="showTab('clientes',this)">🧑‍🤝‍🧑 Clientes</button>
@@ -423,6 +424,31 @@
     </div>
     <div id="informe-contenido">
       <div class="empty-state"><div class="icon">📊</div><p>Seleccioná un año y mes para ver el informe</p></div>
+    </div>
+  </div>
+
+  <!-- RECIBOS A EMITIR -->
+  <div id="panel-recibos-emitir" class="panel" style="display:none">
+    <div class="toolbar" style="margin-bottom:1rem">
+      <strong style="font-size:0.95rem">🖨️ Recibos a emitir</strong>
+      <select class="filter-select" id="recibos-anio" style="width:auto" onchange="renderRecibosEmitir()">
+        <option value="">-- Año --</option>
+      </select>
+      <select class="filter-select" id="recibos-mes" style="width:auto" onchange="renderRecibosEmitir()">
+        <option value="">-- Mes --</option>
+        <option value="01">Enero</option><option value="02">Febrero</option>
+        <option value="03">Marzo</option><option value="04">Abril</option>
+        <option value="05">Mayo</option><option value="06">Junio</option>
+        <option value="07">Julio</option><option value="08">Agosto</option>
+        <option value="09">Septiembre</option><option value="10">Octubre</option>
+        <option value="11">Noviembre</option><option value="12">Diciembre</option>
+      </select>
+      <button class="btn btn-secondary" id="btn-sel-todos-recibos" onclick="seleccionarTodosRecibos(true)" style="display:none">✓ Seleccionar todos</button>
+      <button class="btn btn-secondary" id="btn-desel-todos-recibos" onclick="seleccionarTodosRecibos(false)" style="display:none">✕ Deseleccionar</button>
+      <button class="btn btn-primary" id="btn-generar-recibos" onclick="generarRecibosSeleccionados()" style="display:none">🖨️ Generar seleccionados</button>
+    </div>
+    <div id="recibos-emitir-contenido">
+      <div class="empty-state"><div class="icon">🖨️</div><p>Seleccioná un año y mes</p></div>
     </div>
   </div>
 
@@ -2563,6 +2589,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       </div>
       <div class="form-actions">
         <button class="btn btn-secondary" onclick="imprimirReciboPropGP('${hoja}',${contratoId},'${mesKey}',${comisionPct})">🖨️ Generar recibo propietario</button>
+        ${p?.recibo_prop_emitido ? `<span style="font-size:0.75rem;color:var(--green);margin-left:6px">✓ Emitido${p.recibo_prop_fecha?' el '+new Date(p.recibo_prop_fecha).toLocaleDateString('es-AR'):''}</span>` : ''}
       </div>`}
     </div>
   `;
@@ -2769,6 +2796,11 @@ function recalcCobro() {
 }
 
 function recalcProp() {
+  // Check if already emitted
+  if (p.recibo_prop_emitido) {
+    const fecha = p.recibo_prop_fecha ? new Date(p.recibo_prop_fecha).toLocaleDateString('es-AR') : 'fecha desconocida';
+    if (!confirm(`⚠ Este recibo ya fue emitido el ${fecha}.\n\n¿Querés generarlo nuevamente de todas formas?`)) return;
+  }
   const checks = document.querySelectorAll('[id^="prop-chk-"]');
   let total = 0;
   checks.forEach(c => {
@@ -3427,7 +3459,7 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
     <div class="recibo-mitad"><div class="recibo-inner" id="rp1">${reciboHtml}</div></div>
     <hr class="separador">
-    <div class="recibo-mitad"><div class="recibo-inner" id="rp2">${reciboHtml}</div></div>
+    <div class="recibo-mitad"><div class="recibo-inner" id="rp2" style="position:relative">${reciboHtml}<div style="position:absolute;bottom:6px;right:14px;font-size:0.65rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em">Duplicado</div></div></div>
     <script>
       function ajustarEscala(id) {
         const wrap = document.getElementById(id);
@@ -4583,7 +4615,7 @@ function imprimirRecibo(data) {
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
     <div class="recibo-mitad"><div class="recibo-inner" id="ri1" style="padding:10px 16px">${recibo}</div></div>
     <hr class="separador">
-    <div class="recibo-mitad"><div class="recibo-inner" id="ri2" style="padding:10px 16px">${recibo}</div></div>
+    <div class="recibo-mitad"><div class="recibo-inner" id="ri2" style="padding:10px 16px;position:relative">${recibo}<div style="position:absolute;bottom:6px;right:14px;font-size:0.65rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em">Duplicado</div></div></div>
     <script>
       function ajustarEscala(id) {
         const wrap = document.getElementById(id);
@@ -4686,7 +4718,7 @@ function selectInforme(tipo) {
   document.getElementById('informes-menu').style.display = 'none';
 
   // First hide ALL main panels (same as showTab)
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -4702,6 +4734,7 @@ function selectInforme(tipo) {
   let panelId = 'panel-informes';
   if (tipo === 'reporte-total') panelId = 'panel-reporte-total';
   else if (tipo === 'vencimientos') panelId = 'panel-vencimientos';
+  else if (tipo === 'recibos-emitir') panelId = 'panel-recibos-emitir';
 
   const el = document.getElementById(panelId);
   if (el) { el.style.display = 'block'; el.classList.add('active'); }
@@ -4709,6 +4742,7 @@ function selectInforme(tipo) {
   // Run the content
   if (tipo === 'vencimientos') renderVencimientos();
   else if (tipo === 'reporte-total') renderReporteTotal();
+  else if (tipo === 'recibos-emitir') { populateRecibosAnios(); renderRecibosEmitir(); }
   else { populateInformeAnios(); renderInforme(); }
 }
 
@@ -4719,7 +4753,7 @@ document.addEventListener('click', () => {
 
 function showTab(name, btn) {
   // Hide ALL panels using both class and inline style
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -5413,7 +5447,7 @@ document.addEventListener('visibilitychange', () => {
 // ============================================================
 // Initialize panel visibility
 (function() {
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) el.style.display = id === 'dashboard' ? 'block' : 'none';
