@@ -2182,10 +2182,19 @@ function actualizarTotalPct(srv) {
     el.closest('tr').style.background = total === 100 ? '' : '#fff3cd';
     const allRows = ['epe','agua','tgiu','seguro','internet','expensas'];
     const serviciosInq = [...document.querySelectorAll('.serv-edit-chk:checked')].map(x => x.value.toLowerCase());
+    const contratoIdRaw = document.getElementById('modal-overlay')?.dataset?.contratoId;
+    const contratoIdVal = contratoIdRaw ? parseInt(contratoIdRaw) : null;
     const warnings = allRows.filter(s => {
       if (!serviciosInq.includes(s)) return false;
+      const nro = document.getElementById(`f-nro-${s}`)?.value?.trim();
       const i = parseFloat(document.getElementById(`f-pct-${s}`)?.value)||0;
       const p = parseFloat(document.getElementById(`f-pct-prop-${s}`)?.value)||0;
+      if (nro) {
+        // shared: sum all ticked contracts with same nro
+        const otros = DB.contratos.filter(c => c.id !== contratoIdVal && c['nro_'+s] === nro && (c.servicios_inquilino||'').toLowerCase().includes(s));
+        const total = i + p + otros.reduce((sum,c) => sum + (c['pct_'+s]??100) + (c['pct_prop_'+s]??0), 0);
+        return Math.abs(total - 100) > 0.5;
+      }
       return Math.abs((i+p) - 100) > 0.5;
     });
     let warnEl = document.getElementById('pct-sum-warning');
@@ -3583,7 +3592,7 @@ function _abrirFormularioContrato(c, esNuevo) {
         const checked = c.servicios_inquilino?.includes(s) ? 'checked' : '';
         return `<label style="display:flex;align-items:center;gap:6px;font-size:0.88rem;cursor:pointer">
           <input type="checkbox" class="serv-chk serv-edit-chk" value="${s}" ${checked} style="width:15px;height:15px"
-> ${s}
+            onchange="actualizarTotalPct('${s.toLowerCase()}')">  ${s}
         </label>`;
       }).join('')}
     </div>
