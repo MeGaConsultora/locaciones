@@ -2054,10 +2054,19 @@ async function cargarListaServicios(filtro='') {
     });
     const cargadosHtml = Object.values(cargadosGrupos).map(g => {
       const c0 = g.contratos[0];
-      const pago = pagosPorHoja[c0.hoja];
       const nro = g.nro;
-      const totalBoleta = Math.round((pago?.[campo]||0) * 100 / (c0['pct_'+srv]||100));
-      const detalle = g.contratos.map(c => `${c.titulo||c.hoja} (${c['pct_'+srv]||100}%)`).join(', ');
+      // Calculate total boleta: find the contract with importe and back-calculate
+      let totalBoleta = 0;
+      for (const c of g.contratos) {
+        const p = pagosPorHoja[c.hoja];
+        const monto = p?.[campo] || 0;
+        const pct = c['pct_'+srv];
+        if (monto > 0 && pct > 0) {
+          totalBoleta = Math.round(monto * 100 / pct);
+          break;
+        }
+      }
+      const detalle = g.contratos.map(c => `${c.titulo||c.hoja} (${c['pct_'+srv]||0}%)`).join(', ');
       const hojas = g.contratos.map(c => c.hoja).join('|');
       const ids = g.contratos.map(c => c.id).join(',');
       return `<div class="ya-cargado-${srv}" style="display:none;background:#f0fff4;border:1.5px solid var(--green);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem">
@@ -2070,7 +2079,7 @@ async function cargarListaServicios(filtro='') {
             <input type="number" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}"
               value="${totalBoleta}" data-original="${totalBoleta}"
               placeholder="$ importe cuota" style="width:150px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem">
-            <div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Guardado: ${formatMoney(pago?.[campo]||0)}</div>
+            <div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Total boleta: ${formatMoney(totalBoleta)}</div>
           </div>
         </div>
       </div>`;
@@ -4166,6 +4175,7 @@ async function actualizarContrato(id) {
             for (const srv of pctCambiados) {
               const oldPct = oldContrato?.['pct_'+srv] ?? 100;
               const newPct = body['pct_'+srv] ?? oldPct;
+              if (newPct === 0) continue; // service unticked - don't touch the monto
               const currentMonto = p['monto_'+srv] || 0;
               if (currentMonto > 0 && oldPct > 0) {
                 const totalBill = Math.round(currentMonto * 100 / oldPct);
