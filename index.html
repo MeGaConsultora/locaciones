@@ -4087,7 +4087,7 @@ async function guardarContrato() {
     nro_seguro: document.getElementById('f-nro-seguro')?.value.trim()||null,
     nro_internet: document.getElementById('f-nro-internet')?.value.trim()||null,
     nro_expensas: document.getElementById('f-nro-expensas')?.value.trim()||null,
-    servicios_propietario: [...document.querySelectorAll('.serv-prop-chk:checked')].map(x=>x.value).join(', ')||null,
+    servicios_propietario: null,
     servicios_rendir_propietario: [...document.querySelectorAll('.rinde-chk:checked')].map(x=>x.value).join(', ')||null,
     pct_epe: (() => { const v = parseFloat(document.getElementById('f-pct-epe')?.value); return isNaN(v) ? 100 : v; })(),
     pct_agua: (() => { const v = parseFloat(document.getElementById('f-pct-agua')?.value); return isNaN(v) ? 100 : v; })(),
@@ -4187,7 +4187,7 @@ async function actualizarContrato(id) {
     nro_seguro: document.getElementById('f-nro-seguro')?.value.trim()||null,
     nro_internet: document.getElementById('f-nro-internet')?.value.trim()||null,
     nro_expensas: document.getElementById('f-nro-expensas')?.value.trim()||null,
-    servicios_propietario: [...document.querySelectorAll('.serv-prop-chk:checked')].map(x=>x.value).join(', ')||null,
+    servicios_propietario: null,
     servicios_rendir_propietario: [...document.querySelectorAll('.rinde-chk:checked')].map(x=>x.value).join(', ')||null,
     pct_epe: (() => { const v = parseFloat(document.getElementById('f-pct-epe')?.value); return isNaN(v) ? 100 : v; })(),
     pct_agua: (() => { const v = parseFloat(document.getElementById('f-pct-agua')?.value); return isNaN(v) ? 100 : v; })(),
@@ -5803,7 +5803,7 @@ async function confirmarImportarPDF() {
           const hoja = r.contrato.hoja;
       const hojaEncoded = encodeURIComponent(hoja);
       const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesStr}&limit=1`);
-          if (!pagos.length) { console.log('Sin pago para', hoja, mesStr); continue; }
+          if (!pagos.length) { continue; }
       const p = pagos[0];
       
       const fresh = await sbGet('contratos', `hoja=eq.${hojaEncoded}&select=pct_${srv}&limit=1`);
