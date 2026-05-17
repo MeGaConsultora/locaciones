@@ -388,6 +388,7 @@
           <th>Tipo</th>
           <th>Dirección</th>
           <th class="num">Total mes</th>
+          <th class="num">Gs. inicio</th>
           <th class="num">Saldo</th>
           <th>Estado</th>
         </tr></thead>
@@ -943,6 +944,10 @@ function renderContratos() {
         const totalMes = pagoActual ? (pagoActual.total||0) : null;
         // Get total saldo (up to current month)
         const saldoTotal = DB.pagos.filter(p => p.hoja===c.hoja && p.saldo>0 && p.mes && p.mes.substring(0,7)<=mesActual).reduce((s,p)=>s+(p.saldo||0),0);
+        // Gastos de inicio pendientes
+        const gastosCuotas = DB_GASTOS_CUOTAS.filter(g => g.contrato_id === c.id && g.mes && g.mes.substring(0,7) <= mesActual);
+        const gastosSaldoInq = gastosCuotas.reduce((s,g) => s + Math.max(0,(g.monto_inquilino||0)-(g.pagado_inquilino||0)), 0);
+        const saldoTotalConGastos = saldoTotal + gastosSaldoInq;
         return `<tr onclick="openContrato(${c.id})">
           <td><strong>${c.titulo||c.hoja}</strong></td>
           <td>${c.locador||'—'}</td><td>${c.locatario||'—'}</td>
@@ -950,7 +955,8 @@ function renderContratos() {
           <td><span class="tag-tipo">${normTipo(c.tipo_inmueble||'')}</span></td>
           <td style="font-size:0.82rem">${(() => { const inm=DB_INMUEBLES.find(x=>x.id===c.inmueble_id); return inm ? formatDireccion(inm) : '—'; })()}</td>
           <td class="num">${totalMes !== null ? formatMoney(totalMes) : '—'}</td>
-          <td class="num ${saldoTotal>0?'saldo-pendiente':'saldo-ok'}">${saldoTotal>0?formatMoney(saldoTotal):'✓'}</td>
+          ${gastosSaldoInq > 0 ? `<td class="num saldo-pendiente" title="Gastos de inicio pendientes">${formatMoney(gastosSaldoInq)}</td>` : '<td class="num" style="color:#ccc">—</td>'}
+          <td class="num ${saldoTotalConGastos>0?'saldo-pendiente':'saldo-ok'}">${saldoTotalConGastos>0?formatMoney(saldoTotalConGastos):'✓'}</td>
           <td><span class="badge ${est==='vigente'?'badge-green':est==='rescindido'?'badge-red':'badge-gray'}">${est}</span></td>
         </tr>`;
       }).join('');
@@ -4175,7 +4181,6 @@ async function guardarContrato() {
     indice_actualizacion: document.getElementById('f-indice').value||null,
     servicios_inquilino: servicios||null,
 
-    gastos_pagado: 0,
     propietario_id: propId||null,
     inquilino_id: inqId||null,
     comision_porcentaje: comisionPct,
@@ -4202,6 +4207,12 @@ async function guardarContrato() {
     pct_prop_seguro: (() => { const v = parseFloat(document.getElementById('f-pct-prop-seguro')?.value); return isNaN(v) ? 0 : v; })(),
     pct_prop_internet: (() => { const v = parseFloat(document.getElementById('f-pct-prop-internet')?.value); return isNaN(v) ? 0 : v; })(),
     pct_prop_expensas: (() => { const v = parseFloat(document.getElementById('f-pct-prop-expensas')?.value); return isNaN(v) ? 0 : v; })(),
+    notas: document.getElementById('f-notas')?.value.trim()||null,
+    gastos_inicio: parseFloat(document.getElementById('f-gastos-inicio')?.value)||0,
+    gastos_cuotas: parseInt(document.getElementById('f-gastos-cuotas')?.value)||1,
+    gastos_desde_mes: document.getElementById('f-gastos-desde')?.value ? document.getElementById('f-gastos-desde').value+'-01' : (vigDesde||null),
+    gastos_pct_inquilino: parseFloat(document.getElementById('f-gastos-pct-inq')?.value)??100,
+    gastos_pct_propietario: parseFloat(document.getElementById('f-gastos-pct-prop')?.value)??0,
   };
 
   try {
@@ -4284,9 +4295,8 @@ async function actualizarContrato(id) {
     indice_actualizacion: document.getElementById('f-indice')?.value||null,
     notas: document.getElementById('f-notas')?.value.trim()||null,
     gastos_inicio: parseFloat(document.getElementById('f-gastos-inicio')?.value)||0,
-    vigencia_desde: document.getElementById('f-vigencia-desde')?.value||null,
     gastos_cuotas: parseInt(document.getElementById('f-gastos-cuotas')?.value)||1,
-    gastos_desde_mes: document.getElementById('f-gastos-desde')?.value ? document.getElementById('f-gastos-desde').value+'-01' : null,
+    gastos_desde_mes: document.getElementById('f-gastos-desde')?.value ? document.getElementById('f-gastos-desde').value+'-01' : (document.getElementById('f-desde')?.value||null),
     gastos_pct_inquilino: parseFloat(document.getElementById('f-gastos-pct-inq')?.value)??100,
     gastos_pct_propietario: parseFloat(document.getElementById('f-gastos-pct-prop')?.value)??0,
     servicios_inquilino: serviciosChecked.length ? serviciosChecked.join(', ') : null,
