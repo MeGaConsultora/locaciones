@@ -1989,7 +1989,9 @@ async function cargarListaServicios(filtro='') {
         grupos[nro].contratos.push(c);
       });
       return Object.values(grupos).map(g => {
-        const totalPct = g.contratos.reduce((s,c) => s+(c['pct_'+srv]||100)+(c['pct_prop_'+srv]||0), 0);
+        // For pctOk, sum pct of ALL contracts with this nro (including already loaded ones)
+        const todosConNro = g.nro ? DB.contratos.filter(c => c[`nro_${srv}`] === g.nro) : g.contratos;
+        const totalPct = todosConNro.reduce((s,c) => s+(c['pct_'+srv]||100)+(c['pct_prop_'+srv]||0), 0);
         const pctOk = Math.abs(totalPct - 100) < 1;
         const detalle = g.contratos.map(c => `${c.titulo||c.hoja} (${c['pct_'+srv]||100}%)`).join(', ');
         const hojas = g.contratos.map(c => c.hoja).join('|');
