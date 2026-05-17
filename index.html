@@ -388,7 +388,6 @@
           <th>Tipo</th>
           <th>Dirección</th>
           <th class="num">Total mes</th>
-          <th class="num">Gs. inicio</th>
           <th class="num">Saldo</th>
           <th>Estado</th>
         </tr></thead>
@@ -962,7 +961,6 @@ function renderContratos() {
           <td><span class="tag-tipo">${normTipo(c.tipo_inmueble||'')}</span></td>
           <td style="font-size:0.82rem">${(() => { const inm=DB_INMUEBLES.find(x=>x.id===c.inmueble_id); return inm ? formatDireccion(inm) : '—'; })()}</td>
           <td class="num">${totalMesConGastos !== null ? formatMoney(totalMesConGastos) : '—'}</td>
-          ${gastosSaldoInq > 0 ? `<td class="num saldo-pendiente" title="Gastos de inicio pendientes">${formatMoney(gastosSaldoInq)}</td>` : '<td class="num" style="color:#ccc">—</td>'}
           <td class="num ${saldoTotalConGastos>0?'saldo-pendiente':'saldo-ok'}">${saldoTotalConGastos>0?formatMoney(saldoTotalConGastos):'✓'}</td>
           <td><span class="badge ${est==='vigente'?'badge-green':est==='rescindido'?'badge-red':'badge-gray'}">${est}</span></td>
         </tr>`;
@@ -1228,7 +1226,7 @@ function renderGrilla(c) {
       ${serviciosInquilino.expensas?`<td class="num">${p.monto_expensas>0?formatMoney(p.monto_expensas):'—'}</td>`:''}
       ${(() => { if (!DB_GASTOS_CUOTAS.some(g => parseInt(g.contrato_id) === c?.id)) return ''; const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7))); return `<td class="num">${gc?.monto_inquilino>0?formatMoney(gc.monto_inquilino):'—'}</td>`; })()}
       <td style="font-size:0.78rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasLabel}">${extrasLabel}</td>
-      <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>
+      <td class="num" id="total-${p.id}"><strong>${(() => { const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7))); return formatMoney(calcularTotal(p, extras) + (gc?.monto_inquilino||0)); })()}</strong></td>
       <td class="num" id="abonado-${p.id}">${(() => { const ab = (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
       <td class="num" id="saldo-${p.id}">${p.saldo>0?`<span class="saldo-pendiente">${formatMoney(p.saldo)}</span>`:'<span class="saldo-ok">✓</span>'}</td>
       <td id="estado-${p.id}">${getEstadoLabel(p)}</td>
@@ -2546,12 +2544,12 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
           fields += mkSrvField('gp-seguro','Seguro', p?.monto_seguro, 'seguro');
           if (servs.includes('internet')) fields += mkSrvField('gp-internet','Internet', p?.monto_internet, 'internet');
           if (servs.includes('expensas')) fields += mkSrvField('gp-expensas','Expensas', p?.monto_expensas, 'expensas');
-          // Gastos de inicio cuota
+          // Gastos de inicio cuota - readonly, just informative
           const gastoCuotaGP = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey));
           if (gastoCuotaGP?.monto_inquilino > 0) {
             const cuotaNumGP = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).findIndex(g => g.mes && g.mes.startsWith(mesKey)) + 1;
             const totalCuotasGP = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).length;
-            fields += `<div class="form-group"><label>Gastos inicio (cuota ${cuotaNumGP}/${totalCuotasGP})</label><input id="gp-gastos-inicio" type="number" value="${gastoCuotaGP.monto_inquilino}" placeholder="0" data-gastos-id="${gastoCuotaGP.id}" oninput="recalcGP(${comisionPct})" style="margin-top:4px"></div>`;
+            fields += `<div class="form-group"><label>Gastos inicio (cuota ${cuotaNumGP}/${totalCuotasGP})</label><input type="number" value="${gastoCuotaGP.monto_inquilino}" readonly style="margin-top:4px;background:#f5f5f5;color:#999;cursor:not-allowed"><div style="font-size:0.72rem;color:#aaa;margin-top:2px">Registrar pago en solapa Cobrar</div></div>`;
           }
           return fields;
         })()}
@@ -2683,14 +2681,14 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
     if (gc?.monto_inquilino > 0) {
       const cuotaNum = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).findIndex(g => g.mes && g.mes.startsWith(mesKey)) + 1;
       const totalCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).length;
-      items.push({ id:'gastos-inicio', label:`Gastos de inicio (cuota ${cuotaNum}/${totalCuotas})`, val: gc.monto_inquilino, gastosId: gc.id });
+      items.push({ id:'gastos-inicio', label:`Gastos de inicio (cuota ${cuotaNum}/${totalCuotas})`, val: gc.monto_inquilino });
     }
   }
 
   return items.map(it => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
-        <input type="checkbox" id="cobro-chk-${it.id}" value="${it.val}" data-signo="1" ${it.gastosId?`data-gastos-id="${it.gastosId}"`:''}  checked onchange="recalcCobro()" style="width:15px;height:15px">
+        <input type="checkbox" id="cobro-chk-${it.id}" value="${it.val}" data-signo="1" checked onchange="recalcCobro()" style="width:15px;height:15px">
         ${it.label}
       </label>
       <span id="cobro-lbl-${it.id}" style="font-size:0.85rem;color:#666">${formatMoney(it.val)}</span>
@@ -2992,10 +2990,10 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
   
   const internet = parseFloat(document.getElementById('gp-internet')?.value)||0;
   const expensas = parseFloat(document.getElementById('gp-expensas')?.value)||0;
-  const gastosInicio = parseFloat(document.getElementById('gp-gastos-inicio')?.value)||0;
-  const gastosId = document.getElementById('gp-gastos-inicio')?.dataset?.gastosId;
 
-  const total = alq+epe+agua+tgiu+seguro+internet+expensas+gastosInicio+extrasInqTotal;
+  // Include gastos de inicio cuota in total
+  const gastoCuotaTotal = (() => { const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey)); return gc?.monto_inquilino||0; })();
+  const total = alq+epe+agua+tgiu+seguro+internet+expensas+gastoCuotaTotal+extrasInqTotal;
 
   try {
     const hojaEncoded = encodeURIComponent(hoja);
@@ -3026,12 +3024,6 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       pagoId = r[0]?.id;
     }
     toast('Importes guardados ✓');
-    // Save gastos inicio monto
-    if (gastosId && gastosInicio > 0) {
-      await sbPatch('gastos_inicio_cuotas', parseInt(gastosId), { monto_inquilino: gastosInicio });
-      const gc = DB_GASTOS_CUOTAS.find(g => g.id === parseInt(gastosId));
-      if (gc) gc.monto_inquilino = gastosInicio;
-    }
 
     const c = DB.contratos.find(x=>x.id===contratoId);
     if (c) {
@@ -3101,12 +3093,14 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   // Collect cobro items
   const checks = document.querySelectorAll('[id^="cobro-chk-"]');
   let totalCobrado = 0;
+  
   const itemsRecibo = [];
   checks.forEach(chk => {
     if (chk.checked) {
       const signo = parseFloat(chk.dataset.signo||'1');
       const val = parseFloat(chk.value)||0;
       totalCobrado += signo * val;
+
       const label = chk.closest('div')?.querySelector('label')?.textContent?.trim()||'';
       itemsRecibo.push({label, monto: signo*val});
     }
@@ -3138,15 +3132,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
 
   toast('Cobro registrado ✓');
 
-  // Save gastos pagado if applicable
-  const gastosChkCobro = document.getElementById('cobro-chk-gastos-inicio');
-  if (gastosChkCobro?.dataset?.gastosId) {
-    const gastosId = parseInt(gastosChkCobro.dataset.gastosId);
-    const gastosPagado = gastosChkCobro.checked ? (parseFloat(gastosChkCobro.value)||0) : 0;
-    await sbPatch('gastos_inicio_cuotas', gastosId, { pagado_inquilino: gastosPagado });
-    const gc = DB_GASTOS_CUOTAS.find(g => g.id === gastosId);
-    if (gc) gc.pagado_inquilino = gastosPagado;
-  }
+
 
   // Generate receipt
   imprimirRecibo({
