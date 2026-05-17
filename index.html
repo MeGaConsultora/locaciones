@@ -2231,26 +2231,28 @@ function actualizarTotalPct(srv) {
 
     // Also check shared nros — other contracts with same nro
     const contratoId = parseInt(document.getElementById('modal-overlay')?.dataset?.contratoId);
-    const contratoActual = DB.contratos.find(c => c.id === contratoId);
     const sharedWarnings = [];
-    if (contratoActual) {
-      allRows.forEach(s => {
-        if (!serviciosInq.includes(s)) return; // skip if not assigned to inquilino
-        const nroActual = contratoActual[`nro_${s}`] || document.getElementById(`f-nro-${s}`)?.value;
-        if (!nroActual) return;
-        const pctInq = parseFloat(document.getElementById(`f-pct-${s}`)?.value)||0;
-        const pctProp = parseFloat(document.getElementById(`f-pct-prop-${s}`)?.value)||0;
-        const otrosContratos = DB.contratos.filter(c => c.id !== contratoId && c[`nro_${s}`] === nroActual);
-        if (!otrosContratos.length) return;
-        const totalGrupo = pctInq + pctProp + otrosContratos.reduce((sum, c) => sum + (c[`pct_${s}`]||100) + (c[`pct_prop_${s}`]||0), 0);
-        if (Math.abs(totalGrupo - 100) > 0.5) {
-          sharedWarnings.push(`${s.toUpperCase()} (grupo N°${nroActual} suma ${totalGrupo}%)`);
-        }
-      });
-    }
+    allRows.forEach(s => {
+      if (!serviciosInq.includes(s)) return;
+      const nroActual = document.getElementById(`f-nro-${s}`)?.value?.trim();
+      if (!nroActual) return;
+      const pctInqVal = document.getElementById(`f-pct-${s}`)?.value;
+      const pctPropVal = document.getElementById(`f-pct-prop-${s}`)?.value;
+      const pctInq = pctInqVal !== '' ? parseFloat(pctInqVal) : 100;
+      const pctProp = pctPropVal !== '' ? parseFloat(pctPropVal) : 0;
+      const otrosContratos = DB.contratos.filter(c => c.id !== contratoId && c[`nro_${s}`] === nroActual);
+      if (!otrosContratos.length) return;
+      const totalGrupo = pctInq + pctProp + otrosContratos.reduce((sum, c) => {
+        const v = (c[`pct_${s}`] !== null && c[`pct_${s}`] !== undefined) ? c[`pct_${s}`] : 100;
+        const vp = (c[`pct_prop_${s}`] !== null && c[`pct_prop_${s}`] !== undefined) ? c[`pct_prop_${s}`] : 0;
+        return sum + v + vp;
+      }, 0);
+      if (Math.abs(totalGrupo - 100) > 0.5) {
+        sharedWarnings.push(`${s.toUpperCase()} (grupo N°${nroActual} suma ${totalGrupo}%)`);
+      }
+    });
 
-    const allWarnings = [...warnings.map(s => s.toUpperCase()), ...sharedWarnings];
-    if (allWarnings.length) {
+    if (warnings.length || sharedWarnings.length) {
       warnEl.style.display = 'block';
       const baseMsg = warnings.length ? `⚠ ${warnings.map(s=>s.toUpperCase()).join(', ')}: la suma de % no da 100%. ` : '';
       const sharedMsg = sharedWarnings.length ? `⚠ Servicio compartido: ${sharedWarnings.join('; ')}. Revisá los % de los contratos del grupo.` : '';
