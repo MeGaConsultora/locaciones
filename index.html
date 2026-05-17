@@ -5764,8 +5764,17 @@ async function guardarNuevoInmueble() {
 async function guardarInmueble(id) {
   const body = _bodyInmueble();
   if (!body.calle) { toast('Ingresá al menos la calle', 'error'); return; }
-  try { await sbPatch('inmuebles', id, body); toast('Inmueble actualizado ✓'); await loadAll(); closeModal(); renderInmuebles(); }
-  catch(e) { toast('Error: ' + e.message, 'error'); }
+  try {
+    await sbPatch('inmuebles', id, body);
+    // Propagate nro_* to all active contracts with this inmueble_id
+    const nros = { nro_epe: body.nro_epe, nro_agua: body.nro_agua, nro_tgiu: body.nro_tgiu,
+                   nro_seguro: body.nro_seguro, nro_internet: body.nro_internet, nro_expensas: body.nro_expensas };
+    const contratos = DB.contratos.filter(c => c.inmueble_id === id && getEstado(c) === 'vigente');
+    await Promise.all(contratos.map(c => sbPatch('contratos', c.id, nros)));
+    if (contratos.length > 0) toast(`Inmueble actualizado ✓ — N° de cuenta propagados a ${contratos.length} contrato/s vigente/s`);
+    else toast('Inmueble actualizado ✓');
+    await loadAll(); closeModal(); renderInmuebles();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
 function _bodyInmueble() {
@@ -5845,13 +5854,13 @@ function seleccionarInmueble(id) {
   if (sug) sug.style.display = 'none';
   const btn = document.getElementById('btn-limpiar-inmueble');
   if (btn) btn.style.display = 'block';
-  // Autocomplete service numbers from inmueble (only if field is empty)
+  // Autocomplete service numbers from inmueble (always overwrite)
   const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
   servicios.forEach(srv => {
     const el = document.getElementById('f-nro-' + srv);
-    if (el && !el.value && inm['nro_' + srv]) {
+    if (el && inm['nro_' + srv]) {
       el.value = inm['nro_' + srv];
-      el.style.background = '#f0faf0'; // subtle green hint
+      el.style.background = '#f0faf0';
       el.title = 'Completado desde el inmueble';
     }
   });
