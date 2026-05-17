@@ -2172,17 +2172,21 @@ function validarPctAlGuardar(contratoId) {
 
   allRows.forEach(s => {
     if (!serviciosInq.includes(s)) return;
-    const inq = parseFloat(document.getElementById('f-pct-'+s)?.value)||0;
-    const prop = parseFloat(document.getElementById('f-pct-prop-'+s)?.value)||0;
+    // Read actual field values (could be 0, not defaulted to 100)
+    const inqVal = document.getElementById('f-pct-'+s)?.value;
+    const propVal = document.getElementById('f-pct-prop-'+s)?.value;
+    const inq = inqVal !== '' && inqVal !== null && inqVal !== undefined ? parseFloat(inqVal) : 100;
+    const prop = propVal !== '' && propVal !== null && propVal !== undefined ? parseFloat(propVal) : 0;
     const nro = document.getElementById('f-nro-'+s)?.value?.trim();
     const ownTotal = inq + prop;
 
     if (nro) {
       const otrosContratos = DB.contratos.filter(c => c.id !== contratoId && c['nro_'+s] === nro);
       const totalGrupo = ownTotal + otrosContratos.reduce((sum, c) => {
-        const v = c['pct_'+s] ?? null;
-        const vp = c['pct_prop_'+s] ?? null;
-        return sum + (v !== null ? v : 100) + (vp !== null ? vp : 0);
+        // Use actual stored value, default 100 only if truly null/undefined
+        const v = (c['pct_'+s] !== null && c['pct_'+s] !== undefined) ? c['pct_'+s] : 100;
+        const vp = (c['pct_prop_'+s] !== null && c['pct_prop_'+s] !== undefined) ? c['pct_prop_'+s] : 0;
+        return sum + v + vp;
       }, 0);
       if (Math.abs(totalGrupo - 100) > 0.5) {
         problemas.push(s.toUpperCase() + ' (grupo N°' + nro + ' suma ' + totalGrupo + '%)');
@@ -3636,8 +3640,8 @@ function _abrirFormularioContrato(c, esNuevo) {
         <tbody>
           ${['epe','agua','tgiu','seguro','internet','expensas'].map(s => {
             const label = s.charAt(0).toUpperCase()+s.slice(1);
-            const pctInq = c['pct_'+s] ?? 100;
-            const pctProp = c['pct_prop_'+s] ?? 0;
+            const pctInq = c['pct_'+s] !== null && c['pct_'+s] !== undefined ? c['pct_'+s] : 100;
+            const pctProp = c['pct_prop_'+s] !== null && c['pct_prop_'+s] !== undefined ? c['pct_prop_'+s] : 0;
             const total = pctInq + pctProp;
             const color = total === 100 ? '' : 'background:#fff3cd';
             const seRinde = c.servicios_rendir_propietario?.includes(label) || false;
