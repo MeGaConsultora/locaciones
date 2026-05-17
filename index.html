@@ -2666,6 +2666,7 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
         const pctInq = c?.['pct_'+srv.key] ?? 100;
         const pctProp = c?.['pct_prop_'+srv.key] ?? 0;
         const seRinde = servRinde.includes(srv.key);
+        console.log('srv:', srv.key, 'servRinde:', servRinde, 'seRinde:', seRinde, 'pctProp:', pctProp);
 
         if (seRinde) {
           // Sum monto from ALL contracts sharing same nro for this service
