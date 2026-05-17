@@ -685,6 +685,7 @@ async function sbDelete(table, id) {
 // ============================================================
 let DB = { contratos: [], pagos: [] };
 let DB_INMUEBLES = [];
+let DB_GASTOS_CUOTAS = [];
 const PG = { contratos:1, pagos:1, pendientes:1 };
 const PER_PAGE = 25;
 let sortState = { contratos:{col:'titulo',dir:'asc'}, pagos:{col:'hoja',dir:'asc'} };
@@ -897,11 +898,16 @@ function renderContratos() {
   // Pendientes stats
   const todosPend = DB.pagos.filter(p => p.saldo && p.saldo > 0 && p.mes && p.mes.substring(0,7) <= TODAY.substring(0,7));
   const totalSaldo = todosPend.reduce((s,p) => s+(p.saldo||0), 0);
+  // Gastos de inicio pendientes
+  const gastosPend = DB_GASTOS_CUOTAS.filter(g => g.mes && g.mes.substring(0,7) <= TODAY.substring(0,7) && 
+    ((g.monto_inquilino||0) > (g.pagado_inquilino||0) || (g.monto_propietario||0) > (g.pagado_propietario||0)));
+  const totalGastosPend = gastosPend.reduce((s,g) => s + Math.max(0,(g.monto_inquilino||0)-(g.pagado_inquilino||0)) + Math.max(0,(g.monto_propietario||0)-(g.pagado_propietario||0)), 0);
   const statsEl = document.getElementById('stats-pendientes');
   if (statsEl) statsEl.innerHTML = `
     <div class="stat-card accent"><div class="stat-label">Total pendiente</div><div class="stat-val" style="font-size:1.3rem">${formatMoney(totalSaldo)}</div></div>
     <div class="stat-card warn"><div class="stat-label">Cuotas sin cobrar</div><div class="stat-val">${todosPend.length}</div></div>
     <div class="stat-card green"><div class="stat-label">Contratos vigentes</div><div class="stat-val">${DB.contratos.filter(c=>getEstado(c)==='vigente').length}</div></div>
+    ${totalGastosPend > 0 ? `<div class="stat-card accent"><div class="stat-label">Gastos de inicio pend.</div><div class="stat-val" style="font-size:1.1rem">${formatMoney(totalGastosPend)}</div></div>` : ''}
   `;
 
   contratosFiltrados = DB.contratos.filter(c => {
@@ -2431,6 +2437,23 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
   document.getElementById('modal-subtitle').textContent = hoja;
   document.getElementById('modal-overlay').dataset.contratoId = c.id;
   document.getElementById('modal-body').innerHTML = `
+    ${(() => {
+      // Gastos de inicio summary
+      const cuotas = DB_GASTOS_CUOTAS.filter(g => g.contrato_id === c.id);
+      if (!cuotas.length) return '';
+      const totalInq = cuotas.reduce((s,g) => s+(g.monto_inquilino||0), 0);
+      const pagadoInq = cuotas.reduce((s,g) => s+(g.pagado_inquilino||0), 0);
+      const totalProp = cuotas.reduce((s,g) => s+(g.monto_propietario||0), 0);
+      const pagadoProp = cuotas.reduce((s,g) => s+(g.pagado_propietario||0), 0);
+      const saldoInq = totalInq - pagadoInq;
+      const saldoProp = totalProp - pagadoProp;
+      if (!totalInq && !totalProp) return '';
+      return `<div style="background:#f0fff4;border:1px solid var(--green);border-radius:8px;padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.82rem">
+        <strong>Gastos de inicio</strong> — ${cuotas.length} cuota/s
+        ${totalInq > 0 ? `<span style="margin-left:12px">Inquilino: ${formatMoney(pagadoInq)} / ${formatMoney(totalInq)} <span style="color:${saldoInq>0?'var(--accent)':'var(--green)'}">· Saldo: ${formatMoney(saldoInq)}</span></span>` : ''}
+        ${totalProp > 0 ? `<span style="margin-left:12px">Propietario: ${formatMoney(pagadoProp)} / ${formatMoney(totalProp)} <span style="color:${saldoProp>0?'var(--accent)':'var(--green)'}">· Saldo: ${formatMoney(saldoProp)}</span></span>` : ''}
+      </div>`;
+    })()}
     <div class="form-group" style="margin-bottom:1.2rem">
       <label>Seleccioná el mes</label>
       <select id="gp-mes-sel" class="filter-select" style="width:100%;margin-top:4px" onchange="cargarPantallaGestionPago(window._gpHoja, window._gpContratoId, this.value, window._gpMeses, window._gpComision)">
@@ -2508,6 +2531,23 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
           return fields;
         })()}
         <div class="form-group"><label>Comisión (${comisionPct}%)</label><input id="gp-comision" type="number" value="${comisionMonto.toFixed(2)}" placeholder="0" readonly style="background:#f5f5f5"></div>
+        ${(() => {
+          // Gastos de inicio cuota for this month
+          const gastoCuota = DB_GASTOS_CUOTAS.find(g => g.contrato_id === contratoId && g.mes && g.mes.startsWith(mesKey));
+          if (!gastoCuota || (!gastoCuota.monto_inquilino && !gastoCuota.monto_propietario)) return '';
+          const cuotaNum = DB_GASTOS_CUOTAS.filter(g => g.contrato_id === contratoId).findIndex(g => g.mes && g.mes.startsWith(mesKey)) + 1;
+          const totalCuotas = DB_GASTOS_CUOTAS.filter(g => g.contrato_id === contratoId).length;
+          return `<div class="form-group" style="grid-column:1/-1">
+            <label>Gastos de inicio (cuota ${cuotaNum}/${totalCuotas})</label>
+            <div style="display:flex;gap:0.75rem;margin-top:4px">
+              ${gastoCuota.monto_inquilino > 0 ? `<div style="flex:1"><div style="font-size:0.72rem;color:#666;margin-bottom:2px">Inquilino — debe: ${formatMoney(gastoCuota.monto_inquilino)} · pagado: ${formatMoney(gastoCuota.pagado_inquilino||0)}</div>
+              <input id="gp-gastos-inq" type="number" value="${gastoCuota.pagado_inquilino||''}" placeholder="0" data-gastos-id="${gastoCuota.id}" data-tipo="inquilino" oninput="recalcGP(${comisionPct})" style="width:100%"></div>` : ''}
+              ${gastoCuota.monto_propietario > 0 ? `<div style="flex:1"><div style="font-size:0.72rem;color:#666;margin-bottom:2px">Propietario — debe: ${formatMoney(gastoCuota.monto_propietario)} · pagado: ${formatMoney(gastoCuota.pagado_propietario||0)}</div>
+              <input id="gp-gastos-prop" type="number" value="${gastoCuota.pagado_propietario||''}" placeholder="0" data-gastos-id="${gastoCuota.id}" data-tipo="propietario" oninput="recalcGP(${comisionPct})" style="width:100%"></div>` : ''}
+            </div>
+          </div>`;
+        })()}
+
       </div>
 
       <div class="section-title" style="margin:1rem 0 0.75rem">Conceptos extras</div>
@@ -2733,6 +2773,21 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
       }
       return html;
     })()}
+    ${(() => {
+      // Gastos de inicio - propietario share
+      const gc = DB_GASTOS_CUOTAS.find(g => g.contrato_id === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7)));
+      if (!gc || !gc.monto_propietario) return '';
+      const cuotaNum = DB_GASTOS_CUOTAS.filter(g => g.contrato_id === c?.id).findIndex(g => g.mes && g.mes.startsWith(p.mes?.substring(0,7))) + 1;
+      const totalCuotas = DB_GASTOS_CUOTAS.filter(g => g.contrato_id === c?.id).length;
+      const montoProp = gc.monto_propietario;
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
+          <input type="checkbox" id="prop-chk-gastos" value="${montoProp}" data-signo="-1" checked onchange="recalcProp()" style="width:15px;height:15px">
+          Gastos de inicio (cuota ${cuotaNum}/${totalCuotas})
+        </label>
+        <span style="font-size:0.85rem;color:var(--accent)">− ${formatMoney(montoProp)}</span>
+      </div>`;
+    })()}
   `;
 }
 
@@ -2915,7 +2970,19 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
   
   const internet = parseFloat(document.getElementById('gp-internet')?.value)||0;
   const expensas = parseFloat(document.getElementById('gp-expensas')?.value)||0;
-  const total = alq+epe+agua+tgiu+seguro+internet+expensas+extrasInqTotal;
+  
+  // Gastos de inicio
+  const gastosInqEl = document.getElementById('gp-gastos-inq');
+  const gastosPropEl = document.getElementById('gp-gastos-prop');
+  const gastosId = gastosInqEl?.dataset?.gastosId || gastosPropEl?.dataset?.gastosId;
+  const gastosInqPagado = parseFloat(gastosInqEl?.value)||0;
+  const gastosPropPagado = parseFloat(gastosPropEl?.value)||0;
+  
+  // Gastos inquilino add to total
+  const gastoCuota = gastosId ? DB_GASTOS_CUOTAS.find(g => g.id === parseInt(gastosId)) : null;
+  const gastosInqMonto = gastoCuota?.monto_inquilino || 0;
+  
+  const total = alq+epe+agua+tgiu+seguro+internet+expensas+extrasInqTotal+gastosInqMonto;
 
   try {
     const hojaEncoded = encodeURIComponent(hoja);
@@ -2946,6 +3013,16 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       pagoId = r[0]?.id;
     }
     toast('Importes guardados ✓');
+    // Save gastos inicio pagado
+    if (gastosId) {
+      const updates = {};
+      if (gastosInqEl) updates.pagado_inquilino = gastosInqPagado;
+      if (gastosPropEl) updates.pagado_propietario = gastosPropPagado;
+      await sbPatch('gastos_inicio_cuotas', parseInt(gastosId), updates);
+      // Update local cache
+      const gc = DB_GASTOS_CUOTAS.find(g => g.id === parseInt(gastosId));
+      if (gc) { if (gastosInqEl) gc.pagado_inquilino = gastosInqPagado; if (gastosPropEl) gc.pagado_propietario = gastosPropPagado; }
+    }
     const c = DB.contratos.find(x=>x.id===contratoId);
     if (c) {
       await recargarGrilla(c);
@@ -3709,6 +3786,20 @@ function _abrirFormularioContrato(c, esNuevo) {
       <textarea id="f-notas" rows="3" placeholder="Ej: Fecha de ingreso, EPE IN, AGUA IN..." style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:0.88rem;resize:vertical">${c?.notas||''}</textarea>
     </div>
 
+    <div class="section-title" style="margin:1.2rem 0 0.5rem">Gastos de inicio</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:0.75rem;margin-bottom:1rem;align-items:end">
+      <div class="form-group" style="margin:0"><label>Importe total</label>
+        <input id="f-gastos-inicio" type="number" value="${c?.gastos_inicio||''}" placeholder="0" style="margin-top:4px"></div>
+      <div class="form-group" style="margin:0"><label>Cuotas</label>
+        <input id="f-gastos-cuotas" type="number" min="1" value="${c?.gastos_cuotas||1}" placeholder="1" style="margin-top:4px"></div>
+      <div class="form-group" style="margin:0"><label>Desde mes</label>
+        <input id="f-gastos-desde" type="month" value="${c?.gastos_desde_mes?c.gastos_desde_mes.substring(0,7):c?.vigencia_desde?.substring(0,7)||''}" style="margin-top:4px"></div>
+      <div class="form-group" style="margin:0"><label>% Inquilino</label>
+        <input id="f-gastos-pct-inq" type="number" min="0" max="100" value="${c?.gastos_pct_inquilino??100}" style="margin-top:4px"></div>
+      <div class="form-group" style="margin:0"><label>% Propietario</label>
+        <input id="f-gastos-pct-prop" type="number" min="0" max="100" value="${c?.gastos_pct_propietario??0}" style="margin-top:4px"></div>
+    </div>
+
     <div class="section-title" style="margin:1.2rem 0 1rem">Servicios e impuestos a cargo del inquilino</div>
     <div style="display:flex;flex-wrap:wrap;gap:0.75rem;background:var(--cream);padding:1rem;border-radius:10px;margin-bottom:1rem">
       ${['EPE','Agua','TGIU','Internet','Expensas','Seguro'].map(s => {
@@ -4155,6 +4246,11 @@ async function guardarContrato() {
       toast(`${mesesGenerados.length} meses generados ✓`);
     }
 
+    // Generate gastos inicio cuotas
+    if (nuevoContrato && body.gastos_inicio > 0) {
+      await generarGastosCuotas(nuevoContrato.id, body);
+    }
+
     closeModal();
     await loadAll();
   } catch(e) { toast('Error al guardar: '+e.message,'error'); }
@@ -4188,6 +4284,11 @@ async function actualizarContrato(id) {
     indice_actualizacion: document.getElementById('f-indice')?.value||null,
     gastos_inicio: parseFloat(document.getElementById('f-gastos')?.value)||0,
     notas: document.getElementById('f-notas')?.value.trim()||null,
+    gastos_inicio: parseFloat(document.getElementById('f-gastos-inicio')?.value)||0,
+    gastos_cuotas: parseInt(document.getElementById('f-gastos-cuotas')?.value)||1,
+    gastos_desde_mes: document.getElementById('f-gastos-desde')?.value ? document.getElementById('f-gastos-desde').value+'-01' : null,
+    gastos_pct_inquilino: parseFloat(document.getElementById('f-gastos-pct-inq')?.value)??100,
+    gastos_pct_propietario: parseFloat(document.getElementById('f-gastos-pct-prop')?.value)??0,
     servicios_inquilino: serviciosChecked.length ? serviciosChecked.join(', ') : null,
     dia_vencimiento: parseInt(document.getElementById('f-dia-venc')?.value)||10,
     interes_punitorio: parseFloat(document.getElementById('f-interes')?.value)||0,
@@ -4311,6 +4412,8 @@ async function actualizarContrato(id) {
       await sbPost('contrato_personas', {contrato_id:id, persona_id:inqIds[i], rol:'inquilino', orden:i+1});
     }
     toast('Contrato actualizado ✓');
+    // Generate gastos inicio cuotas if configured
+    if (body.gastos_inicio > 0) await generarGastosCuotas(id, body);
     // If editing from services screen, reopen services after save
     if (window._volverAServicios) {
       const solapaVolver = window._solapaServicios || '';
@@ -5854,6 +5957,39 @@ async function revertirReciboEmitido(pagoId) {
       await cargarPantallaGestionPago(window._gpHoja, window._gpContratoId, window._gpMesKey, window._gpMeses, window._gpComision, 's3');
     }
   } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// ============================================================
+// GASTOS DE INICIO
+// ============================================================
+async function generarGastosCuotas(contratoId, body) {
+  if (!body.gastos_inicio || body.gastos_inicio <= 0) return;
+  const cuotas = body.gastos_cuotas || 1;
+  const pctInq = body.gastos_pct_inquilino ?? 100;
+  const pctProp = body.gastos_pct_propietario ?? 0;
+  const montoPorCuota = body.gastos_inicio / cuotas;
+  const montoInq = Math.round(montoPorCuota * pctInq / 100);
+  const montoProp = Math.round(montoPorCuota * pctProp / 100);
+
+  // Get existing cuotas to avoid duplicates
+  const existing = await sbGet('gastos_inicio_cuotas', `contrato_id=eq.${contratoId}&order=mes.asc`);
+
+  // Calculate months
+  const desde = body.gastos_desde_mes || body.vigencia_desde;
+  if (!desde) return;
+  const [sy, sm] = desde.substring(0,7).split('-').map(Number);
+  const rows = [];
+  for (let i = 0; i < cuotas; i++) {
+    let m = sm + i;
+    let y = sy;
+    while (m > 12) { m -= 12; y++; }
+    const mes = `${y}-${String(m).padStart(2,'0')}-01`;
+    const existingRow = existing.find(r => r.mes && r.mes.startsWith(mes.substring(0,7)));
+    if (!existingRow) {
+      rows.push({ contrato_id: contratoId, mes, monto_inquilino: montoInq, monto_propietario: montoProp, pagado_inquilino: 0, pagado_propietario: 0 });
+    }
+  }
+  if (rows.length) await Promise.all(rows.map(r => sbPost('gastos_inicio_cuotas', r)));
 }
 
 // ============================================================
