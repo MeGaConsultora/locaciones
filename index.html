@@ -2241,11 +2241,15 @@ function actualizarTotalPct(srv) {
       if (!nroActual) return;
       const pctInqVal = document.getElementById(`f-pct-${s}`)?.value;
       const pctPropVal = document.getElementById(`f-pct-prop-${s}`)?.value;
-      const pctInq = pctInqVal !== '' ? parseFloat(pctInqVal) : 100;
-      const pctProp = pctPropVal !== '' ? parseFloat(pctPropVal) : 0;
-      const otrosContratos = DB.contratos.filter(c => contratoId !== null && c.id !== contratoId && c[`nro_${s}`] === nroActual);
+      const pctInq = pctInqVal !== '' ? parseFloat(pctInqVal)||0 : 100;
+      const pctProp = pctPropVal !== '' ? parseFloat(pctPropVal)||0 : 0;
+      // Sum pct of ALL contracts that have this service ticked AND same nro
+      const otrosContratos = DB.contratos.filter(c => 
+        contratoId !== null && c.id !== contratoId && 
+        c[`nro_${s}`] === nroActual &&
+        (c.servicios_inquilino||'').toLowerCase().includes(s)
+      );
       if (!otrosContratos.length) return;
-      if (pctInq === 0 && pctProp === 0) return; // user hasn't set pct yet, skip
       const totalGrupo = pctInq + pctProp + otrosContratos.reduce((sum, c) => {
         const v = (c[`pct_${s}`] !== null && c[`pct_${s}`] !== undefined) ? c[`pct_${s}`] : 100;
         const vp = (c[`pct_prop_${s}`] !== null && c[`pct_prop_${s}`] !== undefined) ? c[`pct_prop_${s}`] : 0;
