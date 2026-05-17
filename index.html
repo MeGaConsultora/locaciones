@@ -5834,7 +5834,11 @@ async function revertirReciboEmitido(pagoId) {
     const p = DB.pagos.find(x => x.id === pagoId);
     if (p) { p.recibo_prop_emitido = false; p.recibo_prop_fecha = null; }
     toast('Emisión revertida ✓');
-    await loadAll();
+    // Find contrato and reload GP
+    const hoja = p?.hoja;
+    const contrato = DB.contratos.find(c => c.hoja === hoja);
+    if (contrato) await recargarGrilla(contrato);
+    else await loadAll();
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
