@@ -2165,6 +2165,42 @@ async function guardarServicios() {
 }
 
 
+function validarPctAlGuardar(contratoId) {
+  const allRows = ['epe','agua','tgiu','seguro','internet','expensas'];
+  const serviciosInq = [...document.querySelectorAll('.serv-edit-chk:checked')].map(x => x.value.toLowerCase());
+  const problemas = [];
+
+  allRows.forEach(s => {
+    if (!serviciosInq.includes(s)) return;
+    const inq = parseFloat(document.getElementById(`f-pct-${s}`)?.value)||0;
+    const prop = parseFloat(document.getElementById(`f-pct-prop-${s}`)?.value)||0;
+    const nro = document.getElementById(`f-nro-${s}`)?.value?.trim();
+
+    // Check own pct
+    const ownTotal = inq + prop;
+    if (Math.abs(ownTotal - 100) > 0.5 && !nro) {
+      problemas.push(`${s.toUpperCase()}: suma ${ownTotal}% (debería ser 100%)`);
+      return;
+    }
+
+    // Check shared group
+    if (nro) {
+      const otrosContratos = DB.contratos.filter(c => c.id !== contratoId && c[`nro_${s}`] === nro);
+      if (otrosContratos.length) {
+        const totalGrupo = inq + prop + otrosContratos.reduce((sum, c) => sum + (c[`pct_${s}`]||100) + (c[`pct_prop_${s}`]||0), 0);
+        if (Math.abs(totalGrupo - 100) > 0.5) {
+          problemas.push(`${s.toUpperCase()} (grupo N°${nro} suma ${totalGrupo}%)`);
+        }
+      } else if (Math.abs(ownTotal - 100) > 0.5) {
+        problemas.push(`${s.toUpperCase()}: suma ${ownTotal}% (debería ser 100%)`);
+      }
+    }
+  });
+
+  if (!problemas.length) return true;
+  return confirm(`⚠ Los siguientes servicios no suman 100%:\n\n${problemas.join('\n')}\n\n¿Querés guardar igual?`);
+}
+
 function actualizarTotalPct(srv) {
   const inq = parseFloat(document.getElementById(`f-pct-${srv}`)?.value)||0;
   const prop = parseFloat(document.getElementById(`f-pct-prop-${srv}`)?.value)||0;
@@ -4082,7 +4118,8 @@ async function actualizarContrato(id) {
       return Math.abs(oldPct - newPct) > 0.5;
     });
 
-    await sbPatch('contratos', id, body);
+    if (!validarPctAlGuardar(id)) return;
+  await sbPatch('contratos', id, body);
 
     // Propagate nro_* to inmueble and other active contracts with same inmueble_id
     if (body.inmueble_id) {
