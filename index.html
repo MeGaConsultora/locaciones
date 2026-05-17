@@ -2172,34 +2172,32 @@ function validarPctAlGuardar(contratoId) {
 
   allRows.forEach(s => {
     if (!serviciosInq.includes(s)) return;
-    const inq = parseFloat(document.getElementById(`f-pct-${s}`)?.value)||0;
-    const prop = parseFloat(document.getElementById(`f-pct-prop-${s}`)?.value)||0;
-    const nro = document.getElementById(`f-nro-${s}`)?.value?.trim();
-
-    // Check own pct
+    const inq = parseFloat(document.getElementById('f-pct-'+s)?.value)||0;
+    const prop = parseFloat(document.getElementById('f-pct-prop-'+s)?.value)||0;
+    const nro = document.getElementById('f-nro-'+s)?.value?.trim();
     const ownTotal = inq + prop;
-    if (Math.abs(ownTotal - 100) > 0.5 && !nro) {
-      problemas.push(`${s.toUpperCase()}: suma ${ownTotal}% (debería ser 100%)`);
-      return;
-    }
 
-    // Check shared group
     if (nro) {
-      const otrosContratos = DB.contratos.filter(c => c.id !== contratoId && c[`nro_${s}`] === nro);
-      if (otrosContratos.length) {
-        const totalGrupo = inq + prop + otrosContratos.reduce((sum, c) => sum + (c[`pct_${s}`]||100) + (c[`pct_prop_${s}`]||0), 0);
-        if (Math.abs(totalGrupo - 100) > 0.5) {
-          problemas.push(`${s.toUpperCase()} (grupo N°${nro} suma ${totalGrupo}%)`);
-        }
-      } else if (Math.abs(ownTotal - 100) > 0.5) {
-        problemas.push(`${s.toUpperCase()}: suma ${ownTotal}% (debería ser 100%)`);
+      const otrosContratos = DB.contratos.filter(c => c.id !== contratoId && c['nro_'+s] === nro);
+      const totalGrupo = ownTotal + otrosContratos.reduce((sum, c) => {
+        const v = c['pct_'+s] ?? null;
+        const vp = c['pct_prop_'+s] ?? null;
+        return sum + (v !== null ? v : 100) + (vp !== null ? vp : 0);
+      }, 0);
+      if (Math.abs(totalGrupo - 100) > 0.5) {
+        problemas.push(s.toUpperCase() + ' (grupo N°' + nro + ' suma ' + totalGrupo + '%)');
+      }
+    } else {
+      if (Math.abs(ownTotal - 100) > 0.5) {
+        problemas.push(s.toUpperCase() + ': suma ' + ownTotal + '% (debería ser 100%)');
       }
     }
   });
 
   if (!problemas.length) return true;
-  return confirm(`⚠ Los siguientes servicios no suman 100%:\n\n${problemas.join('\n')}\n\n¿Querés guardar igual?`);
+  return confirm('⚠ Los siguientes servicios no suman 100%:\n\n' + problemas.join('\n') + '\n\n¿Querés guardar igual?');
 }
+
 
 function actualizarTotalPct(srv) {
   const inq = parseFloat(document.getElementById(`f-pct-${srv}`)?.value)||0;
