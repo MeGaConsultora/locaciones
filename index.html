@@ -712,7 +712,8 @@ async function loadAll() {
     } catch(e) { console.error('Error loading inmuebles:', e); DB_INMUEBLES = []; }
     try {
       DB_GASTOS_CUOTAS = await sbGet('gastos_inicio_cuotas', 'select=*&order=mes.asc&limit=5000');
-    } catch(e) { DB_GASTOS_CUOTAS = []; }
+      console.log('DB_GASTOS_CUOTAS loaded:', DB_GASTOS_CUOTAS.length);
+    } catch(e) { console.error('Error loading gastos:', e); DB_GASTOS_CUOTAS = []; }
     document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR', {timeZone:'America/Argentina/Buenos_Aires'})}`;
     populateFiltros();
     await loadPersonas();
@@ -945,6 +946,9 @@ function renderContratos() {
         const mesActual = TODAY.substring(0,7);
         const pagoActual = DB.pagos.filter(p => p.hoja===c.hoja && p.mes && p.mes.substring(0,7)===mesActual).sort((a,b)=>b.id-a.id)[0];
         const totalMes = pagoActual ? (pagoActual.total||0) : null;
+        // Add gastos cuota del mes to totalMes display
+        const gastoCuotaMes = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c.id && g.mes && g.mes.startsWith(mesActual));
+        const totalMesConGastos = totalMes !== null ? totalMes + (gastoCuotaMes?.monto_inquilino||0) : null;
         // Get total saldo (up to current month)
         const saldoTotal = DB.pagos.filter(p => p.hoja===c.hoja && p.saldo>0 && p.mes && p.mes.substring(0,7)<=mesActual).reduce((s,p)=>s+(p.saldo||0),0);
         // Gastos de inicio pendientes
@@ -957,7 +961,7 @@ function renderContratos() {
           <td>${formatDate(c.vigencia_hasta, true)}${alerta}</td>
           <td><span class="tag-tipo">${normTipo(c.tipo_inmueble||'')}</span></td>
           <td style="font-size:0.82rem">${(() => { const inm=DB_INMUEBLES.find(x=>x.id===c.inmueble_id); return inm ? formatDireccion(inm) : '—'; })()}</td>
-          <td class="num">${totalMes !== null ? formatMoney(totalMes) : '—'}</td>
+          <td class="num">${totalMesConGastos !== null ? formatMoney(totalMesConGastos) : '—'}</td>
           ${gastosSaldoInq > 0 ? `<td class="num saldo-pendiente" title="Gastos de inicio pendientes">${formatMoney(gastosSaldoInq)}</td>` : '<td class="num" style="color:#ccc">—</td>'}
           <td class="num ${saldoTotalConGastos>0?'saldo-pendiente':'saldo-ok'}">${saldoTotalConGastos>0?formatMoney(saldoTotalConGastos):'✓'}</td>
           <td><span class="badge ${est==='vigente'?'badge-green':est==='rescindido'?'badge-red':'badge-gray'}">${est}</span></td>
@@ -1318,7 +1322,7 @@ async function editarMesConSolapa(hoja, contratoId, mesPreseleccionado, solapa) 
 
 function calcularTotal(p, extras) {
   const totalExtras = (extras||[]).reduce((s,e)=>s+(parseFloat(e.importe)||0),0);
-  return (p.importe_alquiler||0)+(p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+totalExtras;
+  return (p.importe_alquiler||0)+(p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0)+totalExtras;
 }
 
 async function actualizarCampo(pagoId, campo, valor) {
@@ -4545,6 +4549,8 @@ function cargarItemsPago(impagos, pagoId, todosPagos) {
     { id:'agua',     label:'Agua',      val: pago.monto_agua },
     { id:'tgiu',     label:'TGIU',      val: pago.monto_tgiu },
     { id:'seguro',   label:'Seguro',    val: pago.monto_seguro },
+    { id:'internet', label:'Internet',  val: pago.monto_internet },
+    { id:'expensas', label:'Expensas',  val: pago.monto_expensas },
     { id:'otros',    label:'Otros',     val: pago.monto_otros, concepto: pago.concepto_otros },
   ].filter(it => it.val && it.val > 0);
 
