@@ -700,20 +700,19 @@ async function loadAll() {
   try {
     // Refresh token if needed before loading
     if (currentUser?.token) updateAuthHeaders(currentUser.token);
-    const [contratos, pagos] = await Promise.all([
+    const [contratos, pagos, gastosCuotas] = await Promise.all([
       sbGet('contratos', 'select=*&order=titulo.asc&limit=1000'),
-      sbGetAll('pagos', 'select=*,recibo_prop_emitido,recibo_prop_fecha&order=mes.desc')
+      sbGetAll('pagos', 'select=*,recibo_prop_emitido,recibo_prop_fecha&order=mes.desc'),
+      sbGet('gastos_inicio_cuotas', 'select=*&order=mes.asc&limit=5000').catch(() => [])
     ]);
     DB.contratos = contratos;
     DB.pagos = pagos;
+    DB_GASTOS_CUOTAS = gastosCuotas;
+    console.log('DB_GASTOS_CUOTAS loaded:', DB_GASTOS_CUOTAS.length);
     // Load inmuebles separately so a failure doesn't break everything
     try {
       DB_INMUEBLES = await sbGet('inmuebles', 'select=*&order=localidad.asc,calle.asc&limit=2000');
     } catch(e) { console.error('Error loading inmuebles:', e); DB_INMUEBLES = []; }
-    try {
-      DB_GASTOS_CUOTAS = await sbGet('gastos_inicio_cuotas', 'select=*&order=mes.asc&limit=5000');
-      console.log('DB_GASTOS_CUOTAS loaded:', DB_GASTOS_CUOTAS.length);
-    } catch(e) { console.error('Error loading gastos:', e); DB_GASTOS_CUOTAS = []; }
     document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR', {timeZone:'America/Argentina/Buenos_Aires'})}`;
     populateFiltros();
     await loadPersonas();
