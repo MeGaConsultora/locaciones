@@ -3404,15 +3404,46 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
       </div>
     </div>`;
 
-  ventana.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-<link rel="icon" type="image/x-icon" href="https://megaconsultora.github.io/locaciones/favicon.ico"><title>Recibo Propietario</title>
+  ventana.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8">
+    <title>Recibo Propietario</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>* { margin:0; padding:0; box-sizing:border-box; } body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; padding:20px; gap:20px; } .no-print button { background:#1a1a2e; color:white; border:none; padding:10px 28px; border-radius:8px; font-size:1rem; cursor:pointer; } @media print { body { background:white; padding:0; gap:0; } .no-print { display:none; } }</style>
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; padding:12px; gap:0; font-family:'DM Sans',Arial,sans-serif; }
+      .no-print { text-align:center; padding:10px 0; width:100%; }
+      .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; font-family:'DM Sans',sans-serif; font-weight:600; }
+      .recibo-mitad { background:white; width:190mm; height:135mm; overflow:hidden; }
+      .recibo-inner { transform-origin:top left; padding:12px 18px; }
+      .separador { width:190mm; text-align:center; padding:3px 0; font-size:0.65rem; color:#aaa; border-top:2px dashed #bbb; border-bottom:2px dashed #bbb; margin:0; background:white; }
+      @page { size: A4 portrait; margin: 8mm; }
+      @media print {
+        html, body { width:210mm; height:297mm; background:white; padding:0; }
+        .no-print { display:none; }
+        .recibo-mitad { width:100%; height:133mm; }
+        .separador { width:100%; }
+      }
+    </style>
   </head><body>
-    <div class="no-print"><button onclick="window.print()">🖨️ Imprimir por duplicado</button></div>
-    <div style="background:white;border-radius:10px;padding:28px;max-width:720px;width:100%">${reciboHtml}</div>
-    <div style="border-top:3px dashed #ccc;padding-top:4px;text-align:center;font-size:0.72rem;color:#aaa;max-width:720px;width:100%">— DUPLICADO —</div>
-    <div style="background:white;border-radius:10px;padding:28px;max-width:720px;width:100%">${reciboHtml}</div>
+    <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
+    <div class="recibo-mitad"><div class="recibo-inner" id="rp1">\${reciboHtml}</div></div>
+    <div class="separador">✂ &nbsp;&nbsp; DUPLICADO &nbsp;&nbsp; ✂</div>
+    <div class="recibo-mitad"><div class="recibo-inner" id="rp2">\${reciboHtml}</div></div>
+    <script>
+      function ajustarEscala(id) {
+        const wrap = document.getElementById(id);
+        if (!wrap) return;
+        const parent = wrap.parentElement;
+        const avail = parent.clientHeight - 20;
+        const actual = wrap.scrollHeight;
+        if (actual > avail) {
+          const scale = avail / actual;
+          wrap.style.transform = 'scale(' + scale + ')';
+          wrap.style.width = (100 / scale) + '%';
+        }
+      }
+      window.addEventListener('load', () => { ajustarEscala('rp1'); ajustarEscala('rp2'); });
+    <\/script>
   </body></html>`);
   ventana.document.close();
 }
@@ -4527,7 +4558,7 @@ function imprimirRecibo(data) {
     </div>
   `;
 
-  const ventana = window.open('about:blank', 'Recibo Nº '+String(data.nroMes).padStart(4,'0'));
+  const ventana = window.open('', 'Recibo Nº '+String(data.nroMes).padStart(4,'0'));
   ventana.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8">
 <link rel="icon" type="image/x-icon" href="https://megaconsultora.github.io/locaciones/favicon.ico">
@@ -4535,25 +4566,40 @@ function imprimirRecibo(data) {
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }
-      body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; padding:16px; gap:0; }
-      .no-print { text-align:center; padding:12px 0; width:100%; }
+      body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; padding:12px; gap:0; font-family:'DM Sans',Arial,sans-serif; }
+      .no-print { text-align:center; padding:10px 0; width:100%; }
       .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; font-family:'DM Sans',sans-serif; font-weight:600; }
       .no-print button:hover { background:#c8483a; }
-      .recibo-wrap { background:white; width:100%; max-width:190mm; }
-      .separador { width:100%;max-width:190mm;text-align:center;padding:4px 0;font-size:0.7rem;color:#aaa;border-top:2px dashed #bbb;border-bottom:2px dashed #bbb;margin:0;background:white; }
-      @page { size: A4; margin: 10mm; }
+      .recibo-mitad { background:white; width:190mm; height:135mm; overflow:hidden; display:flex; flex-direction:column; }
+      .recibo-inner { flex:1; overflow:hidden; transform-origin:top left; }
+      .separador { width:190mm; text-align:center; padding:3px 0; font-size:0.65rem; color:#aaa; border-top:2px dashed #bbb; border-bottom:2px dashed #bbb; margin:0; background:white; }
+      @page { size: A4 portrait; margin: 8mm; }
       @media print {
-        html, body { width:210mm; }
-        body { background:white; padding:0; }
+        html, body { width:210mm; height:297mm; background:white; padding:0; }
         .no-print { display:none; }
-        .recibo-wrap { max-width:100%; box-shadow:none; }
-        .separador { border-color:#999; }
+        .recibo-mitad { width:100%; height:133mm; }
+        .separador { width:100%; }
       }</style>
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
-    <div class="recibo-wrap"><div style="padding:16px 20px 12px">${recibo}</div></div>
+    <div class="recibo-mitad"><div class="recibo-inner" id="ri1" style="padding:10px 16px">${recibo}</div></div>
     <div class="separador">✂ &nbsp;&nbsp; DUPLICADO &nbsp;&nbsp; ✂</div>
-    <div class="recibo-wrap"><div style="padding:12px 20px 16px">${recibo}</div></div>
+    <div class="recibo-mitad"><div class="recibo-inner" id="ri2" style="padding:10px 16px">${recibo}</div></div>
+    <script>
+      function ajustarEscala(id) {
+        const wrap = document.getElementById(id);
+        if (!wrap) return;
+        const parent = wrap.parentElement;
+        const avail = parent.clientHeight - 20;
+        const actual = wrap.scrollHeight;
+        if (actual > avail) {
+          const scale = avail / actual;
+          wrap.style.transform = 'scale(' + scale + ')';
+          wrap.style.width = (100 / scale) + '%';
+        }
+      }
+      window.addEventListener('load', () => { ajustarEscala('ri1'); ajustarEscala('ri2'); });
+    <\/script>
   </body></html>`);
   ventana.document.close();
 }
