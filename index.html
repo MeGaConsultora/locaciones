@@ -949,6 +949,7 @@ function renderContratos() {
         const saldoTotal = DB.pagos.filter(p => p.hoja===c.hoja && p.saldo>0 && p.mes && p.mes.substring(0,7)<=mesActual).reduce((s,p)=>s+(p.saldo||0),0);
         // Gastos de inicio pendientes
         const gastosCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id && g.mes && g.mes.substring(0,7) <= mesActual);
+        console.log('gastos debug', c.id, c.titulo, 'DB_GASTOS_CUOTAS.length=', DB_GASTOS_CUOTAS.length, 'gastosCuotas=', gastosCuotas.length, 'mesActual=', mesActual);
         const gastosSaldoInq = gastosCuotas.reduce((s,g) => s + Math.max(0,(g.monto_inquilino||0)-(g.pagado_inquilino||0)), 0);
         const saldoTotalConGastos = saldoTotal + gastosSaldoInq;
         return `<tr onclick="openContrato(${c.id})">
@@ -6013,6 +6014,8 @@ async function generarGastosCuotas(contratoId, body) {
   if (toDelete.length) await Promise.all(toDelete.map(r => 
     fetch(`${SB_URL}/rest/v1/gastos_inicio_cuotas?id=eq.${r.id}`, {method:'DELETE', headers:HEADERS})
   ));
+  // Reload local cache so grid and GP reflect new values immediately
+  try { DB_GASTOS_CUOTAS = await sbGet('gastos_inicio_cuotas', 'select=*&order=mes.asc&limit=5000'); } catch(e) {}
 }
 
 // ============================================================
