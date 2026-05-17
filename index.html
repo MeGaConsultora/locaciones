@@ -2589,7 +2589,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       </div>
       <div class="form-actions">
         <button class="btn btn-secondary" onclick="imprimirReciboPropGP('${hoja}',${contratoId},'${mesKey}',${comisionPct})">🖨️ Generar recibo propietario</button>
-        ${p?.recibo_prop_emitido ? `<span style="font-size:0.75rem;color:var(--green);margin-left:6px">✓ Emitido${p.recibo_prop_fecha?' el '+new Date(p.recibo_prop_fecha).toLocaleDateString('es-AR'):''}</span>` : ''}
+        ${p?.recibo_prop_emitido ? `<span style="font-size:0.75rem;color:var(--green);margin-left:6px">✓ Emitido${p.recibo_prop_fecha?' el '+new Date(p.recibo_prop_fecha).toLocaleDateString('es-AR'):''}</span> <button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px;color:var(--accent);border-color:var(--accent);margin-left:4px" onclick="revertirReciboEmitido(${p?.id})">↩ Revertir</button>` : ''}
       </div>`}
     </div>
   `;
@@ -3386,7 +3386,7 @@ function exportarInformeCSV() {
 async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
   const mes = mesKey+'-01';
   const hojaEncoded = encodeURIComponent(hoja);
-  const existing = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
+  const existing = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&select=*,recibo_prop_emitido,recibo_prop_fecha&limit=1`);
   if (!existing.length) { toast('Guardá los importes primero','error'); return; }
   const p = existing[0];
   const c = DB.contratos.find(x=>x.id===contratoId);
@@ -5817,6 +5817,17 @@ async function confirmarImportarPDF() {
   loadAll(); // async, no need to await
 }
 
+async function revertirReciboEmitido(pagoId) {
+  if (!confirm('¿Revertir la emisión de este recibo? Volverá a aparecer en la lista de recibos a emitir.')) return;
+  try {
+    await sbPatch('pagos', pagoId, { recibo_prop_emitido: false, recibo_prop_fecha: null });
+    const p = DB.pagos.find(x => x.id === pagoId);
+    if (p) { p.recibo_prop_emitido = false; p.recibo_prop_fecha = null; }
+    toast('Emisión revertida ✓');
+    await loadAll();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
 // ============================================================
 // RECIBOS A EMITIR
 // ============================================================
@@ -5825,6 +5836,14 @@ function populateRecibosAnios() {
   if (!sel || sel.options.length > 1) return;
   const anios = [...new Set(DB.pagos.map(p => p.mes?.substring(0,4)).filter(Boolean))].sort().reverse();
   anios.forEach(a => { const o = document.createElement('option'); o.value=a; o.textContent=a; sel.appendChild(o); });
+}
+
+let _recibosSort = { campo: 'propietario', asc: true };
+
+function sortRecibos(campo) {
+  if (_recibosSort.campo === campo) _recibosSort.asc = !_recibosSort.asc;
+  else { _recibosSort.campo = campo; _recibosSort.asc = true; }
+  renderRecibosEmitir();
 }
 
 function renderRecibosEmitir() {
@@ -5853,13 +5872,27 @@ function renderRecibosEmitir() {
     return;
   }
   [btnSel,btnDesel,btnGen].forEach(b => b && (b.style.display=''));
+  // Sort
+  pagos.sort((a, b) => {
+    const ca = DB.contratos.find(x => x.hoja === a.hoja);
+    const cb = DB.contratos.find(x => x.hoja === b.hoja);
+    let va, vb;
+    if (_recibosSort.campo === 'propietario') { va = ca?.locador||''; vb = cb?.locador||''; }
+    else if (_recibosSort.campo === 'inquilino') { va = ca?.locatario||''; vb = cb?.locatario||''; }
+    else if (_recibosSort.campo === 'total') { va = a.total||0; vb = b.total||0; }
+    else { va = ca?.titulo||a.hoja||''; vb = cb?.titulo||b.hoja||''; }
+    if (va < vb) return _recibosSort.asc ? -1 : 1;
+    if (va > vb) return _recibosSort.asc ? 1 : -1;
+    return 0;
+  });
+
   cont.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem">
     <thead><tr style="background:var(--ink2);color:white">
       <th style="padding:8px 10px;width:40px"><input type="checkbox" id="chk-all-recibos" onchange="seleccionarTodosRecibos(this.checked)" style="width:15px;height:15px"></th>
-      <th style="padding:8px 10px;text-align:left">Contrato</th>
-      <th style="padding:8px 10px;text-align:left">Propietario</th>
-      <th style="padding:8px 10px;text-align:left">Inquilino</th>
-      <th style="padding:8px 10px;text-align:right">Total</th>
+      <th style="padding:8px 10px;text-align:left;cursor:pointer" onclick="sortRecibos('contrato')">Contrato ↕</th>
+      <th style="padding:8px 10px;text-align:left;cursor:pointer" onclick="sortRecibos('propietario')">Propietario ↕</th>
+      <th style="padding:8px 10px;text-align:left;cursor:pointer" onclick="sortRecibos('inquilino')">Inquilino ↕</th>
+      <th style="padding:8px 10px;text-align:right;cursor:pointer" onclick="sortRecibos('total')">Total ↕</th>
       <th style="padding:8px 10px;text-align:center">Período</th>
     </tr></thead>
     <tbody>
