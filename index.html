@@ -1989,9 +1989,15 @@ async function cargarListaServicios(filtro='') {
         grupos[nro].contratos.push(c);
       });
       return Object.values(grupos).map(g => {
-        // For pctOk, sum pct of ALL contracts with this nro (including already loaded ones)
-        const todosConNro = g.nro ? DB.contratos.filter(c => c[`nro_${srv}`] === g.nro) : g.contratos;
-        const totalPct = todosConNro.reduce((s,c) => s+(c['pct_'+srv]||100)+(c['pct_prop_'+srv]||0), 0);
+        // For pctOk, sum pct of ALL contracts that have this service ticked AND same nro
+        const todosConNro = g.nro 
+          ? DB.contratos.filter(c => c[`nro_${srv}`] === g.nro && (c.servicios_inquilino||'').toLowerCase().includes(srv))
+          : g.contratos;
+        const totalPct = todosConNro.reduce((s,c) => {
+          const v = c['pct_'+srv] ?? 100;
+          const vp = c['pct_prop_'+srv] ?? 0;
+          return s + v + vp;
+        }, 0);
         const pctOk = Math.abs(totalPct - 100) < 1;
         const detalle = g.contratos.map(c => `${c.titulo||c.hoja} (${c['pct_'+srv]||100}%)`).join(', ');
         const hojas = g.contratos.map(c => c.hoja).join('|');
@@ -2165,44 +2171,6 @@ async function guardarServicios() {
 }
 
 
-function validarPctAlGuardar(contratoId) {
-  const allRows = ['epe','agua','tgiu','seguro','internet','expensas'];
-  const serviciosInq = [...document.querySelectorAll('.serv-edit-chk:checked')].map(x => x.value.toLowerCase());
-  const problemas = [];
-
-  allRows.forEach(s => {
-    if (!serviciosInq.includes(s)) return;
-    // Read actual field values (could be 0, not defaulted to 100)
-    const inqVal = document.getElementById('f-pct-'+s)?.value;
-    const propVal = document.getElementById('f-pct-prop-'+s)?.value;
-    const inq = inqVal !== '' && inqVal !== null && inqVal !== undefined ? parseFloat(inqVal) : 100;
-    const prop = propVal !== '' && propVal !== null && propVal !== undefined ? parseFloat(propVal) : 0;
-    const nro = document.getElementById('f-nro-'+s)?.value?.trim();
-    const ownTotal = inq + prop;
-
-    if (nro) {
-      const otrosContratos = DB.contratos.filter(c => contratoId !== null && c.id !== contratoId && c['nro_'+s] === nro);
-      const totalGrupo = ownTotal + otrosContratos.reduce((sum, c) => {
-        // Use actual stored value, default 100 only if truly null/undefined
-        const v = (c['pct_'+s] !== null && c['pct_'+s] !== undefined) ? c['pct_'+s] : 100;
-        const vp = (c['pct_prop_'+s] !== null && c['pct_prop_'+s] !== undefined) ? c['pct_prop_'+s] : 0;
-        return sum + v + vp;
-      }, 0);
-      if (Math.abs(totalGrupo - 100) > 0.5) {
-        problemas.push(s.toUpperCase() + ' (grupo N°' + nro + ' suma ' + totalGrupo + '%)');
-      }
-    } else {
-      if (Math.abs(ownTotal - 100) > 0.5) {
-        problemas.push(s.toUpperCase() + ': suma ' + ownTotal + '% (debería ser 100%)');
-      }
-    }
-  });
-
-  if (!problemas.length) return true;
-  return confirm('⚠ Los siguientes servicios no suman 100%:\n\n' + problemas.join('\n') + '\n\n¿Querés guardar igual?');
-}
-
-
 function actualizarTotalPct(srv) {
   const inq = parseFloat(document.getElementById(`f-pct-${srv}`)?.value)||0;
   const prop = parseFloat(document.getElementById(`f-pct-prop-${srv}`)?.value)||0;
@@ -2212,13 +2180,10 @@ function actualizarTotalPct(srv) {
     el.textContent = total + '%';
     el.style.color = total === 100 ? 'var(--green)' : 'var(--accent)';
     el.closest('tr').style.background = total === 100 ? '' : '#fff3cd';
-    // Only warn for services that are actually checked as inquilino
     const allRows = ['epe','agua','tgiu','seguro','internet','expensas'];
     const serviciosInq = [...document.querySelectorAll('.serv-edit-chk:checked')].map(x => x.value.toLowerCase());
     const warnings = allRows.filter(s => {
       if (!serviciosInq.includes(s)) return false;
-      const nroS = document.getElementById(`f-nro-${s}`)?.value?.trim();
-      if (nroS) return false; // shared service - handled by sharedWarnings
       const i = parseFloat(document.getElementById(`f-pct-${s}`)?.value)||0;
       const p = parseFloat(document.getElementById(`f-pct-prop-${s}`)?.value)||0;
       return Math.abs((i+p) - 100) > 0.5;
@@ -2230,45 +2195,52 @@ function actualizarTotalPct(srv) {
       warnEl.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:0.6rem 1rem;margin-top:0.5rem;font-size:0.82rem;color:#856404';
       el.closest('table').after(warnEl);
     }
-
-    // Also check shared nros — other contracts with same nro
-    const contratoIdRaw = document.getElementById('modal-overlay')?.dataset?.contratoId;
-    const contratoId = contratoIdRaw ? parseInt(contratoIdRaw) : null;
-    const sharedWarnings = [];
-    allRows.forEach(s => {
-      if (!serviciosInq.includes(s)) return;
-      const nroActual = document.getElementById(`f-nro-${s}`)?.value?.trim();
-      if (!nroActual) return;
-      const pctInqVal = document.getElementById(`f-pct-${s}`)?.value;
-      const pctPropVal = document.getElementById(`f-pct-prop-${s}`)?.value;
-      const pctInq = pctInqVal !== '' ? parseFloat(pctInqVal)||0 : 100;
-      const pctProp = pctPropVal !== '' ? parseFloat(pctPropVal)||0 : 0;
-      // Sum pct of ALL contracts that have this service ticked AND same nro
-      const otrosContratos = DB.contratos.filter(c => 
-        contratoId !== null && c.id !== contratoId && 
-        c[`nro_${s}`] === nroActual &&
-        (c.servicios_inquilino||'').toLowerCase().includes(s)
-      );
-      if (!otrosContratos.length) return;
-      const totalGrupo = pctInq + pctProp + otrosContratos.reduce((sum, c) => {
-        const v = (c[`pct_${s}`] !== null && c[`pct_${s}`] !== undefined) ? c[`pct_${s}`] : 100;
-        const vp = (c[`pct_prop_${s}`] !== null && c[`pct_prop_${s}`] !== undefined) ? c[`pct_prop_${s}`] : 0;
-        return sum + v + vp;
-      }, 0);
-      if (Math.abs(totalGrupo - 100) > 0.5) {
-        sharedWarnings.push(`${s.toUpperCase()} (grupo N°${nroActual} suma ${totalGrupo}%)`);
-      }
-    });
-
-    if (warnings.length || sharedWarnings.length) {
+    if (warnings.length) {
       warnEl.style.display = 'block';
-      const baseMsg = warnings.length ? `⚠ ${warnings.map(s=>s.toUpperCase()).join(', ')}: la suma de % no da 100%. ` : '';
-      const sharedMsg = sharedWarnings.length ? `⚠ Servicio compartido: ${sharedWarnings.join('; ')}. Revisá los % de los contratos del grupo.` : '';
-      warnEl.textContent = baseMsg + sharedMsg;
+      warnEl.textContent = `⚠ ${warnings.map(s=>s.toUpperCase()).join(', ')}: la suma de % inquilino + % propietario no da 100%. Revisá los porcentajes.`;
     } else {
       warnEl.style.display = 'none';
     }
   }
+}
+
+
+function validarPctAlGuardar(contratoId) {
+  const serviciosInq = [...document.querySelectorAll('.serv-edit-chk:checked')].map(x => x.value.toLowerCase());
+  const problemas = [];
+
+  ['epe','agua','tgiu','seguro','internet','expensas'].forEach(s => {
+    if (!serviciosInq.includes(s)) return; // not ticked = skip
+
+    const nro = document.getElementById('f-nro-'+s)?.value?.trim();
+    const inq = parseFloat(document.getElementById('f-pct-'+s)?.value)||0;
+    const prop = parseFloat(document.getElementById('f-pct-prop-'+s)?.value)||0;
+
+    if (nro) {
+      // Shared: sum pct of all contracts that have this service ticked AND same nro
+      const otros = DB.contratos.filter(c =>
+        c.id !== contratoId &&
+        c['nro_'+s] === nro &&
+        (c.servicios_inquilino||'').toLowerCase().includes(s)
+      );
+      const totalGrupo = inq + prop + otros.reduce((sum, c) => {
+        const v = c['pct_'+s] ?? 100;
+        const vp = c['pct_prop_'+s] ?? 0;
+        return sum + v + vp;
+      }, 0);
+      if (Math.abs(totalGrupo - 100) > 0.5) {
+        problemas.push(s.toUpperCase() + ' (grupo N°' + nro + ' suma ' + totalGrupo + '%)');
+      }
+    } else {
+      // Not shared: own pct must be 100%
+      if (Math.abs((inq + prop) - 100) > 0.5) {
+        problemas.push(s.toUpperCase() + ': suma ' + (inq+prop) + '% (debería ser 100%)');
+      }
+    }
+  });
+
+  if (!problemas.length) return true;
+  return confirm('Los siguientes servicios no suman 100%:\n\n' + problemas.join('\n') + '\n\n¿Querés guardar igual?');
 }
 
 function toggleYaCargados(srv) {
@@ -3611,7 +3583,7 @@ function _abrirFormularioContrato(c, esNuevo) {
         const checked = c.servicios_inquilino?.includes(s) ? 'checked' : '';
         return `<label style="display:flex;align-items:center;gap:6px;font-size:0.88rem;cursor:pointer">
           <input type="checkbox" class="serv-chk serv-edit-chk" value="${s}" ${checked} style="width:15px;height:15px"
-            onchange="onServicioChange(this)"> ${s}
+> ${s}
         </label>`;
       }).join('')}
     </div>
@@ -5890,18 +5862,6 @@ async function confirmarEliminarInmueble(id) {
   if (!confirm('¿Eliminar este inmueble?')) return;
   try { await sbDelete('inmuebles', id); toast('Inmueble eliminado ✓'); await loadAll(); closeModal(); renderInmuebles(); }
   catch(e) { toast('Error: ' + e.message, 'error'); }
-}
-
-function onServicioChange(chk) {
-  const s = chk.value.toLowerCase();
-  const pctEl = document.getElementById('f-pct-' + s);
-  const pctPropEl = document.getElementById('f-pct-prop-' + s);
-  if (chk.checked) {
-    // If being checked and value is still default 100, reset to 0
-    if (pctEl && parseFloat(pctEl.value) === 100) pctEl.value = 0;
-    if (pctPropEl && parseFloat(pctPropEl.value) === 0) pctPropEl.value = 0;
-  }
-  actualizarTotalPct(s);
 }
 
 function limpiarInmueble() {
