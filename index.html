@@ -953,7 +953,6 @@ function renderContratos() {
         const gastosCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id);
         const gastosSaldoInq = gastosCuotas.reduce((s,g) => s + Math.max(0,(g.monto_inquilino||0)-(parseFloat(g.pagado_inquilino)||0)), 0);
         const saldoTotalConGastos = saldoTotal + gastosSaldoInq;
-        if (gastosSaldoInq > 0) console.log('GASTOS ROW', c.titulo, gastosSaldoInq);
         return `<tr onclick="openContrato(${c.id})">
           <td><strong>${c.titulo||c.hoja}</strong></td>
           <td>${c.locador||'—'}</td><td>${c.locatario||'—'}</td>
@@ -2453,23 +2452,6 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
   document.getElementById('modal-subtitle').textContent = hoja;
   document.getElementById('modal-overlay').dataset.contratoId = c.id;
   document.getElementById('modal-body').innerHTML = `
-    ${(() => {
-      // Gastos de inicio summary
-      const cuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id);
-      if (!cuotas.length) return '';
-      const totalInq = cuotas.reduce((s,g) => s+(g.monto_inquilino||0), 0);
-      const pagadoInq = cuotas.reduce((s,g) => s+(g.pagado_inquilino||0), 0);
-      const totalProp = cuotas.reduce((s,g) => s+(g.monto_propietario||0), 0);
-      const pagadoProp = cuotas.reduce((s,g) => s+(g.pagado_propietario||0), 0);
-      const saldoInq = totalInq - pagadoInq;
-      const saldoProp = totalProp - pagadoProp;
-      if (!totalInq && !totalProp) return '';
-      return `<div style="background:#f0fff4;border:1px solid var(--green);border-radius:8px;padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.82rem">
-        <strong>Gastos de inicio</strong> — ${cuotas.length} cuota/s
-        ${totalInq > 0 ? `<span style="margin-left:12px">Inquilino: ${formatMoney(pagadoInq)} / ${formatMoney(totalInq)} <span style="color:${saldoInq>0?'var(--accent)':'var(--green)'}">· Saldo: ${formatMoney(saldoInq)}</span></span>` : ''}
-        ${totalProp > 0 ? `<span style="margin-left:12px">Propietario: ${formatMoney(pagadoProp)} / ${formatMoney(totalProp)} <span style="color:${saldoProp>0?'var(--accent)':'var(--green)'}">· Saldo: ${formatMoney(saldoProp)}</span></span>` : ''}
-      </div>`;
-    })()}
     <div class="form-group" style="margin-bottom:1.2rem">
       <label>Seleccioná el mes</label>
       <select id="gp-mes-sel" class="filter-select" style="width:100%;margin-top:4px" onchange="cargarPantallaGestionPago(window._gpHoja, window._gpContratoId, this.value, window._gpMeses, window._gpComision)">
@@ -3003,7 +2985,8 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       pagoId = existing[0].id;
       const saldoActual = existing[0].saldo||0;
       const totalAnterior = existing[0].total||0;
-      const yaAbonado = totalAnterior - saldoActual;
+      // Use saldo to calculate what was paid (most reliable)
+      const yaAbonado = Math.max(0, totalAnterior - saldoActual);
       const nuevoSaldo = Math.max(0, total - yaAbonado);
       const internetVal = applyFieldPct('gp-internet');
       const expensasVal = applyFieldPct('gp-expensas');
