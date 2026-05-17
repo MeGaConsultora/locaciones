@@ -2174,9 +2174,11 @@ function actualizarTotalPct(srv) {
     el.textContent = total + '%';
     el.style.color = total === 100 ? 'var(--green)' : 'var(--accent)';
     el.closest('tr').style.background = total === 100 ? '' : '#fff3cd';
-    // Show warning below table if any row != 100
+    // Only warn for services that are actually checked as inquilino
     const allRows = ['epe','agua','tgiu','seguro','internet','expensas'];
+    const serviciosInq = [...document.querySelectorAll('.serv-edit-chk:checked')].map(x => x.value.toLowerCase());
     const warnings = allRows.filter(s => {
+      if (!serviciosInq.includes(s)) return false; // not assigned to inquilino
       const i = parseFloat(document.getElementById(`f-pct-${s}`)?.value)||0;
       const p = parseFloat(document.getElementById(`f-pct-prop-${s}`)?.value)||0;
       return Math.abs((i+p) - 100) > 0.5;
@@ -2195,6 +2197,7 @@ function actualizarTotalPct(srv) {
     const sharedWarnings = [];
     if (contratoActual) {
       allRows.forEach(s => {
+        if (!serviciosInq.includes(s)) return; // skip if not assigned to inquilino
         const nroActual = contratoActual[`nro_${s}`] || document.getElementById(`f-nro-${s}`)?.value;
         if (!nroActual) return;
         const pctInq = parseFloat(document.getElementById(`f-pct-${s}`)?.value)||0;
@@ -3948,18 +3951,18 @@ async function guardarContrato() {
     nro_expensas: document.getElementById('f-nro-expensas')?.value.trim()||null,
     servicios_propietario: [...document.querySelectorAll('.serv-prop-chk:checked')].map(x=>x.value).join(', ')||null,
     servicios_rendir_propietario: [...document.querySelectorAll('.rinde-chk:checked')].map(x=>x.value).join(', ')||null,
-    pct_epe: parseFloat(document.getElementById('f-pct-epe')?.value)||100,
-    pct_agua: parseFloat(document.getElementById('f-pct-agua')?.value)||100,
-    pct_tgiu: parseFloat(document.getElementById('f-pct-tgiu')?.value)||100,
-    pct_seguro: parseFloat(document.getElementById('f-pct-seguro')?.value)||100,
-    pct_internet: parseFloat(document.getElementById('f-pct-internet')?.value)||100,
-    pct_expensas: parseFloat(document.getElementById('f-pct-expensas')?.value)||100,
-    pct_prop_epe: parseFloat(document.getElementById('f-pct-prop-epe')?.value)||0,
-    pct_prop_agua: parseFloat(document.getElementById('f-pct-prop-agua')?.value)||0,
-    pct_prop_tgiu: parseFloat(document.getElementById('f-pct-prop-tgiu')?.value)||0,
-    pct_prop_seguro: parseFloat(document.getElementById('f-pct-prop-seguro')?.value)||0,
-    pct_prop_internet: parseFloat(document.getElementById('f-pct-prop-internet')?.value)||0,
-    pct_prop_expensas: parseFloat(document.getElementById('f-pct-prop-expensas')?.value)||0,
+    pct_epe: (() => { const v = parseFloat(document.getElementById('f-pct-epe')?.value); return isNaN(v) ? 100 : v; })(),
+    pct_agua: (() => { const v = parseFloat(document.getElementById('f-pct-agua')?.value); return isNaN(v) ? 100 : v; })(),
+    pct_tgiu: (() => { const v = parseFloat(document.getElementById('f-pct-tgiu')?.value); return isNaN(v) ? 100 : v; })(),
+    pct_seguro: (() => { const v = parseFloat(document.getElementById('f-pct-seguro')?.value); return isNaN(v) ? 100 : v; })(),
+    pct_internet: (() => { const v = parseFloat(document.getElementById('f-pct-internet')?.value); return isNaN(v) ? 100 : v; })(),
+    pct_expensas: (() => { const v = parseFloat(document.getElementById('f-pct-expensas')?.value); return isNaN(v) ? 100 : v; })(),
+    pct_prop_epe: (() => { const v = parseFloat(document.getElementById('f-pct-prop-epe')?.value); return isNaN(v) ? 0 : v; })(),
+    pct_prop_agua: (() => { const v = parseFloat(document.getElementById('f-pct-prop-agua')?.value); return isNaN(v) ? 0 : v; })(),
+    pct_prop_tgiu: (() => { const v = parseFloat(document.getElementById('f-pct-prop-tgiu')?.value); return isNaN(v) ? 0 : v; })(),
+    pct_prop_seguro: (() => { const v = parseFloat(document.getElementById('f-pct-prop-seguro')?.value); return isNaN(v) ? 0 : v; })(),
+    pct_prop_internet: (() => { const v = parseFloat(document.getElementById('f-pct-prop-internet')?.value); return isNaN(v) ? 0 : v; })(),
+    pct_prop_expensas: (() => { const v = parseFloat(document.getElementById('f-pct-prop-expensas')?.value); return isNaN(v) ? 0 : v; })(),
   };
 
   try {
@@ -4048,18 +4051,18 @@ async function actualizarContrato(id) {
     nro_expensas: document.getElementById('f-nro-expensas')?.value.trim()||null,
     servicios_propietario: [...document.querySelectorAll('.serv-prop-chk:checked')].map(x=>x.value).join(', ')||null,
     servicios_rendir_propietario: [...document.querySelectorAll('.rinde-chk:checked')].map(x=>x.value).join(', ')||null,
-    pct_epe: parseFloat(document.getElementById('f-pct-epe')?.value)||100,
-    pct_agua: parseFloat(document.getElementById('f-pct-agua')?.value)||100,
-    pct_tgiu: parseFloat(document.getElementById('f-pct-tgiu')?.value)||100,
-    pct_seguro: parseFloat(document.getElementById('f-pct-seguro')?.value)||100,
-    pct_internet: parseFloat(document.getElementById('f-pct-internet')?.value)||100,
-    pct_expensas: parseFloat(document.getElementById('f-pct-expensas')?.value)||100,
-    pct_prop_epe: parseFloat(document.getElementById('f-pct-prop-epe')?.value)||0,
-    pct_prop_agua: parseFloat(document.getElementById('f-pct-prop-agua')?.value)||0,
-    pct_prop_tgiu: parseFloat(document.getElementById('f-pct-prop-tgiu')?.value)||0,
-    pct_prop_seguro: parseFloat(document.getElementById('f-pct-prop-seguro')?.value)||0,
-    pct_prop_internet: parseFloat(document.getElementById('f-pct-prop-internet')?.value)||0,
-    pct_prop_expensas: parseFloat(document.getElementById('f-pct-prop-expensas')?.value)||0,
+    pct_epe: (() => { const v = parseFloat(document.getElementById('f-pct-epe')?.value); return isNaN(v) ? 100 : v; })(),
+    pct_agua: (() => { const v = parseFloat(document.getElementById('f-pct-agua')?.value); return isNaN(v) ? 100 : v; })(),
+    pct_tgiu: (() => { const v = parseFloat(document.getElementById('f-pct-tgiu')?.value); return isNaN(v) ? 100 : v; })(),
+    pct_seguro: (() => { const v = parseFloat(document.getElementById('f-pct-seguro')?.value); return isNaN(v) ? 100 : v; })(),
+    pct_internet: (() => { const v = parseFloat(document.getElementById('f-pct-internet')?.value); return isNaN(v) ? 100 : v; })(),
+    pct_expensas: (() => { const v = parseFloat(document.getElementById('f-pct-expensas')?.value); return isNaN(v) ? 100 : v; })(),
+    pct_prop_epe: (() => { const v = parseFloat(document.getElementById('f-pct-prop-epe')?.value); return isNaN(v) ? 0 : v; })(),
+    pct_prop_agua: (() => { const v = parseFloat(document.getElementById('f-pct-prop-agua')?.value); return isNaN(v) ? 0 : v; })(),
+    pct_prop_tgiu: (() => { const v = parseFloat(document.getElementById('f-pct-prop-tgiu')?.value); return isNaN(v) ? 0 : v; })(),
+    pct_prop_seguro: (() => { const v = parseFloat(document.getElementById('f-pct-prop-seguro')?.value); return isNaN(v) ? 0 : v; })(),
+    pct_prop_internet: (() => { const v = parseFloat(document.getElementById('f-pct-prop-internet')?.value); return isNaN(v) ? 0 : v; })(),
+    pct_prop_expensas: (() => { const v = parseFloat(document.getElementById('f-pct-prop-expensas')?.value); return isNaN(v) ? 0 : v; })(),
     propietario_id: propIds[0]||null,
     inquilino_id: inqIds[0]||null,
   };
