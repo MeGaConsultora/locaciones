@@ -1137,6 +1137,7 @@ async function openContrato(id) {
       <button class="btn btn-secondary" style="font-size:0.78rem;color:var(--green);border-color:var(--green)" onclick="abrirCrearAcceso(${c.id},'${c.hoja}')">🔑 Acceso inquilino</button>
       ${c.periodicidad_actualizacion && c.periodicidad_actualizacion !== 'Sin actualización' ? `<button class="btn btn-secondary" style="font-size:0.78rem;color:#6610f2;border-color:#6610f2" onclick="abrirProyectarContrato(${c.id},'${c.hoja}')">📈 Proyectar alquiler</button>` : ''}
       ${!c.fecha_rescision ? '<button class="btn btn-secondary" style="font-size:0.78rem;color:var(--accent);border-color:var(--accent)" onclick="abrirRescision('+c.id+',\''+c.hoja+'\')">✂ Rescindir contrato</button>' : '<span class="badge badge-red" style="font-size:0.78rem">Rescindido '+formatDate(c.fecha_rescision,true)+'</span>'}
+      <button class="btn btn-secondary" style="font-size:0.78rem;color:#721c24;border-color:#721c24" onclick="eliminarContrato(${c.id})">🗑 Eliminar contrato</button>
     </div>
     <p style="font-size:0.78rem;color:#999;margin-bottom:0.75rem">💡 Clic en un mes para editarlo o registrar cobro</p>
     <div class="detail-grid" style="margin-bottom:1rem">
@@ -1148,6 +1149,10 @@ async function openContrato(id) {
       <div class="detail-item"><label>Estado</label><span><span class="badge ${est==='vigente'?'badge-green':'badge-gray'}">${est}</span></span></div>
       <div class="detail-item" id="detail-total-alq"><label>Total acumulado</label><span>—</span></div>
       <div class="detail-item" id="detail-saldo"><label>Saldo pendiente</label><span>—</span></div>
+      <div class="detail-item"><label>Inmueble</label><span style="display:flex;align-items:center;gap:0.5rem">
+        ${c.inmueble_id ? (() => { const inm=DB_INMUEBLES.find(x=>x.id===c.inmueble_id); return `<span>${inm?formatDireccion(inm,true):'—'}</span><button onclick="quitarInmuebleContrato(${c.id})" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:0.72rem">✕</button>`; })()
+        : `<button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px" onclick="abrirAsignarInmueble(${c.id})">＋ Asignar inmueble</button>`}
+      </span></div>
     </div>
     <div id="grilla-container"><div class="loading-overlay">Cargando grilla de pagos...</div></div>
   `;
@@ -3949,7 +3954,6 @@ function _abrirFormularioContrato(c, esNuevo) {
 
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="${esNuevo ? 'closeModal()' : 'openContrato('+c.id+')'}">${esNuevo ? 'Cancelar' : '← Volver'}</button>
-      ${!esNuevo ? `<button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="eliminarContrato(${c.id})">🗑 Eliminar contrato</button>` : ''}
       <button class="btn btn-primary" onclick="${esNuevo ? 'guardarContrato()' : 'actualizarContrato('+c.id+')'}">${esNuevo ? 'Guardar contrato' : 'Guardar cambios'}</button>
     </div>
   `;
@@ -6309,6 +6313,74 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes) {
   </div>`;
 }
 
+
+async function quitarInmuebleContrato(contratoId) {
+  if (!confirm('¿Quitar el inmueble asignado a este contrato?')) return;
+  try {
+    await sbPatch('contratos', contratoId, { inmueble_id: null });
+    const c = DB.contratos.find(x => x.id === contratoId);
+    if (c) c.inmueble_id = null;
+    toast('Inmueble quitado ✓');
+    openContrato(contratoId);
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function abrirAsignarInmueble(contratoId) {
+  // Open a small modal to search and assign or create an inmueble
+  const c = DB.contratos.find(x => x.id === contratoId);
+  document.getElementById('modal2-title').textContent = 'Asignar inmueble';
+  document.getElementById('modal2-subtitle').textContent = c?.titulo || '';
+  document.getElementById('modal2-body').innerHTML = `
+    <div style="margin-bottom:1rem">
+      <input type="text" id="asignar-inm-buscar" placeholder="Buscar por calle, localidad..."
+        style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif"
+        oninput="renderAsignarInmuebleResultados(${contratoId})">
+    </div>
+    <div id="asignar-inm-resultados"></div>
+    <div style="border-top:1px solid var(--border);margin-top:1rem;padding-top:1rem">
+      <button class="btn btn-secondary" style="color:var(--green);border-color:var(--green)" onclick="abrirCrearInmuebleParaContrato(${contratoId})">＋ Crear nuevo inmueble</button>
+    </div>
+  `;
+  document.getElementById('modal2-overlay').classList.add('open');
+  renderAsignarInmuebleResultados(contratoId);
+}
+
+function renderAsignarInmuebleResultados(contratoId) {
+  const q = (document.getElementById('asignar-inm-buscar')?.value || '').toLowerCase();
+  const cont = document.getElementById('asignar-inm-resultados');
+  if (!cont) return;
+  let inms = DB_INMUEBLES;
+  if (q) inms = inms.filter(x => formatDireccion(x).toLowerCase().includes(q) || (x.localidad||'').toLowerCase().includes(q));
+  inms = inms.slice(0, 10);
+  if (!inms.length) { cont.innerHTML = '<p style="color:#aaa;font-size:0.85rem">No se encontraron inmuebles</p>'; return; }
+  cont.innerHTML = inms.map(inm => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0.75rem;border-radius:8px;background:#faf7f2;margin-bottom:0.4rem;border:1px solid var(--border)">
+      <span style="font-size:0.88rem">${formatDireccion(inm)}</span>
+      <button class="btn btn-primary" style="padding:4px 12px;font-size:0.78rem" onclick="asignarInmueble(${contratoId},${inm.id})">Asignar</button>
+    </div>
+  `).join('');
+}
+
+async function asignarInmueble(contratoId, inmuebleId) {
+  try {
+    const inm = DB_INMUEBLES.find(x => x.id === inmuebleId);
+    const nros = { inmueble_id: inmuebleId, nro_epe: inm?.nro_epe||null, nro_agua: inm?.nro_agua||null,
+      nro_tgiu: inm?.nro_tgiu||null, nro_seguro: inm?.nro_seguro||null, nro_internet: inm?.nro_internet||null, nro_expensas: inm?.nro_expensas||null };
+    await sbPatch('contratos', contratoId, nros);
+    const c = DB.contratos.find(x => x.id === contratoId);
+    if (c) Object.assign(c, nros);
+    toast('Inmueble asignado ✓');
+    document.getElementById('modal2-overlay').classList.remove('open');
+    openContrato(contratoId);
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function abrirCrearInmuebleParaContrato(contratoId) {
+  document.getElementById('modal2-overlay').classList.remove('open');
+  window._volverAContrato = true;
+  window._contratoIdEditar = contratoId;
+  _abrirFormularioInmueble(null);
+}
 
 async function eliminarContrato(id) {
   const c = DB.contratos.find(x => x.id === id);
