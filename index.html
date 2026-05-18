@@ -6311,6 +6311,20 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes) {
 }
 
 
+function calcularInteresPunitorio(saldo, tasaDiaria, fechaVencimiento) {
+  if (!saldo || saldo <= 0 || !tasaDiaria || tasaDiaria <= 0 || !fechaVencimiento) return 0;
+  const vence = new Date(fechaVencimiento + 'T00:00:00');
+  let inicio = new Date(vence);
+  inicio.setDate(inicio.getDate() + 1);
+  while (inicio.getDay() === 0 || inicio.getDay() === 6) inicio.setDate(inicio.getDate() + 1);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  if (hoy < inicio) return 0;
+  const dias = Math.floor((hoy - inicio) / (1000 * 60 * 60 * 24)) + 1;
+  if (dias <= 0) return 0;
+  const interes = saldo * (Math.pow(1 + tasaDiaria / 100, dias) - 1);
+  return Math.round(interes);
+}
+
 // ============================================================
 // NUMERACIÓN DE SERVICIOS
 // ============================================================
