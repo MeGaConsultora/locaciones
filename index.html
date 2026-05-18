@@ -364,7 +364,7 @@
   <div id="panel-contratos" class="panel">
     <div class="stats-row" id="stats-pendientes"></div>
     <div class="toolbar" style="margin-bottom:0.75rem">
-      <input class="search-input" type="text" id="search-contratos" placeholder="Buscar por nombre, locador, locatario..." oninput="renderContratos()">
+      <input class="search-input" type="text" id="search-contratos" placeholder="Buscar por nombre, locador, locatario..." oninput="renderContratos()" autocomplete="off">
       <select class="filter-select" id="filter-estado" onchange="renderContratos()">
         <option value="">Todos los estados</option>
         <option value="vigente">Vigentes</option>
