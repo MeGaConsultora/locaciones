@@ -970,9 +970,10 @@ function renderContratos() {
         const mesActual = TODAY.substring(0,7);
         const pagoActual = DB.pagos.filter(p => p.hoja===c.hoja && p.mes && p.mes.substring(0,7)===mesActual).sort((a,b)=>b.id-a.id)[0];
         const totalMes = pagoActual ? (pagoActual.total||0) : null;
-        // Add gastos cuota del mes to totalMes display
+        // Only add gastos cuota if NOT already included in pagos.total
         const gastoCuotaMes = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c.id && g.mes && g.mes.startsWith(mesActual));
-        const totalMesConGastos = totalMes !== null ? totalMes + (gastoCuotaMes?.monto_inquilino||0) : null;
+        const gastosYaEnTotal = gastoCuotaMes && pagoActual && Math.abs(pagoActual.total - (pagoActual.total - (gastoCuotaMes.monto_inquilino||0))) < 1;
+        const totalMesConGastos = totalMes !== null ? totalMes : null;
         // Get total saldo (up to current month)
         const saldoTotal = DB.pagos.filter(p => p.hoja===c.hoja && p.saldo>0 && p.mes && p.mes.substring(0,7)<=mesActual).reduce((s,p)=>s+(p.saldo||0),0);
         // Gastos de inicio pendientes
@@ -1256,7 +1257,7 @@ function renderGrilla(c) {
       ${serviciosInquilino.expensas?`<td class="num">${p.monto_expensas>0?formatMoney(p.monto_expensas):'—'}</td>`:''}
       ${(() => { if (!DB_GASTOS_CUOTAS.some(g => parseInt(g.contrato_id) === c?.id)) return ''; const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7))); return `<td class="num">${gc?.monto_inquilino>0?formatMoney(gc.monto_inquilino):'—'}</td>`; })()}
       <td style="font-size:0.78rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasLabel}">${extrasLabel}</td>
-      <td class="num" id="total-${p.id}"><strong>${(() => { const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7))); return formatMoney(calcularTotal(p, extras) + (gc?.monto_inquilino||0)); })()}</strong></td>
+      <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>
       <td class="num" id="abonado-${p.id}">${(() => { const ab = (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
       <td class="num" id="saldo-${p.id}">${p.saldo>0?`<span class="saldo-pendiente">${formatMoney(p.saldo)}</span>`:'<span class="saldo-ok">✓</span>'}</td>
       <td id="estado-${p.id}">${getEstadoLabel(p)}</td>
