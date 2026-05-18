@@ -6507,13 +6507,16 @@ function renderInmuebles() {
     '<th style="padding:8px 10px">Contratos</th><th style="padding:8px 10px"></th>' +
     '</tr></thead><tbody>' +
     lista.map(inm => {
-      const nContratos = DB.contratos.filter(c => c.inmueble_id === inm.id).length;
+      const contratos = DB.contratos.filter(c => c.inmueble_id === inm.id);
+      const tagsHtml = contratos.length > 0
+        ? contratos.map(c => `<span onclick="openContrato(${c.id})" style="display:inline-block;background:#e8f4fd;color:#1a5276;border:1px solid #aed6f1;padding:2px 8px;border-radius:10px;font-size:0.72rem;cursor:pointer;margin:1px" title="${c.titulo||c.hoja}">${c.titulo||c.hoja}</span>`).join('')
+        : '—';
       return '<tr style="border-bottom:1px solid #eee">' +
         '<td style="padding:7px 10px;font-weight:600">' + formatDireccion(inm, true) + '</td>' +
         '<td style="padding:7px 10px">' + (inm.localidad||'—') + '</td>' +
         '<td style="padding:7px 10px">' + (inm.tipo||'—') + '</td>' +
         '<td style="padding:7px 10px;color:#888;font-size:0.82rem">' + (inm.descripcion||'—') + '</td>' +
-        '<td style="padding:7px 10px;text-align:center">' + (nContratos > 0 ? '<span style="background:var(--green);color:white;padding:2px 8px;border-radius:10px;font-size:0.78rem">' + nContratos + '</span>' : '—') + '</td>' +
+        '<td style="padding:7px 10px;max-width:280px">' + tagsHtml + '</td>' +
         '<td style="padding:7px 10px"><button class="btn btn-secondary" style="font-size:0.75rem;padding:4px 10px" onclick="abrirEditarInmueble(' + inm.id + ')">✏ Editar</button></td>' +
         '</tr>';
     }).join('') +
