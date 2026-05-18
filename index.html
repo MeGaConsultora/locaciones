@@ -6507,7 +6507,7 @@ function renderInmuebles() {
     '<th style="padding:8px 10px">Contratos</th><th style="padding:8px 10px"></th>' +
     '</tr></thead><tbody>' +
     lista.map(inm => {
-      const contratos = DB.contratos.filter(c => c.inmueble_id === inm.id && getEstado(c) === 'vigente');
+      const contratos = DB.contratos.filter(c => c.inmueble_id === inm.id && getEstado(c) === 'vigente' && !c.fecha_rescision);
       const tagsHtml = contratos.length > 0
         ? contratos.map(c => `<span onclick="openContrato(${c.id})" style="display:inline-block;background:#e8f4fd;color:#1a5276;border:1px solid #aed6f1;padding:2px 8px;border-radius:10px;font-size:0.72rem;cursor:pointer;margin:1px" title="${c.titulo||c.hoja}">${c.titulo||c.hoja}</span>`).join('')
         : '—';
