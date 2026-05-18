@@ -3037,10 +3037,11 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
     let pagoId;
     if (existing.length > 0) {
       pagoId = existing[0].id;
-      const saldoActual = existing[0].saldo||0;
+      // Use pagado field directly if available, otherwise derive from saldo
+      const pagadoVal = parseFloat(existing[0].pagado) || 0;
       const totalAnterior = existing[0].total||0;
-      // Use saldo to calculate what was paid (most reliable)
-      const yaAbonado = Math.max(0, totalAnterior - saldoActual);
+      const saldoActual = existing[0].saldo||0;
+      const yaAbonado = pagadoVal > 0 ? pagadoVal : Math.max(0, totalAnterior - saldoActual);
       const nuevoSaldo = Math.max(0, total - yaAbonado);
       const internetVal = applyFieldPct('gp-internet');
       const expensasVal = applyFieldPct('gp-expensas');
