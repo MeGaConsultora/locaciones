@@ -2712,7 +2712,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
   return items.map(it => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
-        <input type="checkbox" id="cobro-chk-${it.id}" value="${it.val}" data-signo="1" checked onchange="recalcCobro()" style="width:15px;height:15px">
+        <input type="checkbox" id="cobro-chk-${it.id}" value="${it.val}" data-signo="1" ${it.checked===false?'':'checked'} onchange="recalcCobro()" style="width:15px;height:15px">
         ${it.label}
       </label>
       <span id="cobro-lbl-${it.id}" style="font-size:0.85rem;color:#666">${formatMoney(it.val)}</span>
@@ -2728,8 +2728,29 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
       </label>
       <span style="font-size:0.85rem;color:${color}">${signoLabel} ${formatMoney(Math.abs(e.importe||0))}</span>
     </div>`;
-  }).join('');
+  }).join('') + (() => {
+    if (!contratoId || !mesKey) return '';
+    const c2 = DB.contratos.find(x => x.id === contratoId);
+    const tasaDiaria = c2?.interes_punitorio || 0;
+    if (!tasaDiaria || !p.saldo || p.saldo <= 0) return '';
+    const fechaVence = p.fecha_pago_hasta || (p.mes ? p.mes.substring(0,7) + '-' + String(c2?.dia_vencimiento||10).padStart(2,'0') : null);
+    const interes = calcularInteresPunitorio(p.saldo, tasaDiaria, fechaVence);
+    if (!interes || interes <= 0) return '';
+    const vence = new Date(fechaVence + 'T00:00:00');
+    let ini = new Date(vence); ini.setDate(ini.getDate() + 1);
+    while (ini.getDay() === 0 || ini.getDay() === 6) ini.setDate(ini.getDate() + 1);
+    const hoy = new Date(); hoy.setHours(0,0,0,0);
+    const dias = Math.floor((hoy - ini) / (1000*60*60*24)) + 1;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
+        <input type="checkbox" id="cobro-chk-interes" value="${interes}" data-signo="1" onchange="recalcCobro()" style="width:15px;height:15px">
+        Interés punitorio (${tasaDiaria}% × ${dias} días)
+      </label>
+      <span style="font-size:0.85rem;color:var(--accent)">${formatMoney(interes)}</span>
+    </div>`;
+  })();
 }
+
 
 function generarItemsPropietario(p, extrasProp, comisionPct, c) {
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
@@ -4616,6 +4637,23 @@ function cargarItemsPago(impagos, pagoId, todosPagos) {
     items.push({ id:'gastos-inicio', label:`Gastos de inicio (cuota ${cuotaNum}/${totalCuotas})`, val: gastoCuota.monto_inquilino, gastosId: gastoCuota.id, editable: true });
   }
 
+  // Add interés punitorio if applicable
+  const tasaDiaria = contrato?.interes_punitorio || 0;
+  if (tasaDiaria > 0 && pago.saldo > 0) {
+    const fechaVence = pago.fecha_pago_hasta ||
+      (pago.mes ? pago.mes.substring(0,7) + '-' + String(contrato?.dia_vencimiento||10).padStart(2,'0') : null);
+    const interes = calcularInteresPunitorio(pago.saldo, tasaDiaria, fechaVence);
+    if (interes > 0) {
+      const vence = new Date(fechaVence + 'T00:00:00');
+      let inicio = new Date(vence);
+      inicio.setDate(inicio.getDate() + 1);
+      while (inicio.getDay() === 0 || inicio.getDay() === 6) inicio.setDate(inicio.getDate() + 1);
+      const hoy = new Date(); hoy.setHours(0,0,0,0);
+      const dias = Math.floor((hoy - inicio) / (1000*60*60*24)) + 1;
+      items.push({ id:'interes', label:`Interés punitorio (${tasaDiaria}% × ${dias} días)`, val: interes, checked: false });
+    }
+  }
+
   document.getElementById('items-pago').innerHTML = `
     <div class="section-title" style="margin-bottom:1rem">Mes ${nroMes} — ${formatDate(pago.mes)}</div>
     <p style="font-size:0.82rem;color:#888;margin-bottom:1rem">Marcá los ítems que abona en este momento:</p>
@@ -4624,7 +4662,7 @@ function cargarItemsPago(impagos, pagoId, todosPagos) {
         <div style="padding:0.5rem 0;border-bottom:1px solid var(--border)">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
             <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9rem;flex:1">
-              <input type="checkbox" id="chk-${it.id}" value="${it.val}" checked
+              <input type="checkbox" id="chk-${it.id}" value="${it.val}" ${it.checked===false?'':'checked'}
                 ${it.gastosId ? `data-gastos-id="${it.gastosId}"` : ''}
                 style="width:16px;height:16px;cursor:pointer"
                 onchange="recalcularTotal()">
@@ -6283,6 +6321,36 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes) {
       <div style="max-width:180px;margin:0 auto;text-align:center"><div style="border-top:1px solid #333;padding-top:4px;font-size:0.68rem;color:#666;margin-top:18px">Firma propietario</div></div>
     </div>
   </div>`;
+}
+
+
+// ============================================================
+// INTERÉS PUNITORIO
+// ============================================================
+function calcularInteresPunitorio(saldo, tasaDiaria, fechaVencimiento) {
+  if (!saldo || saldo <= 0 || !tasaDiaria || tasaDiaria <= 0 || !fechaVencimiento) return 0;
+  
+  // Find first business day after vencimiento (skip weekends only)
+  const vence = new Date(fechaVencimiento + 'T00:00:00');
+  let inicio = new Date(vence);
+  inicio.setDate(inicio.getDate() + 1);
+  // Skip weekends
+  while (inicio.getDay() === 0 || inicio.getDay() === 6) {
+    inicio.setDate(inicio.getDate() + 1);
+  }
+  
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  
+  if (hoy < inicio) return 0; // not yet late
+  
+  // Count calendar days from inicio to hoy (inclusive)
+  const dias = Math.floor((hoy - inicio) / (1000 * 60 * 60 * 24)) + 1;
+  if (dias <= 0) return 0;
+  
+  // Compound interest: saldo * ((1 + tasa/100)^dias - 1)
+  const interes = saldo * (Math.pow(1 + tasaDiaria / 100, dias) - 1);
+  return Math.round(interes);
 }
 
 // ============================================================
