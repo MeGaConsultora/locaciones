@@ -6322,9 +6322,9 @@ function renderNumeracionServicios() {
           <div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
             ${nroActual ? '<span style="font-size:0.75rem;color:var(--green);margin-right:4px">✓ ' + nroActual + '</span>' : ''}
             <input type="${esEntero?'number':'text'}" id="nsrv-input-${c.id}"
-              value="${nroActual}" placeholder="N° ${srv.toUpperCase()}"
-              style="width:150px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem"
+              value="${nroActual}"
               placeholder="${srv==='epe'?'N° cliente sin ceros':srv==='agua'?'N° de cliente':srv==='tgiu'?'Padrón':'N°'}"
+              style="width:150px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem"
               onkeydown="if(event.key==='Enter') guardarNroServicio(${c.id},'${srv}')">
             <button onclick="guardarNroServicio(${c.id},'${srv}')"
               style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem">✓</button>
