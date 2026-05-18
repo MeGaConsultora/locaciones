@@ -324,6 +324,7 @@
       <div style="padding:0.4rem 1.2rem 0.2rem;font-size:0.68rem;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.08em;border-top:1px solid rgba(255,255,255,0.12);margin-top:4px">Servicios</div>
       <button onclick="abrirCargarServicios()" style="padding-left:1.8rem">⚡ Cargar servicios del mes</button>
       <button onclick="abrirImportarPDF()" style="padding-left:1.8rem">📄 Importar PDF de servicios</button>
+      <button onclick="selectInforme('numeracion-servicios')" style="padding-left:1.8rem">🔢 Numeración de servicios</button>
       <div style="border-top:1px solid rgba(255,255,255,0.12);margin-top:4px"></div>
       <button onclick="selectInforme('vencimientos')">📋 Vencimientos de contratos</button>
       <button onclick="abrirActualizacionAlquileres()">🔄 Actualizar alquileres</button>
@@ -428,6 +429,30 @@
     </div>
     <div id="informe-contenido">
       <div class="empty-state"><div class="icon">📊</div><p>Seleccioná un año y mes para ver el informe</p></div>
+    </div>
+  </div>
+
+  <!-- NUMERACIÓN DE SERVICIOS -->
+  <div id="panel-numeracion-servicios" class="panel" style="display:none">
+    <div class="toolbar" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+      <strong style="font-size:0.95rem">🔢 Numeración de servicios</strong>
+      <select id="nsrv-servicio" class="filter-select" style="width:auto" onchange="renderNumeracionServicios()">
+        <option value="epe">EPE (N° cliente entero)</option>
+        <option value="agua">Agua (N° cliente entero)</option>
+        <option value="tgiu">TGIU (Padrón alfanumérico)</option>
+        <option value="seguro">Seguro (alfanumérico)</option>
+        <option value="internet">Internet (alfanumérico)</option>
+        <option value="expensas">Expensas (alfanumérico)</option>
+      </select>
+      <select id="nsrv-filtro" class="filter-select" style="width:auto" onchange="renderNumeracionServicios()">
+        <option value="sin-nro">Sin numeración</option>
+        <option value="con-nro">Con numeración</option>
+        <option value="todos">Todos</option>
+      </select>
+      <input type="text" id="nsrv-buscar" class="search-input" placeholder="Buscar contrato, locatario..." style="width:220px" oninput="renderNumeracionServicios()">
+    </div>
+    <div id="nsrv-contenido">
+      <div class="empty-state"><div class="icon">🔢</div><p>Seleccioná un servicio</p></div>
     </div>
   </div>
 
@@ -4867,7 +4892,7 @@ function selectInforme(tipo) {
   document.getElementById('informes-menu').style.display = 'none';
 
   // First hide ALL main panels (same as showTab)
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -4884,6 +4909,7 @@ function selectInforme(tipo) {
   if (tipo === 'reporte-total') panelId = 'panel-reporte-total';
   else if (tipo === 'vencimientos') panelId = 'panel-vencimientos';
   else if (tipo === 'recibos-emitir') panelId = 'panel-recibos-emitir';
+  else if (tipo === 'numeracion-servicios') panelId = 'panel-numeracion-servicios';
 
   const el = document.getElementById(panelId);
   if (el) { el.style.display = 'block'; el.classList.add('active'); }
@@ -4892,6 +4918,7 @@ function selectInforme(tipo) {
   if (tipo === 'vencimientos') renderVencimientos();
   else if (tipo === 'reporte-total') renderReporteTotal();
   else if (tipo === 'recibos-emitir') { populateRecibosAnios(); renderRecibosEmitir(); }
+  else if (tipo === 'numeracion-servicios') renderNumeracionServicios();
   else { populateInformeAnios(); renderInforme(); }
 }
 
@@ -4902,7 +4929,7 @@ document.addEventListener('click', () => {
 
 function showTab(name, btn) {
   // Hide ALL panels using both class and inline style
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -5595,7 +5622,7 @@ document.addEventListener('visibilitychange', () => {
 // ============================================================
 // Initialize panel visibility
 (function() {
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) el.style.display = id === 'dashboard' ? 'block' : 'none';
@@ -6233,6 +6260,83 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes) {
       <div style="max-width:180px;margin:0 auto;text-align:center"><div style="border-top:1px solid #333;padding-top:4px;font-size:0.68rem;color:#666;margin-top:18px">Firma propietario</div></div>
     </div>
   </div>`;
+}
+
+// ============================================================
+// NUMERACIÓN DE SERVICIOS
+// ============================================================
+function renderNumeracionServicios() {
+  const srv = document.getElementById('nsrv-servicio')?.value || 'epe';
+  const filtro = document.getElementById('nsrv-filtro')?.value || 'sin-nro';
+  const buscar = (document.getElementById('nsrv-buscar')?.value || '').toLowerCase();
+  const cont = document.getElementById('nsrv-contenido');
+  if (!cont) return;
+
+  const esEntero = ['epe','agua'].includes(srv);
+  const campo = 'nro_' + srv;
+
+  let contratos = DB.contratos.filter(c => getEstado(c) === 'vigente');
+  if (filtro === 'sin-nro') contratos = contratos.filter(c => !c[campo]);
+  else if (filtro === 'con-nro') contratos = contratos.filter(c => c[campo]);
+  if (buscar) contratos = contratos.filter(c =>
+    (c.titulo||'').toLowerCase().includes(buscar) ||
+    (c.locatario||'').toLowerCase().includes(buscar) ||
+    (c.locador||'').toLowerCase().includes(buscar)
+  );
+  contratos.sort((a,b) => (a.titulo||'').localeCompare(b.titulo||''));
+
+  if (!contratos.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">✓</div><p>No hay contratos ' + (filtro === 'sin-nro' ? 'sin numeración' : 'que coincidan') + '</p></div>';
+    return;
+  }
+
+  cont.innerHTML = `<div style="margin-bottom:0.75rem;font-size:0.82rem;color:#888">${contratos.length} contrato/s — editá el N° y presioná Enter o hacé clic en ✓</div>
+    <div style="display:flex;flex-direction:column;gap:0.5rem">
+      ${contratos.map(c => {
+        const inm = DB_INMUEBLES.find(x => x.id === c.inmueble_id);
+        const dir = inm ? formatDireccion(inm, true) : (c.titulo||c.hoja);
+        const nroActual = c[campo] || '';
+        return `<div style="display:flex;align-items:center;gap:0.75rem;background:#faf7f2;border-radius:8px;padding:0.6rem 1rem;border:1px solid var(--border)">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:0.88rem">${c.titulo||c.hoja}</div>
+            <div style="font-size:0.75rem;color:#888">${dir} · ${c.locatario||'—'}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
+            ${nroActual ? '<span style="font-size:0.75rem;color:var(--green);margin-right:4px">✓ ' + nroActual + '</span>' : ''}
+            <input type="${esEntero?'number':'text'}" id="nsrv-input-${c.id}"
+              value="${nroActual}" placeholder="N° ${srv.toUpperCase()}"
+              style="width:140px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem"
+              onkeydown="if(event.key==='Enter') guardarNroServicio(${c.id},'${srv}')">
+            <button onclick="guardarNroServicio(${c.id},'${srv}')"
+              style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem">✓</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+async function guardarNroServicio(contratoId, srv) {
+  const input = document.getElementById('nsrv-input-' + contratoId);
+  if (!input) return;
+  const nro = input.value.trim();
+  const campo = 'nro_' + srv;
+  const c = DB.contratos.find(x => x.id === contratoId);
+  if (!c) return;
+  try {
+    const body = { [campo]: nro || null };
+    await sbPatch('contratos', contratoId, body);
+    c[campo] = nro || null;
+    if (c.inmueble_id) {
+      await sbPatch('inmuebles', c.inmueble_id, body);
+      const inm = DB_INMUEBLES.find(x => x.id === c.inmueble_id);
+      if (inm) inm[campo] = nro || null;
+      const otros = DB.contratos.filter(x => x.inmueble_id === c.inmueble_id && x.id !== contratoId && getEstado(x) === 'vigente');
+      if (otros.length) await Promise.all(otros.map(x => sbPatch('contratos', x.id, body)));
+      otros.forEach(x => x[campo] = nro || null);
+    }
+    toast('N° ' + srv.toUpperCase() + ' guardado ✓');
+    renderNumeracionServicios();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
 function formatDireccion(inm, short=false) {
