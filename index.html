@@ -1509,12 +1509,11 @@ async function confirmarRescision(contratoId, hoja) {
     // Update contrato with rescision date
     await sbPatch('contratos', contratoId, { fecha_rescision: fechaRescision });
 
-    // Mark future pagos as rescinded (saldo=0, pagado='RESCINDIDO')
-    const pagosContrato = DB.pagos.filter(p => p.hoja === hoja && p.mes && p.mes > fechaRescision+'-31');
+    // Mark future pagos as rescinded - keep the month of rescision, delete strictly posterior months
+    const mesRescision = fechaRescision.substring(0, 7); // YYYY-MM
+    const pagosContrato = DB.pagos.filter(p => p.hoja === hoja && p.mes && p.mes.substring(0,7) > mesRescision);
     for (const p of pagosContrato) {
-      if ((p.saldo||0) > 0 && (!p.pagado || p.pagado === '0')) {
-        await sbPatch('pagos', p.id, { saldo: 0, pagado: 'RESCINDIDO', total: p.total||0 });
-      }
+      await fetch(`${SB_URL}/rest/v1/pagos?id=eq.${p.id}`, {method:'DELETE', headers:HEADERS});
     }
 
     toast('Contrato rescindido ✓');
