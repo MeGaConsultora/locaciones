@@ -3949,6 +3949,7 @@ function _abrirFormularioContrato(c, esNuevo) {
 
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="${esNuevo ? 'closeModal()' : 'openContrato('+c.id+')'}">${esNuevo ? 'Cancelar' : '← Volver'}</button>
+      ${!esNuevo ? `<button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="eliminarContrato(${c.id})">🗑 Eliminar contrato</button>` : ''}
       <button class="btn btn-primary" onclick="${esNuevo ? 'guardarContrato()' : 'actualizarContrato('+c.id+')'}">${esNuevo ? 'Guardar contrato' : 'Guardar cambios'}</button>
     </div>
   `;
@@ -4017,24 +4018,22 @@ async function guardarPersonaInline(rol) {
   };
   try {
     const r = await sbPost('personas', body);
-    const nuevaPersona = r[0];
-    if (nuevaPersona) {
-      DB_PERSONAS.push(nuevaPersona);
-      // Add to the contract form
-      const contenedor = document.getElementById(`lista-${rol === 'propietario' ? 'propietarios' : 'inquilinos'}`);
-      if (contenedor) {
-        const idx = contenedor.children.length;
-        const divP = document.createElement('div');
-        divP.dataset.rol = rol;
-        divP.dataset.personaId = nuevaPersona.id;
-        divP.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem';
-        divP.innerHTML = `
-          <input type="text" value="${nuevaPersona.apellido}, ${nuevaPersona.nombre||''}" style="flex:1;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem" readonly>
-          <span style="font-size:0.85rem;color:var(--green);font-weight:600">✓ Nueva</span>
-          <button onclick="this.closest('[data-rol]').remove()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
-        `;
-        contenedor.appendChild(divP);
-      }
+    const nuevaPersona = r?.[0] || r;
+    if (!nuevaPersona?.id) { toast('Error: no se obtuvo ID de la persona','error'); return; }
+    DB_PERSONAS.push(nuevaPersona);
+    // Add to the contract form
+    const contenedor = document.getElementById(`lista-${rol === 'propietario' ? 'propietarios' : 'inquilinos'}`);
+    if (contenedor) {
+      const divP = document.createElement('div');
+      divP.dataset.rol = rol;
+      divP.dataset.personaId = nuevaPersona.id;
+      divP.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem;position:relative';
+      divP.innerHTML = `
+        <input type="text" value="${nuevaPersona.apellido}${nuevaPersona.nombre?', '+nuevaPersona.nombre:''}" style="flex:1;padding:6px 10px;border:1.5px solid var(--green);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem;color:var(--green);font-weight:600" readonly>
+        <span style="font-size:0.85rem;color:var(--green);font-weight:600">✓ Nueva</span>
+        <button onclick="this.closest('[data-rol]').remove()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
+      `;
+      contenedor.appendChild(divP);
     }
     const formDiv = document.getElementById(`inline-persona-form-${rol}`) || document.getElementById('inline-persona-form');
     if (formDiv) formDiv.innerHTML = '';
@@ -4332,8 +4331,8 @@ async function actualizarContrato(id) {
 
   const body = {
     titulo: document.getElementById('f-titulo').value.trim(),
-    locador: propPersonas.length ? formatPersonasFromCP(propPersonas.map((p,i)=>({personas:p,orden:i+1}))) : undefined,
-    locatario: inqPersonas.length ? formatPersonasFromCP(inqPersonas.map((p,i)=>({personas:p,orden:i+1}))) : undefined,
+    locador: propPersonas.length ? formatPersonasFromCP(propPersonas.map((p,i)=>({personas:p,orden:i+1}))) : null,
+    locatario: inqPersonas.length ? formatPersonasFromCP(inqPersonas.map((p,i)=>({personas:p,orden:i+1}))) : null,
     vigencia_desde: document.getElementById('f-desde').value||null,
     vigencia_hasta: document.getElementById('f-hasta').value||null,
     tipo_inmueble: (() => { const id=parseInt(document.getElementById('f-inmueble-id')?.value); const inm=DB_INMUEBLES.find(x=>x.id===id); return inm?.tipo||null; })(),
@@ -6310,6 +6309,27 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes) {
   </div>`;
 }
 
+
+async function eliminarContrato(id) {
+  const c = DB.contratos.find(x => x.id === id);
+  if (!confirm(`¿Eliminar el contrato "${c?.titulo||c?.hoja}"?\n\nSe eliminarán también todos sus pagos, extras y cuotas de gastos. Esta acción no se puede deshacer.`)) return;
+  try {
+    // Delete related records first
+    await fetch(`${SB_URL}/rest/v1/gastos_inicio_cuotas?contrato_id=eq.${id}`, {method:'DELETE', headers:HEADERS});
+    await fetch(`${SB_URL}/rest/v1/contrato_personas?contrato_id=eq.${id}`, {method:'DELETE', headers:HEADERS});
+    const pagos = DB.pagos.filter(p => p.hoja === c?.hoja);
+    if (pagos.length) {
+      const pagoIds = pagos.map(p => p.id).join(',');
+      await fetch(`${SB_URL}/rest/v1/pagos_extras?pago_id=in.(${pagoIds})`, {method:'DELETE', headers:HEADERS});
+    }
+    await fetch(`${SB_URL}/rest/v1/pagos?hoja=eq.${encodeURIComponent(c?.hoja||'')}`, {method:'DELETE', headers:HEADERS});
+    await fetch(`${SB_URL}/rest/v1/contratos?id=eq.${id}`, {method:'DELETE', headers:HEADERS});
+    toast('Contrato eliminado ✓');
+    closeModal();
+    await loadAll();
+    renderContratos();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
 
 function calcularInteresPunitorio(saldo, tasaDiaria, fechaVencimiento) {
   if (!saldo || saldo <= 0 || !tasaDiaria || tasaDiaria <= 0 || !fechaVencimiento) return 0;
