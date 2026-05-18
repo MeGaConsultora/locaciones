@@ -51,9 +51,14 @@
   .tab-btn:hover { color:var(--cream); }
   .tab-btn.active { color:var(--cream); border-bottom-color:var(--accent); }
   .tab-dropdown { position:relative; height:100%; display:flex; align-items:center; }
-  .tab-dropdown-menu { position:absolute; top:100%; left:0; background:var(--ink2); border-radius:0 0 10px 10px; min-width:220px; z-index:9999; box-shadow:0 8px 24px rgba(0,0,0,0.4); overflow:hidden; border-top:2px solid var(--accent); }
+  .tab-dropdown-menu { position:absolute; top:100%; left:0; background:var(--ink2); border-radius:0 0 10px 10px; min-width:220px; z-index:9999; box-shadow:0 8px 24px rgba(0,0,0,0.4); border-top:2px solid var(--accent); }
   .tab-dropdown-menu button { display:block; width:100%; text-align:left; background:none; border:none; color:rgba(255,255,255,0.85); padding:0.8rem 1.2rem; font-family:'DM Sans',sans-serif; font-size:0.88rem; cursor:pointer; transition:background 0.15s; border-bottom:1px solid rgba(255,255,255,0.08); }
   .tab-dropdown-menu button:hover { background:rgba(255,255,255,0.12); color:white; }
+  .tab-dropdown-menu .submenu-header { display:flex; align-items:center; justify-content:space-between; padding:0.8rem 1.2rem; color:rgba(255,255,255,0.85); font-size:0.88rem; cursor:pointer; border-bottom:1px solid rgba(255,255,255,0.08); transition:background 0.15s; }
+  .tab-dropdown-menu .submenu-header:hover { background:rgba(255,255,255,0.12); color:white; }
+  .tab-dropdown-menu .submenu-items { display:none; background:rgba(0,0,0,0.2); }
+  .tab-dropdown-menu .submenu-items button { padding-left:2rem; font-size:0.84rem; }
+  .tab-dropdown-menu .submenu-items.open { display:block; }
   .tab-dropdown.active > .tab-btn { color:var(--cream); border-bottom-color:var(--accent); }
 
   main { padding:2rem; max-width:1400px; margin:0 auto; }
@@ -318,14 +323,17 @@
   <div class="tab-dropdown" id="dropdown-informes">
     <button class="tab-btn" onclick="toggleInformesMenu(event)">⚙️ Gestión ▾</button>
     <div class="tab-dropdown-menu" id="informes-menu" style="display:none">
-      <div style="padding:0.4rem 1.2rem 0.2rem;font-size:0.68rem;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.08em">Informes</div>
-      <button onclick="selectInforme('mensual')" style="padding-left:1.8rem">📅 Reportes mensuales</button>
-      <button onclick="selectInforme('reporte-total')" style="padding-left:1.8rem">📋 Reportes totales</button>
-      <div style="padding:0.4rem 1.2rem 0.2rem;font-size:0.68rem;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.08em;border-top:1px solid rgba(255,255,255,0.12);margin-top:4px">Servicios</div>
-      <button onclick="abrirCargarServicios()" style="padding-left:1.8rem">⚡ Cargar servicios del mes</button>
-      <button onclick="abrirImportarPDF()" style="padding-left:1.8rem">📄 Importar PDF de servicios</button>
-      <button onclick="selectInforme('numeracion-servicios')" style="padding-left:1.8rem">🔢 Numeración de servicios</button>
-      <div style="border-top:1px solid rgba(255,255,255,0.12);margin-top:4px"></div>
+      <div class="submenu-header" onclick="toggleSubmenu('submenu-informes')">📊 Informes <span id="arrow-informes">▸</span></div>
+      <div class="submenu-items" id="submenu-informes">
+        <button onclick="selectInforme('mensual')">📅 Reportes mensuales</button>
+        <button onclick="selectInforme('reporte-total')">📋 Reportes totales</button>
+      </div>
+      <div class="submenu-header" onclick="toggleSubmenu('submenu-servicios')">⚡ Servicios <span id="arrow-servicios">▸</span></div>
+      <div class="submenu-items" id="submenu-servicios">
+        <button onclick="abrirCargarServicios()">⚡ Cargar servicios del mes</button>
+        <button onclick="abrirImportarPDF()">📄 Importar PDF de servicios</button>
+        <button onclick="selectInforme('numeracion-servicios')">🔢 Numeración de servicios</button>
+      </div>
       <button onclick="selectInforme('vencimientos')">📋 Vencimientos de contratos</button>
       <button onclick="abrirActualizacionAlquileres()">🔄 Actualizar alquileres</button>
       <button onclick="selectInforme('recibos-emitir')">🖨️ Recibos Propietarios</button>
@@ -437,12 +445,12 @@
     <div class="toolbar" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
       <strong style="font-size:0.95rem">🔢 Numeración de servicios</strong>
       <select id="nsrv-servicio" class="filter-select" style="width:auto" onchange="renderNumeracionServicios()">
-        <option value="epe">EPE (N° cliente entero)</option>
-        <option value="agua">Agua (N° cliente entero)</option>
-        <option value="tgiu">TGIU (Padrón alfanumérico)</option>
-        <option value="seguro">Seguro (alfanumérico)</option>
-        <option value="internet">Internet (alfanumérico)</option>
-        <option value="expensas">Expensas (alfanumérico)</option>
+        <option value="epe">EPE</option>
+        <option value="agua">Agua</option>
+        <option value="tgiu">TGIU</option>
+        <option value="seguro">Seguro</option>
+        <option value="internet">Internet</option>
+        <option value="expensas">Expensas</option>
       </select>
       <select id="nsrv-filtro" class="filter-select" style="width:auto" onchange="renderNumeracionServicios()">
         <option value="sin-nro">Sin numeración</option>
@@ -4869,6 +4877,16 @@ async function openModal2ForContrato(contratoId) {
 // ============================================================
 // TABS
 // ============================================================
+function toggleSubmenu(id) {
+  const items = document.getElementById(id);
+  if (!items) return;
+  const isOpen = items.classList.contains('open');
+  items.classList.toggle('open', !isOpen);
+  const key = id.replace('submenu-', '');
+  const arrow = document.getElementById('arrow-' + key);
+  if (arrow) arrow.textContent = isOpen ? '▸' : '▾';
+}
+
 function toggleInformesMenu(e) {
   e.stopPropagation();
   const menu = document.getElementById('informes-menu');
@@ -6275,7 +6293,7 @@ function renderNumeracionServicios() {
   const esEntero = ['epe','agua'].includes(srv);
   const campo = 'nro_' + srv;
 
-  let contratos = DB.contratos.filter(c => getEstado(c) === 'vigente');
+  let contratos = DB.contratos.filter(c => getEstado(c) === 'vigente' || getEstado(c) === 'indefinido');
   if (filtro === 'sin-nro') contratos = contratos.filter(c => !c[campo]);
   else if (filtro === 'con-nro') contratos = contratos.filter(c => c[campo]);
   if (buscar) contratos = contratos.filter(c =>
@@ -6305,7 +6323,8 @@ function renderNumeracionServicios() {
             ${nroActual ? '<span style="font-size:0.75rem;color:var(--green);margin-right:4px">✓ ' + nroActual + '</span>' : ''}
             <input type="${esEntero?'number':'text'}" id="nsrv-input-${c.id}"
               value="${nroActual}" placeholder="N° ${srv.toUpperCase()}"
-              style="width:140px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem"
+              style="width:150px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem"
+              placeholder="${srv==='epe'?'N° cliente sin ceros':srv==='agua'?'N° de cliente':srv==='tgiu'?'Padrón':'N°'}"
               onkeydown="if(event.key==='Enter') guardarNroServicio(${c.id},'${srv}')">
             <button onclick="guardarNroServicio(${c.id},'${srv}')"
               style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem">✓</button>
