@@ -1137,26 +1137,8 @@ async function openContrato(id) {
       </span></div>
     </div>
     <div id="grilla-container">
-      ${(() => {
-        const cuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id).sort((a,b) => a.mes > b.mes ? 1 : -1);
-        if (!cuotas.length) return '';
-        const totalGastos = cuotas.reduce((s,g) => s+(g.monto_inquilino||0), 0);
-        const pagadoGastos = cuotas.reduce((s,g) => s+(parseFloat(g.pagado_inquilino)||0), 0);
-        const saldoGastos = totalGastos - pagadoGastos;
-        const totalGastosProp = cuotas.reduce((s,g) => s+(g.monto_propietario||0), 0);
-        const pagadoGastosProp = cuotas.reduce((s,g) => s+(parseFloat(g.pagado_propietario)||0), 0);
-        const saldoGastosProp = totalGastosProp - pagadoGastosProp;
-        return `<div style="background:#f0fff4;border:1px solid var(--green);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.75rem;font-size:0.82rem">
-          <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">
-            <strong>📋 Gastos de inicio</strong>
-            <span style="color:#888">${cuotas.length} cuota/s</span>
-            ${totalGastos > 0 ? `<span><strong>Inquilino</strong> — Total: ${formatMoney(totalGastos)} · Pagado: <span style="color:var(--green)">${formatMoney(pagadoGastos)}</span> · Saldo: <span style="color:${saldoGastos>0?'var(--accent)':'var(--green)'}">${saldoGastos>0?formatMoney(saldoGastos):'✓'}</span></span>` : ''}
-            ${totalGastosProp > 0 ? `<span><strong>Propietario</strong> — Total: ${formatMoney(totalGastosProp)} · Pagado: <span style="color:var(--green)">${formatMoney(pagadoGastosProp)}</span> · Saldo: <span style="color:${saldoGastosProp>0?'var(--accent)':'var(--green)'}">${saldoGastosProp>0?formatMoney(saldoGastosProp):'✓'}</span></span>` : ''}
-          </div>
-        </div>`;
-      })()}
-      <div class="loading-overlay">Cargando grilla de pagos...</div>
-    </div>
+    <div id="gastos-inicio-row"></div>
+    <div id="grilla-container"><div class="loading-overlay">Cargando grilla de pagos...</div></div>
   `;
   document.getElementById('modal-overlay').dataset.contratoId = '';
   document.getElementById('modal-overlay').classList.add('open');
@@ -1233,6 +1215,30 @@ function getEstadoLabel(p) {
 }
 
 function renderGrilla(c) {
+  // Render gastos de inicio row
+  const gastosRowEl = document.getElementById('gastos-inicio-row');
+  if (gastosRowEl) {
+    const cuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id).sort((a,b) => a.mes > b.mes ? 1 : -1);
+    if (cuotas.length) {
+      const totalGastos = cuotas.reduce((s,g) => s+(g.monto_inquilino||0), 0);
+      const pagadoGastos = cuotas.reduce((s,g) => s+(parseFloat(g.pagado_inquilino)||0), 0);
+      const saldoGastos = totalGastos - pagadoGastos;
+      const totalGastosProp = cuotas.reduce((s,g) => s+(g.monto_propietario||0), 0);
+      const pagadoGastosProp = cuotas.reduce((s,g) => s+(parseFloat(g.pagado_propietario)||0), 0);
+      const saldoGastosProp = totalGastosProp - pagadoGastosProp;
+      gastosRowEl.innerHTML = `<div style="background:#f0fff4;border:1px solid var(--green);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.75rem;font-size:0.82rem">
+        <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">
+          <strong>📋 Gastos de inicio</strong>
+          <span style="color:#888">${cuotas.length} cuota/s</span>
+          ${totalGastos > 0 ? `<span><strong>Inquilino</strong> — Total: ${formatMoney(totalGastos)} · Pagado: <span style="color:var(--green)">${formatMoney(pagadoGastos)}</span> · Saldo: <span style="color:${saldoGastos>0?'var(--accent)':'var(--green)'}">${saldoGastos>0?formatMoney(saldoGastos):'✓'}</span></span>` : ''}
+          ${totalGastosProp > 0 ? `<span><strong>Propietario</strong> — Total: ${formatMoney(totalGastosProp)} · Pagado: <span style="color:var(--green)">${formatMoney(pagadoGastosProp)}</span> · Saldo: <span style="color:${saldoGastosProp>0?'var(--accent)':'var(--green)'}">${saldoGastosProp>0?formatMoney(saldoGastosProp):'✓'}</span></span>` : ''}
+        </div>
+      </div>`;
+    } else {
+      gastosRowEl.innerHTML = '';
+    }
+  }
+
   if (pagosActuales.length === 0) {
     document.getElementById('grilla-container').innerHTML = `<div class="empty-state"><div class="icon">📋</div><p>Sin pagos cargados. Usá "+ Agregar Pago" para agregar.</p></div>`;
     return;
@@ -2717,12 +2723,14 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
   }
 
   return items.map(it => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:5px 0;border-bottom:1px solid #f0ece4">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem;flex:1">
         <input type="checkbox" id="cobro-chk-${it.id}" value="${it.val}" data-signo="1" ${it.checked===false?'':'checked'} onchange="recalcCobro()" style="width:15px;height:15px">
         ${it.label}
       </label>
-      <span id="cobro-lbl-${it.id}" style="font-size:0.85rem;color:#666">${formatMoney(it.val)}</span>
+      ${it.editable
+        ? `<input type="number" id="val-${it.id}" value="${it.val}" min="0" max="${it.val}" style="width:120px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem;text-align:right" oninput="document.getElementById('cobro-chk-${it.id}').value=this.value;recalcCobro()">`
+        : `<span id="cobro-lbl-${it.id}" style="font-size:0.85rem;color:#666">${formatMoney(it.val)}</span>`}
     </div>
   `).join('') + extrasInq.map(e => {
     const signo = e.tipo==='credito' ? -1 : 1;
