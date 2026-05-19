@@ -3105,7 +3105,14 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
     await sbPatch('pagos', p.id, {
       saldo: p.total,
       pagado: '0',
-      pago_nro: null
+      pago_nro: null,
+      pagado_alquiler: 0,
+      pagado_epe: 0,
+      pagado_agua: 0,
+      pagado_tgiu: 0,
+      pagado_seguro: 0,
+      pagado_internet: 0,
+      pagado_expensas: 0
     });
     toast('Cobro revertido ✓');
     const c = DB.contratos.find(x=>x.id===contratoId);
