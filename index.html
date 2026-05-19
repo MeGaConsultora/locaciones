@@ -2734,18 +2734,6 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
     ].filter(i => i.val > 0);
   }
 
-  // Add honorarios if pending
-  if (contratoId) {
-    const cuotasH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
-    const totalInq = cuotasH.reduce((s,g) => s+(g.monto_inquilino||0), 0);
-    const pagadoInq = cuotasH.reduce((s,g) => s+(parseFloat(g.pagado_inquilino)||0), 0);
-    const saldoInq = Math.max(0, totalInq - pagadoInq);
-    if (saldoInq > 0) {
-      const montoCuota = cuotasH[0]?.monto_inquilino || 0;
-      items.push({ id:'honorarios', label:`Honorarios (${cuotasH.length} cuota/s de ${formatMoney(montoCuota)} — saldo: ${formatMoney(saldoInq)})`, val: saldoInq, checked: false, editable: true });
-    }
-  }
-
   // Build paid items (for revert buttons)
   const allItemDefs = [
     { id:'alquiler', label:'Alquiler', monto: p.importe_alquiler||0, pagado: parseFloat(p.pagado_alquiler)||0 },
@@ -2777,6 +2765,22 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
     ${(p.saldo||0) > 0 ? '<div style="margin:0.5rem 0;font-size:0.75rem;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Pendiente</div>' : '<div style="background:#d4edda;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#155724;margin-top:0.5rem">✓ Mes cancelado en su totalidad</div>'}
   ` : '';
 
+  // Add honorarios if pending (always show regardless of pagos saldo)
+  const cuotasH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
+  const totalInqH = cuotasH.reduce((s,g) => s+(g.monto_inquilino||0), 0);
+  const pagadoInqH = cuotasH.reduce((s,g) => s+(parseFloat(g.pagado_inquilino)||0), 0);
+  const saldoInqH = Math.max(0, totalInqH - pagadoInqH);
+  const honorariosItem = saldoInqH > 0 ? `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:5px 0;border-bottom:1px solid #f0ece4">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem;flex:1">
+        <input type="checkbox" id="cobro-chk-honorarios" data-signo="1" checked onchange="recalcCobro()" style="width:15px;height:15px">
+        Honorarios (${cuotasH.length} cuota/s de ${formatMoney(cuotasH[0]?.monto_inquilino||0)} — saldo: ${formatMoney(saldoInqH)})
+      </label>
+      <input type="number" id="val-honorarios" value="${saldoInqH}" min="0" max="${saldoInqH}"
+        style="width:120px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem;text-align:right"
+        oninput="document.getElementById('cobro-chk-honorarios').value=this.value;recalcCobro()">
+    </div>` : '';
+
   return paidSection + ((p.saldo||0) > 0 ? items.map(it => `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem;flex:1">
@@ -2798,7 +2802,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
       </label>
       <span style="font-size:0.85rem;color:${color}">${signoLabel} ${formatMoney(Math.abs(e.importe||0))}</span>
     </div>`;
-  }).join('') : '');
+  }).join('') : '') + honorariosItem;
 }
 
 
