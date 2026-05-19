@@ -2776,7 +2776,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
         <input type="checkbox" id="cobro-chk-honorarios" data-signo="1" checked onchange="recalcCobro()" style="width:15px;height:15px">
         Honorarios (${cuotasH.length} cuota/s de ${formatMoney(cuotasH[0]?.monto_inquilino||0)} — saldo: ${formatMoney(saldoInqH)})
       </label>
-      <input type="number" id="val-honorarios" value="${saldoInqH}" min="0" max="${saldoInqH}"
+      <input type="number" id="val-honorarios" value="" placeholder="Importe a cobrar" min="0" max="${saldoInqH}"
         style="width:120px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem;text-align:right"
         oninput="document.getElementById('cobro-chk-honorarios').value=this.value;recalcCobro()">
     </div>` : '';
