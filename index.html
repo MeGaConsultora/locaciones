@@ -2640,7 +2640,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       <div id="gp-cobro-items">${generarItemsCobro(p, extrasInq, contratoId, mesKey)}</div>
       ${c?.interes_punitorio > 0 ? `
       <div style="background:#fff8e1;border:1px solid #ffc107;border-radius:8px;padding:0.75rem 1rem;margin-top:0.75rem">
-        <div style="font-size:0.82rem;font-weight:600;color:#856404;margin-bottom:6px">⏱ Interés punitorio (${c.interes_punitorio}% diario s/saldo)</div>
+        <div style="font-size:0.82rem;font-weight:600;color:#856404;margin-bottom:6px">⏱ Interés punitorio (${c.interes_punitorio}% diario s/alquiler)</div>
         <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
           <label style="font-size:0.82rem;color:#856404">Fecha de pago:</label>
           <input type="date" id="gp-fecha-pago" value="${TODAY}" style="padding:4px 8px;border:1px solid #ffc107;border-radius:6px;font-size:0.82rem" onchange="recalcIntereses()">
@@ -2705,13 +2705,13 @@ function mostrarSolapa(id, btn) {
 function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
   const items = [
-    { id:'alquiler', label:'Alquiler', val: p.importe_alquiler||0 },
-    { id:'epe', label:'EPE', val: p.monto_epe||0 },
-    { id:'agua', label:'Agua', val: p.monto_agua||0 },
-    { id:'tgiu', label:'TGIU', val: p.monto_tgiu||0 },
-    { id:'seguro', label:'Seguro', val: p.monto_seguro||0 },
-    { id:'internet', label:'Internet', val: p.monto_internet||0 },
-    { id:'expensas', label:'Expensas', val: p.monto_expensas||0 },
+    { id:'alquiler', label:'Alquiler', val: Math.max(0,(p.importe_alquiler||0)-(parseFloat(p.pagado_alquiler)||0)) },
+    { id:'epe',      label:'EPE',      val: Math.max(0,(p.monto_epe||0)-(parseFloat(p.pagado_epe)||0)) },
+    { id:'agua',     label:'Agua',     val: Math.max(0,(p.monto_agua||0)-(parseFloat(p.pagado_agua)||0)) },
+    { id:'tgiu',     label:'TGIU',     val: Math.max(0,(p.monto_tgiu||0)-(parseFloat(p.pagado_tgiu)||0)) },
+    { id:'seguro',   label:'Seguro',   val: Math.max(0,(p.monto_seguro||0)-(parseFloat(p.pagado_seguro)||0)) },
+    { id:'internet', label:'Internet', val: Math.max(0,(p.monto_internet||0)-(parseFloat(p.pagado_internet)||0)) },
+    { id:'expensas', label:'Expensas', val: Math.max(0,(p.monto_expensas||0)-(parseFloat(p.pagado_expensas)||0)) },
   ].filter(i => i.val > 0);
 
   // Add honorarios if pending
@@ -2747,27 +2747,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
       </label>
       <span style="font-size:0.85rem;color:${color}">${signoLabel} ${formatMoney(Math.abs(e.importe||0))}</span>
     </div>`;
-  }).join('') + (() => {
-    if (!contratoId || !mesKey) return '';
-    const c2 = DB.contratos.find(x => x.id === contratoId);
-    const tasaDiaria = c2?.interes_punitorio || 0;
-    if (!tasaDiaria || !p.saldo || p.saldo <= 0) return '';
-    const fechaVence = p.fecha_pago_hasta || (p.mes ? p.mes.substring(0,7) + '-' + String(c2?.dia_vencimiento||10).padStart(2,'0') : null);
-    const interes = calcularInteresPunitorio(p.saldo, tasaDiaria, fechaVence);
-    if (!interes || interes <= 0) return '';
-    const vence = new Date(fechaVence + 'T00:00:00');
-    let ini = new Date(vence); ini.setDate(ini.getDate() + 1);
-    while (ini.getDay() === 0 || ini.getDay() === 6) ini.setDate(ini.getDate() + 1);
-    const hoy = new Date(); hoy.setHours(0,0,0,0);
-    const dias = Math.floor((hoy - ini) / (1000*60*60*24)) + 1;
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
-        <input type="checkbox" id="cobro-chk-interes" value="${interes}" data-signo="1" onchange="recalcCobro()" style="width:15px;height:15px">
-        Interés punitorio (${tasaDiaria}% × ${dias} días)
-      </label>
-      <span style="font-size:0.85rem;color:var(--accent)">${formatMoney(interes)}</span>
-    </div>`;
-  })();
+  }).join('');
 }
 
 
@@ -2882,13 +2862,10 @@ function recalcIntereses() {
   const fechaPago = document.getElementById('gp-fecha-pago')?.value;
   const vence = document.getElementById('gp-vence')?.value;
   const c = window._gpContratoActual;
-  // Use saldo of current month, not just alquiler
-  const mesKey = window._gpMesKey;
-  const p = DB.pagos.find(x => x.hoja === window._gpHoja && x.mes && x.mes.startsWith(mesKey));
-  const saldo = p?.saldo || parseFloat(document.getElementById('gp-alquiler')?.value)||0;
-  if (!c || !fechaPago || !vence || !saldo) return;
+  const alquiler = parseFloat(document.getElementById('gp-alquiler')?.value)||0;
+  if (!c || !fechaPago || !vence || !alquiler) return;
   
-  const interes = calcularIntereses(saldo, vence, fechaPago, c.interes_punitorio||0);
+  const interes = calcularIntereses(alquiler, vence, fechaPago, c.interes_punitorio||0);
   const infoEl = document.getElementById('gp-interes-info');
   const labelEl = document.getElementById('gp-interes-label');
   const chkEl = document.getElementById('gp-interes-chk');
@@ -3200,13 +3177,29 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
 
   if (totalCobrado <= 0) { toast('Seleccioná al menos un ítem','error'); return; }
 
-  const nuevoSaldo = Math.max(0, (p.saldo||0) - (totalCobrado - honorariosCobrado));
+  // Distribute payment across items in order
+  const montoRegular = totalCobrado - honorariosCobrado;
+  const orden = ['alquiler','epe','agua','tgiu','seguro','internet','expensas'];
+  const pagadoPorItem = {};
+  let restante = montoRegular;
+  for (const item of orden) {
+    const monto = parseFloat(p[`monto_${item}`] || (item==='alquiler'?p.importe_alquiler:0)) || 0;
+    const yaPagado = parseFloat(p[`pagado_${item}`]) || 0;
+    const saldoItem = Math.max(0, monto - yaPagado);
+    if (saldoItem <= 0 || restante <= 0) continue;
+    const pagar = Math.min(restante, saldoItem);
+    pagadoPorItem[`pagado_${item}`] = yaPagado + pagar;
+    restante -= pagar;
+  }
+
+  const nuevoSaldo = Math.max(0, (p.saldo||0) - montoRegular);
   const nroMes = pagosActuales.findIndex(x=>x.id===p.id)+1;
 
   await sbPatch('pagos', p.id, {
     saldo: nuevoSaldo,
     pagado: nuevoSaldo===0 ? 'SI' : 'PARCIAL',
-    pago_nro: String(nroMes)
+    pago_nro: String(nroMes),
+    ...pagadoPorItem
   });
 
   toast('Cobro registrado ✓');
@@ -3234,6 +3227,17 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
 
 
 
+  // Calculate pending items for recibo
+  const orden2 = ['alquiler','epe','agua','tgiu','seguro','internet','expensas'];
+  const labels2 = {alquiler:'Alquiler',epe:'EPE',agua:'Agua',tgiu:'TGIU',seguro:'Seguro',internet:'Internet',expensas:'Expensas'};
+  const itemsPendientes = [];
+  for (const item of orden2) {
+    const monto = parseFloat(item==='alquiler'?p.importe_alquiler:p[`monto_${item}`]) || 0;
+    const pagadoTotal = pagadoPorItem[`pagado_${item}`] ?? (parseFloat(p[`pagado_${item}`])||0);
+    const saldoItem = Math.max(0, monto - pagadoTotal);
+    if (saldoItem > 0) itemsPendientes.push({ label: labels2[item], saldo: saldoItem });
+  }
+
   // Generate receipt
   imprimirRecibo({
     contrato: c,
@@ -3242,7 +3246,8 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     fechaPago: TODAY,
     itemsAbonados: itemsRecibo,
     totalAbonado: totalCobrado,
-    nuevoSaldo
+    nuevoSaldo,
+    itemsPendientes
   });
 
   const cObj = DB.contratos.find(x=>x.id===contratoId);
@@ -4860,7 +4865,9 @@ function imprimirRecibo(data) {
         </tr></tfoot>
       </table>
       <div style="padding:0 14px 6px">
-        ${data.nuevoSaldo > 0 ? `<div style="background:#fff3cd;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#856404">⚠ Saldo pendiente: <strong>${formatMoney(data.nuevoSaldo)}</strong></div>` : '<div style="background:#d4edda;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#155724">✓ Mes cancelado en su totalidad</div>'}
+        ${data.nuevoSaldo > 0 ? `<div style="background:#fff3cd;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#856404">⚠ Saldo pendiente: <strong>${formatMoney(data.nuevoSaldo)}</strong>
+        ${data.itemsPendientes && data.itemsPendientes.length > 0 ? '<br><span style="font-size:0.7rem">Pendiente: ' + data.itemsPendientes.map(it => it.label + ' $' + formatMoney(it.saldo)).join(' · ') + '</span>' : ''}
+      </div>` : '<div style="background:#d4edda;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#155724">✓ Mes cancelado en su totalidad</div>'}
       </div>
       <div style="padding:8px 14px 10px;border-top:1px dashed #ccc;margin:6px 14px 0">
         <div style="text-align:center;max-width:200px;margin:0 auto"><div style="border-top:1px solid #333;padding-top:4px;font-size:0.7rem;color:#666;margin-top:20px">Firma MeGa Consultora</div></div>
