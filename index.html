@@ -2766,7 +2766,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
     <div style="margin-bottom:0.5rem;font-size:0.75rem;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Ya cobrado</div>
     ${paidItems.map(it => `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:4px 0;border-bottom:1px solid #f5f0e8;background:#f9f9f9">
-        <span style="font-size:0.85rem;color:var(--green);flex:1">✓ ${it.label} — ${formatMoney(it.pagado)}${it.pagado < it.monto ? ' <span style="color:#888;font-size:0.75rem">(parcial, debe ${formatMoney(it.monto-it.pagado)})</span>' : ''}</span>
+        <span style="font-size:0.85rem;color:var(--green);flex:1">✓ ${it.label} — ${formatMoney(it.pagado)}${it.pagado < it.monto ? ' (parcial, debe ' + formatMoney(it.monto-it.pagado) + ')' : ''}</span>
         <button onclick="revertirItem('${p.id}','${it.id}',${it.pagado},${it.monto},'${_gpHoja}',${contratoId},'${mesKey}',${_gpComision||8})" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.75rem">↩</button>
       </div>
     `).join('')}
