@@ -4016,6 +4016,14 @@ function _abrirFormularioContrato(c, esNuevo) {
       <div class="form-group"><label>Interés punitorio diario (%)</label><input id="f-interes" type="number" min="0" step="0.001" value="${c.interes_punitorio||0}" placeholder="0"></div>
     </div>
 
+    ${!esNuevo ? `
+    <div class="form-group" style="margin-bottom:0.75rem;margin-top:0.25rem">
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;color:#666;cursor:pointer">
+        <input type="checkbox" id="f-reimportar" style="width:14px;height:14px">
+        Re-proyectar los meses del período actual con el importe indicado
+      </label>
+    </div>` : ''}
+
     <div class="section-title" style="margin:1.2rem 0 0.5rem">Notas</div>
     <div class="form-group" style="margin-bottom:1rem">
       <textarea id="f-notas" rows="3" placeholder="Ej: Fecha de ingreso, EPE IN, AGUA IN..." style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:0.88rem;resize:vertical">${c?.notas||''}</textarea>
@@ -4117,15 +4125,15 @@ function _abrirFormularioContrato(c, esNuevo) {
     </div>
     <div id="inline-persona-form-inquilino"></div>
 
-    <div id="inline-persona-form"></div>
+    <div class="section-title" style="margin:1.2rem 0 0.75rem">Garante/s</div>
+    <div id="lista-garantes"></div>
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap">
+      <button class="btn btn-secondary" style="font-size:0.82rem" onclick="agregarPersonaRol('garante')">+ Buscar garante</button>
+      <button class="btn btn-secondary" style="font-size:0.82rem;color:var(--green);border-color:var(--green)" onclick="abrirNuevaPersonaInline('garante')">+ Nueva persona</button>
+    </div>
+    <div id="inline-persona-form-garante"></div>
 
-    ${!esNuevo ? `
-    <div class="form-group" style="grid-column:1/-1;margin-top:0.5rem">
-      <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;color:#666;cursor:pointer">
-        <input type="checkbox" id="f-reimportar" style="width:14px;height:14px">
-        Re-proyectar los meses del período actual con el importe indicado
-      </label>
-    </div>` : ''}
+    <div id="inline-persona-form"></div>
 
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="${esNuevo ? 'closeModal()' : 'openContrato('+c.id+')'}">${esNuevo ? 'Cancelar' : '← Volver'}</button>
@@ -4142,6 +4150,7 @@ function _abrirFormularioContrato(c, esNuevo) {
     setTimeout(() => {
       const propietarios = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'propietario');
       const inquilinos = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'inquilino');
+      const garantes = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'garante');
       propietarios.forEach(cp => {
         const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
         if (p) mostrarPersonaEnLista('propietario', p);
@@ -4149,6 +4158,10 @@ function _abrirFormularioContrato(c, esNuevo) {
       inquilinos.forEach(cp => {
         const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
         if (p) mostrarPersonaEnLista('inquilino', p);
+      });
+      garantes.forEach(cp => {
+        const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
+        if (p) mostrarPersonaEnLista('garante', p);
       });
     }, 50);
   }
@@ -4163,7 +4176,7 @@ function abrirNuevaPersonaInline(rol) {
   div.innerHTML = `
     <div style="background:#f0fff4;border:1.5px solid var(--green);border-radius:10px;padding:1.2rem;margin-bottom:1rem">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
-        <strong style="font-size:0.9rem">Nueva persona — ${rol === 'propietario' ? 'Propietario' : 'Inquilino'}</strong>
+        <strong style="font-size:0.9rem">Nueva persona — ${rol === 'propietario' ? 'Propietario' : rol === 'garante' ? 'Garante' : 'Inquilino'}</strong>
         <button onclick="document.getElementById('${formId}').innerHTML=''" style="background:none;border:none;cursor:pointer;color:#999;font-size:1rem">✕</button>
       </div>
       <div class="form-grid">
@@ -4201,7 +4214,7 @@ async function guardarPersonaInline(rol) {
     if (!nuevaPersona?.id) { toast('Error: no se obtuvo ID de la persona','error'); return; }
     DB_PERSONAS.push(nuevaPersona);
     // Add to the contract form
-    const contenedor = document.getElementById(`lista-${rol === 'propietario' ? 'propietarios' : 'inquilinos'}`);
+    const contenedor = document.getElementById(`lista-${rolToLista(rol)}`);
     if (contenedor) {
       const divP = document.createElement('div');
       divP.dataset.rol = rol;
@@ -4222,8 +4235,15 @@ async function guardarPersonaInline(rol) {
 
 let _personaIdxCounter = 0;
 
+function rolToLista(rol) {
+  if (rol === 'propietario') return 'propietarios';
+  if (rol === 'inquilino') return 'inquilinos';
+  if (rol === 'garante') return 'garantes';
+  return rol + 's';
+}
+
 function mostrarPersonaEnLista(rol, persona) {
-  const contenedor = document.getElementById(`lista-${rol === 'propietario' ? 'propietarios' : 'inquilinos'}`);
+  const contenedor = document.getElementById(`lista-${rolToLista(rol)}`);
   if (!contenedor) return;
   const idx = _personaIdxCounter++;
   const nombre = formatNombrePersona(persona);
@@ -4240,7 +4260,7 @@ function mostrarPersonaEnLista(rol, persona) {
 }
 
 function agregarPersonaRol(rol) {
-  const contenedor = document.getElementById(`lista-${rol === 'propietario' ? 'propietarios' : 'inquilinos'}`);
+  const contenedor = document.getElementById(`lista-${rolToLista(rol)}`);
   const idx = _personaIdxCounter++;
   const div = document.createElement('div');
   div.dataset.rol = rol;
@@ -4282,7 +4302,7 @@ function selPersonaEnLineaIdx(rol, idx, pidx) {
   const p = window[`_sug_${rol}_${idx}`]?.[pidx];
   if (!p) return;
   const nombre = formatNombrePersona(p);
-  const parent = document.getElementById(`lista-${rol === 'propietario' ? 'propietarios' : 'inquilinos'}`)?.children[idx];
+  const parent = document.getElementById(`lista-${rolToLista(rol)}`)?.children[idx];
   if (parent) {
     parent.dataset.personaId = p.id;
     const sp = document.getElementById(`sel-${rol}-${idx}`);
@@ -4303,7 +4323,7 @@ function selPersonaEnLinea(el, rol, idx, personaId, apellido, nombre) {
   // Find the parent div with data-rol
   let parent = el.closest('[data-rol]');
   if (!parent) {
-    const lista = document.getElementById(`lista-${rol === 'propietario' ? 'propietarios' : 'inquilinos'}`);
+    const lista = document.getElementById(`lista-${rolToLista(rol)}`);
     parent = lista?.children[idx];
   }
   if (parent) {
@@ -4454,6 +4474,11 @@ async function guardarContrato() {
       }
       for (let i=0; i<inqIds.length; i++) {
         await sbPost('contrato_personas', {contrato_id: nuevoContrato.id, persona_id: inqIds[i], rol: 'inquilino', orden: i+1});
+      }
+      const garItems = document.querySelectorAll('[data-rol="garante"]');
+      const garIds = [...garItems].map(x => parseInt(x.dataset.personaId)).filter(Boolean);
+      for (let i=0; i<garIds.length; i++) {
+        await sbPost('contrato_personas', {contrato_id: nuevoContrato.id, persona_id: garIds[i], rol: 'garante', orden: i+1});
       }
     }
 
@@ -4647,6 +4672,11 @@ async function actualizarContrato(id) {
     }
     for (let i=0; i<inqIds.length; i++) {
       await sbPost('contrato_personas', {contrato_id:id, persona_id:inqIds[i], rol:'inquilino', orden:i+1});
+    }
+    const garItems = document.querySelectorAll('[data-rol="garante"]');
+    const garIds = [...garItems].map(x => parseInt(x.dataset.personaId)).filter(Boolean);
+    for (let i=0; i<garIds.length; i++) {
+      await sbPost('contrato_personas', {contrato_id:id, persona_id:garIds[i], rol:'garante', orden:i+1});
     }
     toast('Contrato actualizado ✓');
     // Generate gastos inicio cuotas if configured
