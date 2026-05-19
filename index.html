@@ -970,8 +970,7 @@ function renderContratos() {
         const mesActual = TODAY.substring(0,7);
         const pagoActual = DB.pagos.filter(p => p.hoja===c.hoja && p.mes && p.mes.substring(0,7)===mesActual).sort((a,b)=>b.id-a.id)[0];
         const totalMes = pagoActual ? (pagoActual.total||0) : null;
-        const gastoCuotaMes = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c.id && g.mes && g.mes.startsWith(mesActual));
-        const totalMesConGastos = totalMes !== null ? totalMes + (gastoCuotaMes?.monto_inquilino||0) : null;
+        const totalMesConGastos = totalMes;
         // Get total saldo (up to current month)
         const saldoTotal = DB.pagos.filter(p => p.hoja===c.hoja && p.saldo>0 && p.mes && p.mes.substring(0,7)<=mesActual).reduce((s,p)=>s+(p.saldo||0),0);
         // Gastos de inicio pendientes
@@ -1137,6 +1136,8 @@ async function openContrato(id) {
         : `<button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px" onclick="abrirAsignarInmueble(${c.id})">＋ Asignar inmueble</button>`}
       </span></div>
     </div>
+    <div id="grilla-container">
+    <div id="gastos-inicio-row"></div>
     <div id="grilla-container"><div class="loading-overlay">Cargando grilla de pagos...</div></div>
   `;
   document.getElementById('modal-overlay').dataset.contratoId = '';
@@ -1214,6 +1215,33 @@ function getEstadoLabel(p) {
 }
 
 function renderGrilla(c) {
+  // Render honorarios row above grid
+  const honorariosRowEl = document.getElementById('gastos-inicio-row');
+  if (honorariosRowEl) {
+    const cuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id);
+    if (cuotas.length) {
+      const totalInq = cuotas.reduce((s,g) => s+(g.monto_inquilino||0), 0);
+      const pagadoInq = cuotas.reduce((s,g) => s+(parseFloat(g.pagado_inquilino)||0), 0);
+      const saldoInq = Math.max(0, totalInq - pagadoInq);
+      const totalProp = cuotas.reduce((s,g) => s+(g.monto_propietario||0), 0);
+      const pagadoProp = cuotas.reduce((s,g) => s+(parseFloat(g.pagado_propietario)||0), 0);
+      const saldoProp = Math.max(0, totalProp - pagadoProp);
+      const montoCuotaInq = cuotas[0]?.monto_inquilino || 0;
+      const montoCuotaProp = cuotas[0]?.monto_propietario || 0;
+      if (saldoInq > 0 || saldoProp > 0) {
+        honorariosRowEl.innerHTML = `<div style="background:#fffbea;border:1px solid #f0c040;border-radius:8px;padding:0.7rem 1rem;margin-bottom:0.75rem;font-size:0.82rem;display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">
+          <strong>🏷 Honorarios pendientes</strong>
+          ${saldoInq > 0 ? `<span><strong>Inquilino:</strong> $${formatMoney(saldoInq)} (${cuotas.length} cuota/s de ${formatMoney(montoCuotaInq)})</span>` : ''}
+          ${saldoProp > 0 ? `<span><strong>Propietario:</strong> $${formatMoney(saldoProp)} (${cuotas.length} cuota/s de ${formatMoney(montoCuotaProp)})</span>` : ''}
+        </div>`;
+      } else {
+        honorariosRowEl.innerHTML = '';
+      }
+    } else {
+      honorariosRowEl.innerHTML = '';
+    }
+  }
+
   if (pagosActuales.length === 0) {
     document.getElementById('grilla-container').innerHTML = `<div class="empty-state"><div class="icon">📋</div><p>Sin pagos cargados. Usá "+ Agregar Pago" para agregar.</p></div>`;
     return;
@@ -1255,9 +1283,9 @@ function renderGrilla(c) {
       ${serviciosInquilino.expensas?`<td class="num">${p.monto_expensas>0?formatMoney(p.monto_expensas):'—'}</td>`:''}
       ${(() => { if (!DB_GASTOS_CUOTAS.some(g => parseInt(g.contrato_id) === c?.id)) return ''; const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7))); return `<td class="num">${gc?.monto_inquilino>0?formatMoney(gc.monto_inquilino):'—'}</td>`; })()}
       <td style="font-size:0.78rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasLabel}">${extrasLabel}</td>
-      <td class="num" id="total-${p.id}"><strong>${(() => { const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7))); return formatMoney(calcularTotal(p, extras) + (gc?.monto_inquilino||0)); })()}</strong></td>
-      <td class="num" id="abonado-${p.id}">${(() => { const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7))); const totalConGastos = (p.total||0)+(gc?.monto_inquilino||0); const ab = totalConGastos-(p.saldo||0)-(gc?.monto_inquilino||0) + Math.min(gc?.monto_inquilino||0, (p.total||0)-(p.saldo||0) > 0 ? gc?.monto_inquilino||0 : 0); const abReal = (p.total||0)-(p.saldo||0); return abReal>0?`<span style="color:var(--green);font-weight:600">${formatMoney(abReal)}</span>`:'—'; })()}</td>
-      <td class="num" id="saldo-${p.id}">${(() => { const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7))); const saldoTotal = (p.saldo||0)+(gc?.monto_inquilino||0); return saldoTotal>0?`<span class="saldo-pendiente">${formatMoney(saldoTotal)}</span>`:'<span class="saldo-ok">✓</span>'; })()}</td>
+      <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>
+      <td class="num" id="abonado-${p.id}">${(() => { const ab = (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
+      <td class="num" id="saldo-${p.id}">${p.saldo>0?`<span class="saldo-pendiente">${formatMoney(p.saldo)}</span>`:'<span class="saldo-ok">✓</span>'}</td>
       <td id="estado-${p.id}">${getEstadoLabel(p)}</td>
       <td onclick="event.stopPropagation()">
         <div class="grid-actions">
@@ -1281,7 +1309,7 @@ function renderGrilla(c) {
           ${serviciosInquilino.seguro?'<th class="r">Seguro</th>':''}
           ${serviciosInquilino.internet?'<th class="r">Internet</th>':''}
           ${serviciosInquilino.expensas?'<th class="r">Expensas</th>':''}
-          ${DB_GASTOS_CUOTAS.some(g => parseInt(g.contrato_id) === c?.id) ? '<th class="r">Gs. inicio</th>' : ''}
+
           <th>Extras</th>
           <th class="r">Total</th>
           <th class="r">Abonado</th>
@@ -2686,23 +2714,27 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
     { id:'expensas', label:'Expensas', val: p.monto_expensas||0 },
   ].filter(i => i.val > 0);
 
-  // Add gastos de inicio cuota
-  if (contratoId && mesKey) {
-    const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey));
-    if (gc?.monto_inquilino > 0) {
-      const cuotaNum = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).findIndex(g => g.mes && g.mes.startsWith(mesKey)) + 1;
-      const totalCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).length;
-      items.push({ id:'gastos-inicio', label:`Gastos de inicio (cuota ${cuotaNum}/${totalCuotas})`, val: gc.monto_inquilino });
+  // Add honorarios if pending
+  if (contratoId) {
+    const cuotasH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
+    const totalInq = cuotasH.reduce((s,g) => s+(g.monto_inquilino||0), 0);
+    const pagadoInq = cuotasH.reduce((s,g) => s+(parseFloat(g.pagado_inquilino)||0), 0);
+    const saldoInq = Math.max(0, totalInq - pagadoInq);
+    if (saldoInq > 0) {
+      const montoCuota = cuotasH[0]?.monto_inquilino || 0;
+      items.push({ id:'honorarios', label:`Honorarios (${cuotasH.length} cuota/s de ${formatMoney(montoCuota)} — saldo: ${formatMoney(saldoInq)})`, val: saldoInq, checked: false, editable: true });
     }
   }
 
   return items.map(it => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:5px 0;border-bottom:1px solid #f0ece4">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem;flex:1">
         <input type="checkbox" id="cobro-chk-${it.id}" value="${it.val}" data-signo="1" ${it.checked===false?'':'checked'} onchange="recalcCobro()" style="width:15px;height:15px">
         ${it.label}
       </label>
-      <span id="cobro-lbl-${it.id}" style="font-size:0.85rem;color:#666">${formatMoney(it.val)}</span>
+      ${it.editable
+        ? `<input type="number" id="val-${it.id}" value="${it.val}" min="0" max="${it.val}" style="width:120px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem;text-align:right" oninput="document.getElementById('cobro-chk-${it.id}').value=this.value;recalcCobro()">`
+        : `<span id="cobro-lbl-${it.id}" style="font-size:0.85rem;color:#666">${formatMoney(it.val)}</span>`}
     </div>
   `).join('') + extrasInq.map(e => {
     const signo = e.tipo==='credito' ? -1 : 1;
@@ -2826,18 +2858,21 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
       return html;
     })()}
     ${(() => {
-      // Gastos de inicio - propietario share
-      const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7)));
-      if (!gc || !gc.monto_propietario) return '';
-      const cuotaNum = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c?.id).findIndex(g => g.mes && g.mes.startsWith(p.mes?.substring(0,7))) + 1;
-      const totalCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c?.id).length;
-      const montoProp = gc.monto_propietario;
+      // Honorarios - propietario share
+      const cuotasH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c?.id);
+      const totalProp = cuotasH.reduce((s,g) => s+(g.monto_propietario||0), 0);
+      const pagadoProp = cuotasH.reduce((s,g) => s+(parseFloat(g.pagado_propietario)||0), 0);
+      const saldoProp = Math.max(0, totalProp - pagadoProp);
+      if (saldoProp <= 0) return '';
+      const montoCuota = cuotasH[0]?.monto_propietario || 0;
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
-        <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
-          <input type="checkbox" id="prop-chk-gastos" value="${montoProp}" data-signo="-1" checked onchange="recalcProp()" style="width:15px;height:15px">
-          Gastos de inicio (cuota ${cuotaNum}/${totalCuotas})
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer;flex:1">
+          <input type="checkbox" id="prop-chk-honorarios" data-signo="-1" checked onchange="recalcProp()" style="width:15px;height:15px">
+          Honorarios (${cuotasH.length} cuota/s de ${formatMoney(montoCuota)} — saldo: ${formatMoney(saldoProp)})
         </label>
-        <span style="font-size:0.85rem;color:var(--accent)">− ${formatMoney(montoProp)}</span>
+        <input type="number" id="val-prop-honorarios" value="${saldoProp}" min="0" max="${saldoProp}"
+          style="width:120px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem;text-align:right"
+          oninput="document.getElementById('prop-chk-honorarios').value=this.value;recalcProp()">
       </div>`;
     })()}
   `;
@@ -3026,9 +3061,7 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
   const internet = parseFloat(document.getElementById('gp-internet')?.value)||0;
   const expensas = parseFloat(document.getElementById('gp-expensas')?.value)||0;
 
-  // Include gastos de inicio cuota in total
-  const gastoCuotaTotal = (() => { const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey)); return gc?.monto_inquilino||0; })();
-  const total = alq+epe+agua+tgiu+seguro+internet+expensas+gastoCuotaTotal+extrasInqTotal;
+  const total = alq+epe+agua+tgiu+seguro+internet+expensas+extrasInqTotal;
 
   try {
     const hojaEncoded = encodeURIComponent(hoja);
@@ -3145,6 +3178,14 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   const acuenta = parseFloat(document.getElementById('gp-acuenta')?.value)||0;
   const acuentaConcepto = document.getElementById('gp-acuenta-concepto')?.value||'A cuenta';
   if (acuenta > 0) { totalCobrado += acuenta; itemsRecibo.push({label: acuentaConcepto, monto: acuenta}); }
+
+  // Validate payment does not exceed total
+  const yaAbonado = (p.total||0) - (p.saldo||0);
+  const maxPagable = (p.total||0) - yaAbonado;
+  if (totalCobrado > maxPagable + 0.01) {
+    toast(`El cobro ($${formatMoney(totalCobrado)}) supera el saldo pendiente ($${formatMoney(maxPagable)}). Ajustá el importe.`, 'error');
+    return;
+  }
   
   // Add interest if checked
   const interesChk = document.getElementById('gp-interes-chk');
@@ -3168,6 +3209,27 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   });
 
   toast('Cobro registrado ✓');
+
+  // Save honorarios pagado if ticked
+  const honChk = document.getElementById('cobro-chk-honorarios');
+  if (honChk?.checked) {
+    const honMonto = parseFloat(document.getElementById('val-honorarios')?.value || honChk.value) || 0;
+    if (honMonto > 0) {
+      const cuotasH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).sort((a,b) => a.mes > b.mes ? 1 : -1);
+      let restante = honMonto;
+      for (const gc of cuotasH) {
+        if (restante <= 0) break;
+        const saldo = (gc.monto_inquilino||0) - (parseFloat(gc.pagado_inquilino)||0);
+        if (saldo <= 0) continue;
+        const pagar = Math.min(restante, saldo);
+        await sbPatch('gastos_inicio_cuotas', gc.id, { pagado_inquilino: (parseFloat(gc.pagado_inquilino)||0) + pagar });
+        gc.pagado_inquilino = (parseFloat(gc.pagado_inquilino)||0) + pagar;
+        restante -= pagar;
+      }
+    }
+  }
+
+
 
 
 
@@ -3600,6 +3662,24 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     <\/script>
   </body></html>`);
   ventana.document.close();
+  // Save propietario honorarios pagado if ticked
+  const honChkProp = document.getElementById('prop-chk-honorarios');
+  if (honChkProp?.checked) {
+    const honMontoProp = parseFloat(document.getElementById('val-prop-honorarios')?.value || honChkProp.value) || 0;
+    if (honMontoProp > 0 && c?.id) {
+      const cuotasH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id && g.monto_propietario > 0).sort((a,b) => a.mes > b.mes ? 1 : -1);
+      let restante = honMontoProp;
+      for (const gc of cuotasH) {
+        if (restante <= 0) break;
+        const saldo = (gc.monto_propietario||0) - (parseFloat(gc.pagado_propietario)||0);
+        if (saldo <= 0) continue;
+        const pagar = Math.min(restante, saldo);
+        await sbPatch('gastos_inicio_cuotas', gc.id, { pagado_propietario: (parseFloat(gc.pagado_propietario)||0) + pagar });
+        gc.pagado_propietario = (parseFloat(gc.pagado_propietario)||0) + pagar;
+        restante -= pagar;
+      }
+    }
+  }
   // Mark as emitted
   try {
     const now = new Date().toISOString();
@@ -6383,6 +6463,71 @@ async function eliminarContrato(id) {
     closeModal();
     await loadAll();
     renderContratos();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function abrirCobroGastos(contratoId, hoja) {
+  const cuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).sort((a,b) => a.mes > b.mes ? 1 : -1);
+  if (!cuotas.length) { toast('No hay cuotas de gastos configuradas', 'error'); return; }
+  
+  document.getElementById('modal2-title').textContent = 'Cobro de gastos de inicio';
+  document.getElementById('modal2-subtitle').textContent = hoja;
+  document.getElementById('modal2-body').innerHTML = `
+    <div style="margin-bottom:1rem;font-size:0.85rem;color:#666">Tildá las cuotas cobradas o ingresá un importe parcial</div>
+    ${cuotas.map((g,i) => {
+      const mes = g.mes ? new Date(g.mes+'T00:00:00').toLocaleDateString('es-AR',{month:'long',year:'numeric'}) : '—';
+      const saldo = (g.monto_inquilino||0) - (parseFloat(g.pagado_inquilino)||0);
+      const pagado = parseFloat(g.pagado_inquilino)||0;
+      return `<div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0;border-bottom:1px solid #eee">
+        <input type="checkbox" id="gc-chk-${g.id}" ${saldo<=0?'checked disabled':'checked'} style="width:15px;height:15px" onchange="recalcCobroGastos()">
+        <span style="flex:1;font-size:0.85rem">Cuota ${i+1} — ${mes}</span>
+        <span style="font-size:0.75rem;color:#888">Debe: ${formatMoney(saldo)} ${pagado>0?'· Pagado: '+formatMoney(pagado):''}</span>
+        <input type="number" id="gc-imp-${g.id}" value="${saldo>0?saldo:0}" min="0" max="${saldo}"
+          style="width:120px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem;text-align:right"
+          oninput="recalcCobroGastos()" ${saldo<=0?'disabled':''}>
+      </div>`;
+    }).join('')}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem;padding-top:0.75rem;border-top:2px solid var(--border)">
+      <strong>Total a cobrar: <span id="gc-total" style="color:var(--green)">$0</span></strong>
+      <button class="btn btn-primary" onclick="confirmarCobroGastos(${contratoId})">✓ Registrar cobro</button>
+    </div>
+  `;
+  document.getElementById('modal2-overlay').classList.add('open');
+  recalcCobroGastos();
+}
+
+function recalcCobroGastos() {
+  let total = 0;
+  document.querySelectorAll('[id^="gc-imp-"]').forEach(input => {
+    const id = input.id.replace('gc-imp-','');
+    const chk = document.getElementById('gc-chk-' + id);
+    if (chk?.checked) total += parseFloat(input.value)||0;
+  });
+  const el = document.getElementById('gc-total');
+  if (el) el.textContent = formatMoney(total);
+}
+
+async function confirmarCobroGastos(contratoId) {
+  const inputs = document.querySelectorAll('[id^="gc-imp-"]');
+  const updates = [];
+  inputs.forEach(input => {
+    const id = parseInt(input.id.replace('gc-imp-',''));
+    const chk = document.getElementById('gc-chk-' + id);
+    if (!chk?.checked || input.disabled) return;
+    const monto = parseFloat(input.value)||0;
+    if (monto <= 0) return;
+    const gc = DB_GASTOS_CUOTAS.find(g => g.id === id);
+    if (!gc) return;
+    const nuevoPagado = (parseFloat(gc.pagado_inquilino)||0) + monto;
+    updates.push({ id, pagado_inquilino: nuevoPagado });
+  });
+  if (!updates.length) { toast('Ingresá al menos un importe', 'error'); return; }
+  try {
+    await Promise.all(updates.map(u => sbPatch('gastos_inicio_cuotas', u.id, { pagado_inquilino: u.pagado_inquilino })));
+    updates.forEach(u => { const gc = DB_GASTOS_CUOTAS.find(g => g.id === u.id); if (gc) gc.pagado_inquilino = u.pagado_inquilino; });
+    toast('Cobro de gastos registrado ✓');
+    document.getElementById('modal2-overlay').classList.remove('open');
+    openContrato(contratoId);
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
