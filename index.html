@@ -1217,6 +1217,7 @@ function getEstadoLabel(p) {
 function renderGrilla(c) {
   // Render honorarios row above grid
   const honorariosRowEl = document.getElementById('gastos-inicio-row');
+  console.log('honorarios row:', honorariosRowEl ? 'found' : 'NOT FOUND', 'DB_GASTOS_CUOTAS:', DB_GASTOS_CUOTAS.length, 'for contrato', c.id, ':', DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id).length);
   if (honorariosRowEl) {
     const cuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id);
     if (cuotas.length) {
@@ -3185,21 +3186,7 @@ async function revertirHonorarios(contratoId, hoja, mesKey, comisionPct) {
     await Promise.all(cuotas.map(gc => sbPatch('gastos_inicio_cuotas', gc.id, { pagado_inquilino: 0 })));
     cuotas.forEach(gc => gc.pagado_inquilino = 0);
     toast('Honorarios revertidos ✓');
-    const c = DB.contratos.find(x => x.id === contratoId);
-    if (c) {
-      const meses = [];
-      let [rsy, rsm] = c.vigencia_desde.substring(0,7).split('-').map(Number);
-      const [rey, rem] = (c.vigencia_hasta||c.vigencia_desde).substring(0,7).split('-').map(Number);
-      while (rsy < rey || (rsy === rey && rsm <= rem)) {
-        const key = `${rsy}-${String(rsm).padStart(2,'0')}`;
-        const pago = pagosActuales.find(p => p.mes && p.mes.startsWith(key));
-        meses.push({ key, label: formatDate(key+'-01'), pago });
-        rsm++; if (rsm > 12) { rsm = 1; rsy++; }
-      }
-      setTimeout(async () => {
-        await cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, 's2');
-      }, 150);
-    }
+    await editarMesConSolapa(hoja, contratoId, mesKey, 's2');
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
