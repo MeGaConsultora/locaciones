@@ -1281,7 +1281,7 @@ function renderGrilla(c) {
       ${serviciosInquilino.seguro?`<td class="num">${p.monto_seguro>0?formatMoney(p.monto_seguro):'—'}</td>`:''}
       ${serviciosInquilino.internet?`<td class="num">${p.monto_internet>0?formatMoney(p.monto_internet):'—'}</td>`:''}
       ${serviciosInquilino.expensas?`<td class="num">${p.monto_expensas>0?formatMoney(p.monto_expensas):'—'}</td>`:''}
-      ${(() => { if (!DB_GASTOS_CUOTAS.some(g => parseInt(g.contrato_id) === c?.id)) return ''; const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7))); return `<td class="num">${gc?.monto_inquilino>0?formatMoney(gc.monto_inquilino):'—'}</td>`; })()}
+
       <td style="font-size:0.78rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasLabel}">${extrasLabel}</td>
       <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>
       <td class="num" id="abonado-${p.id}">${(() => { const ab = (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
@@ -3160,17 +3160,17 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   const p = existing[0];
   const c = DB.contratos.find(x=>x.id===contratoId);
 
-  // Collect cobro items
+  // Collect cobro items - separate honorarios from regular payment
   const checks = document.querySelectorAll('[id^="cobro-chk-"]');
   let totalCobrado = 0;
-  
+  let honorariosCobrado = 0;
   const itemsRecibo = [];
   checks.forEach(chk => {
     if (chk.checked) {
       const signo = parseFloat(chk.dataset.signo||'1');
       const val = parseFloat(chk.value)||0;
       totalCobrado += signo * val;
-
+      if (chk.id === 'cobro-chk-honorarios') honorariosCobrado = val;
       const label = chk.closest('div')?.querySelector('label')?.textContent?.trim()||'';
       itemsRecibo.push({label, monto: signo*val});
     }
@@ -3179,10 +3179,11 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   const acuentaConcepto = document.getElementById('gp-acuenta-concepto')?.value||'A cuenta';
   if (acuenta > 0) { totalCobrado += acuenta; itemsRecibo.push({label: acuentaConcepto, monto: acuenta}); }
 
-  // Validate payment does not exceed total
+  // Validate payment does not exceed total (excluding honorarios which is tracked separately)
   const yaAbonado = (p.total||0) - (p.saldo||0);
   const maxPagable = (p.total||0) - yaAbonado;
-  if (totalCobrado > maxPagable + 0.01) {
+  const totalSinHonorarios = totalCobrado - honorariosCobrado;
+  if (totalSinHonorarios > maxPagable + 0.01) {
     toast(`El cobro ($${formatMoney(totalCobrado)}) supera el saldo pendiente ($${formatMoney(maxPagable)}). Ajustá el importe.`, 'error');
     return;
   }
@@ -3199,7 +3200,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
 
   if (totalCobrado <= 0) { toast('Seleccioná al menos un ítem','error'); return; }
 
-  const nuevoSaldo = Math.max(0, (p.saldo||0) - totalCobrado);
+  const nuevoSaldo = Math.max(0, (p.saldo||0) - (totalCobrado - honorariosCobrado));
   const nroMes = pagosActuales.findIndex(x=>x.id===p.id)+1;
 
   await sbPatch('pagos', p.id, {
