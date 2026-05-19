@@ -1136,8 +1136,7 @@ async function openContrato(id) {
         : `<button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px" onclick="abrirAsignarInmueble(${c.id})">＋ Asignar inmueble</button>`}
       </span></div>
     </div>
-    <div id="grilla-container">
-    <div id="gastos-inicio-row"></div>
+    <div id="honorarios-row"></div>
     <div id="grilla-container"><div class="loading-overlay">Cargando grilla de pagos...</div></div>
   `;
   document.getElementById('modal-overlay').dataset.contratoId = '';
@@ -1216,7 +1215,7 @@ function getEstadoLabel(p) {
 
 function renderGrilla(c) {
   // Render honorarios row above grid
-  const honorariosRowEl = document.getElementById('gastos-inicio-row');
+  const honorariosRowEl = document.getElementById('honorarios-row');
   console.log('honorarios row:', honorariosRowEl ? 'found' : 'NOT FOUND', 'DB_GASTOS_CUOTAS:', DB_GASTOS_CUOTAS.length, 'for contrato', c.id, ':', DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id).length);
   if (honorariosRowEl) {
     const cuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id);
