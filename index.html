@@ -1247,8 +1247,34 @@ async function openContrato(id) {
     </div>
     <p style="font-size:0.78rem;color:#999;margin-bottom:0.75rem">💡 Clic en un mes para editarlo o registrar cobro</p>
     <div class="detail-grid" style="margin-bottom:1rem">
-      <div class="detail-item"><label>Propietario/s</label><span>${c._locador||c.locador||'—'}</span></div>
-      <div class="detail-item"><label>Inquilino/s</label><span>${c._locatario||c.locatario||'—'}</span></div>
+      <div class="detail-item"><label>Propietario/s</label><span>${
+        (() => {
+          const props = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'propietario');
+          if (!props.length) return c._locador||c.locador||'—';
+          return props.map(cp => {
+            const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
+            return p ? `<span onclick="openEditPersona(${p.id}, ${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.88rem" title="Editar">${formatNombrePersona(p)}</span>` : '—';
+          }).join(', ');
+        })()
+      }</span></div>
+      <div class="detail-item"><label>Inquilino/s</label><span>${
+        (() => {
+          const inqs = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'inquilino');
+          if (!inqs.length) return c._locatario||c.locatario||'—';
+          return inqs.map(cp => {
+            const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
+            return p ? `<span onclick="openEditPersona(${p.id}, ${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.88rem" title="Editar">${formatNombrePersona(p)}</span>` : '—';
+          }).join(', ');
+        })()
+      }</span></div>
+      ${(() => {
+        const gars = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'garante');
+        if (!gars.length) return '';
+        return `<div class="detail-item"><label>Garante/s</label><span>${gars.map(cp => {
+          const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
+          return p ? `<span onclick="openEditPersona(${p.id}, ${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.88rem" title="Editar">${formatNombrePersona(p)}</span>` : '—';
+        }).join(', ')}</span></div>`;
+      })()}
       <div class="detail-item"><label>Vigencia</label><span>${formatDate(c.vigencia_desde,true)} → ${formatDate(c.vigencia_hasta,true)}</span></div>
       <div class="detail-item"><label>Tipo</label><span>${normTipo(c.tipo_inmueble)}</span></div>
       <div class="detail-item"><label>Actualización</label><span>${c.periodicidad_actualizacion||'—'} ${c.indice_actualizacion?'· '+c.indice_actualizacion:''}</span></div>
@@ -2187,7 +2213,7 @@ async function cargarListaServicios(filtro='') {
     const campo = `monto_${srv}`;
     // Get ALL contracts with this service (both loaded and not loaded)
     const todosConServicio = DB.contratos.filter(c => {
-      if (getEstado(c) === 'rescindido') return false;
+      if (getEstado(c) !== 'vigente') return false;
       const servicios = (c.servicios_inquilino||'').toLowerCase();
       if (!servicios.includes(srv)) return false;
       if (filtro && !(c.titulo||c.hoja||'').toLowerCase().includes(filtro)) return false;
@@ -5784,14 +5810,15 @@ function renderClientes() {
 function openPersona(id) {
   const p = DB_PERSONAS.find(x => x.id === id);
   if (!p) return;
-  const contratos = DB.contratos.filter(c => c.propietario_id == id || c.inquilino_id == id);
-  const rol = getRolPersona(p);
+  const cpRows = DB_CONTRATO_PERSONAS.filter(x => x.persona_id === id);
+  const contratos = cpRows.map(cp => ({ ...DB.contratos.find(c => c.id === cp.contrato_id), _rol: cp.rol })).filter(c => c.id);
 
   document.getElementById('modal-title').textContent = formatNombrePersona(p);
-  document.getElementById('modal-subtitle').textContent = getRolPersona(p) === '—' ? 'Sin contratos activos' : `${contratos.length} contrato${contratos.length!==1?'s':''}`;
+  document.getElementById('modal-subtitle').textContent = contratos.length ? `${contratos.length} contrato${contratos.length!==1?'s':''}` : 'Sin contratos vinculados';
   document.getElementById('modal-body').innerHTML = `
-    <div style="display:flex;gap:0.75rem;margin-bottom:1.5rem">
+    <div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="openEditPersona(${id})">✏️ Editar datos</button>
+      <button class="btn btn-secondary" style="color:#721c24;border-color:#721c24" onclick="eliminarPersona(${id})">🗑 Eliminar</button>
     </div>
     <div class="detail-grid">
       <div class="detail-item"><label>Apellido/s</label><span>${p.apellido||'—'}</span></div>
@@ -5801,17 +5828,16 @@ function openPersona(id) {
       <div class="detail-item"><label>Domicilio</label><span>${p.domicilio||'—'}</span></div>
       <div class="detail-item"><label>Teléfono</label><span>${p.telefono||'—'}</span></div>
       <div class="detail-item"><label>Email</label><span>${p.email||'—'}</span></div>
-      <div class="detail-item"><label>Rol</label><span>${getRolBadge(rol)}</span></div>
     </div>
     ${contratos.length > 0 ? `
       <div class="section-title">Contratos vinculados</div>
       ${contratos.map(c => `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openContrato(${c.id})">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="closeModal();openContrato(${c.id})">
           <div>
             <strong style="font-size:0.88rem">${c.titulo}</strong>
-            <div style="font-size:0.75rem;color:#888">${c.propietario_id == id ? 'Propietario' : 'Inquilino'} · ${formatDate(c.vigencia_desde,true)} — ${formatDate(c.vigencia_hasta,true)}</div>
+            <div style="font-size:0.75rem;color:#888">${c._rol?.charAt(0).toUpperCase()+c._rol?.slice(1)||'—'} · ${formatDate(c.vigencia_desde,true)} — ${formatDate(c.vigencia_hasta,true)}</div>
           </div>
-          <span class="badge ${getEstado(c)==='vigente'?'badge-green':'badge-gray'}">${getEstado(c)}</span>
+          <span class="badge ${getEstado(c)==='vigente'?'badge-green':getEstado(c)==='rescindido'?'badge-red':'badge-gray'}">${getEstado(c)}</span>
         </div>
       `).join('')}
     ` : ''}
@@ -5819,9 +5845,30 @@ function openPersona(id) {
   document.getElementById('modal-overlay').classList.add('open');
 }
 
-function openEditPersona(id) {
+async function eliminarPersona(id) {
+  const p = DB_PERSONAS.find(x => x.id === id);
+  if (!p) return;
+  const cpRows = DB_CONTRATO_PERSONAS.filter(x => x.persona_id === id);
+  if (cpRows.length > 0) {
+    toast(`No se puede eliminar: está vinculada a ${cpRows.length} contrato/s`, 'error');
+    return;
+  }
+  if (!confirm(`¿Eliminar a ${formatNombrePersona(p)}? Esta acción no se puede deshacer.`)) return;
+  try {
+    await sbDelete('personas', id);
+    DB_PERSONAS = DB_PERSONAS.filter(x => x.id !== id);
+    toast('Persona eliminada ✓');
+    closeModal();
+    renderClientes();
+  } catch(e) { toast('Error: '+e.message, 'error'); }
+}
+
+function openEditPersona(id, contratoId) {
   const p = DB_PERSONAS.find(x => x.id === id) || {};
   document.getElementById('modal-title').textContent = id ? 'Editar persona' : 'Nueva persona';
+  const volverOnclick = contratoId
+    ? `openContrato(${contratoId})`
+    : id ? `openPersona(${id})` : `closeModal()`;
   document.getElementById('modal-body').innerHTML = `
     <div class="form-grid">
       <div class="form-group"><label>Apellido/s</label><input id="ep-apellido" type="text" value="${p.apellido||''}"></div>
@@ -5833,8 +5880,8 @@ function openEditPersona(id) {
       <div class="form-group"><label>Email</label><input id="ep-email" type="email" value="${p.email||''}"></div>
     </div>
     <div class="form-actions">
-      <button class="btn btn-secondary" onclick="${id?'openPersona('+id+')':'closeModal()'}"}>← Volver</button>
-      <button class="btn btn-primary" onclick="guardarPersona(${id||'null'})">Guardar</button>
+      <button class="btn btn-secondary" onclick="${volverOnclick}">← Volver</button>
+      <button class="btn btn-primary" onclick="guardarPersona(${id||'null'}, ${contratoId||'null'})">Guardar</button>
     </div>
   `;
   document.getElementById('modal-overlay').classList.add('open');
@@ -5842,7 +5889,7 @@ function openEditPersona(id) {
 
 function openNuevaPersona() { openEditPersona(null); }
 
-async function guardarPersona(id) {
+async function guardarPersona(id, contratoId) {
   const body = {
     apellido: document.getElementById('ep-apellido').value.trim(),
     nombre: document.getElementById('ep-nombre').value.trim(),
@@ -5863,7 +5910,8 @@ async function guardarPersona(id) {
     await loadPersonas();
     await loadAll();
     renderClientes();
-    closeModal();
+    if (contratoId) openContrato(contratoId);
+    else closeModal();
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
