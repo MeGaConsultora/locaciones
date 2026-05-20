@@ -41,6 +41,32 @@
   .sync-btn:hover { background:rgba(255,255,255,0.22); }
   .sync-status { font-size:0.75rem; color:rgba(245,240,232,0.5); }
 
+  .header-search { position:relative; }
+  .header-search input {
+    background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2);
+    color:var(--cream); border-radius:6px; padding:5px 10px 5px 30px;
+    font-family:'DM Sans',sans-serif; font-size:0.82rem; width:220px;
+    outline:none; transition:all 0.2s;
+  }
+  .header-search input::placeholder { color:rgba(245,240,232,0.45); }
+  .header-search input:focus { background:rgba(255,255,255,0.18); border-color:rgba(255,255,255,0.4); width:280px; }
+  .header-search-icon { position:absolute; left:8px; top:50%; transform:translateY(-50%); font-size:0.82rem; pointer-events:none; opacity:0.5; }
+  .header-search-results {
+    position:absolute; top:calc(100% + 6px); left:0; width:340px;
+    background:white; border-radius:10px; box-shadow:0 8px 32px rgba(0,0,0,0.25);
+    z-index:999; overflow:hidden; display:none;
+  }
+  .header-search-results.open { display:block; }
+  .hsr-item {
+    padding:0.6rem 1rem; cursor:pointer; border-bottom:1px solid #f0ece4;
+    transition:background 0.1s;
+  }
+  .hsr-item:last-child { border-bottom:none; }
+  .hsr-item:hover { background:#f5f0e8; }
+  .hsr-item-title { font-size:0.85rem; font-weight:600; color:var(--ink); }
+  .hsr-item-sub { font-size:0.75rem; color:#888; margin-top:1px; }
+  .hsr-empty { padding:0.8rem 1rem; font-size:0.82rem; color:#aaa; text-align:center; }
+
   nav { background:var(--ink2); display:flex; padding:0 2rem; overflow-x:auto; overflow-y:visible; position:relative; z-index:100; }
   .tab-btn {
     background:none; border:none; color:rgba(245,240,232,0.55);
@@ -312,6 +338,14 @@
 
 <header>
   <div class="logo"><div class="logo-dot"></div>Gestión de Locaciones</div>
+  <div class="header-search">
+    <span class="header-search-icon">🔍</span>
+    <input type="text" id="header-search-input" placeholder="Buscar contrato…"
+      oninput="buscarContratoHeader(this.value)"
+      onkeydown="if(event.key==='Escape'){this.value='';cerrarBuscadorHeader()}"
+      autocomplete="off">
+    <div class="header-search-results" id="header-search-results"></div>
+  </div>
   <div style="display:flex;align-items:center;gap:1rem">
     <span class="sync-status" id="sync-status">Cargando...</span>
     <span id="user-name" style="font-size:0.8rem;color:rgba(245,240,232,0.7)"></span><button class="sync-btn" onclick="loadAll()">↻ Actualizar</button><button class="sync-btn" onclick="doLogout()">Salir</button>
@@ -756,6 +790,40 @@ async function loadAll() {
 // ============================================================
 // HELPERS
 // ============================================================
+function buscarContratoHeader(q) {
+  const res = document.getElementById('header-search-results');
+  if (!q || q.length < 2) { res.classList.remove('open'); return; }
+  const ql = q.toLowerCase();
+  const matches = (DB.contratos || []).filter(c =>
+    (c.titulo||'').toLowerCase().includes(ql) ||
+    (c.locador||'').toLowerCase().includes(ql) ||
+    (c.locatario||'').toLowerCase().includes(ql) ||
+    (c.hoja||'').toLowerCase().includes(ql)
+  ).slice(0, 8);
+  if (!matches.length) {
+    res.innerHTML = '<div class="hsr-empty">Sin resultados</div>';
+  } else {
+    res.innerHTML = matches.map(c => {
+      const est = getEstado(c);
+      const estColor = est==='vigente'?'#2d7a4f':est==='rescindido'?'#c8483a':'#888';
+      return `<div class="hsr-item" onclick="cerrarBuscadorHeader();openContrato(${c.id})">
+        <div class="hsr-item-title">${c.titulo||c.hoja} <span style="font-size:0.7rem;color:${estColor};font-weight:600">${est}</span></div>
+        <div class="hsr-item-sub">${[c.locador,c.locatario].filter(Boolean).join(' / ')}</div>
+      </div>`;
+    }).join('');
+  }
+  res.classList.add('open');
+}
+
+function cerrarBuscadorHeader() {
+  document.getElementById('header-search-results')?.classList.remove('open');
+  document.getElementById('header-search-input').value = '';
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.header-search')) cerrarBuscadorHeader();
+});
+
 function formatDate(d, showDay=false) {
   if (!d) return '—';
   const [y,m,day] = d.substring(0,10).split('-');
