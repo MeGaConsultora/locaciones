@@ -40,8 +40,9 @@
   }
   .submenu-nivel3 { position:relative; }
   .submenu-nivel3 > .submenu-items { display:none; position:absolute; left:100%; top:0; background:var(--ink); border-radius:8px; min-width:200px; box-shadow:4px 4px 16px rgba(0,0,0,0.3); z-index:200; padding:4px 0; }
-  .submenu-nivel3:hover > .submenu-items { display:block; }
-  .submenu-nivel3 > .submenu-header { cursor:default; }
+  .submenu-nivel3 > .submenu-header { cursor:pointer; }
+  .submenu-nivel3 > .submenu-header:hover + .submenu-items,
+  .submenu-nivel3 > .submenu-items:hover { display:block; }
   .sync-status { font-size:0.75rem; color:rgba(245,240,232,0.5); }
 
   .header-search { position:relative; }
@@ -495,9 +496,10 @@
       </select>
       <select class="filter-select" id="srv-inf-estado" style="width:auto" onchange="renderSrvInforme()">
         <option value="">Todos</option>
-        <option value="pendiente">No abonados</option>
-        <option value="pagado">Abonados</option>
+        <option value="adeudado">Adeudados</option>
+        <option value="abonado">Abonados</option>
       </select>
+      <input type="text" class="search-input" id="srv-inf-buscar" placeholder="Buscar contrato…" style="width:200px" oninput="renderSrvInforme()">
       <button class="btn btn-secondary" onclick="srvInfSelAll(true)">✓ Seleccionar todos</button>
       <button class="btn btn-secondary" onclick="srvInfSelAll(false)">✕ Deseleccionar</button>
     </div>
@@ -5518,6 +5520,7 @@ function renderSrvInforme() {
   const anio = document.getElementById('srv-inf-anio')?.value;
   const mes = document.getElementById('srv-inf-mes')?.value;
   const estado = document.getElementById('srv-inf-estado')?.value;
+  const buscar = (document.getElementById('srv-inf-buscar')?.value || '').toLowerCase().trim();
   const contenedor = document.getElementById('srv-inf-contenido');
   const totalesBar = document.getElementById('srv-inf-totales');
 
@@ -5529,8 +5532,23 @@ function renderSrvInforme() {
   const mesKey = `${anio}-${mes}`;
   let pagos = DB.pagos.filter(p => p.mes?.startsWith(mesKey) && (p[campo]||0) > 0);
 
-  if (estado === 'pendiente') pagos = pagos.filter(p => (p[campoPagado]||0) < (p[campo]||0));
-  else if (estado === 'pagado') pagos = pagos.filter(p => (p[campoPagado]||0) >= (p[campo]||0));
+  // Filtro: abonado = inquilino ya pagó ese servicio; adeudado = no pagó aún
+  if (estado === 'abonado') pagos = pagos.filter(p => (p[campoPagado]||0) >= (p[campo]||0));
+  else if (estado === 'adeudado') pagos = pagos.filter(p => (p[campoPagado]||0) < (p[campo]||0));
+
+  // Buscador
+  if (buscar) pagos = pagos.filter(p => {
+    const c = DB.contratos.find(x => x.hoja === p.hoja);
+    return (c?.titulo||p.hoja||'').toLowerCase().includes(buscar) ||
+           (c?.locatario||'').toLowerCase().includes(buscar);
+  });
+
+  // Orden alfabético por título de contrato
+  pagos.sort((a, b) => {
+    const ta = (DB.contratos.find(x=>x.hoja===a.hoja)?.titulo||a.hoja||'').toLowerCase();
+    const tb = (DB.contratos.find(x=>x.hoja===b.hoja)?.titulo||b.hoja||'').toLowerCase();
+    return ta.localeCompare(tb);
+  });
 
   if (!pagos.length) {
     contenedor.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Sin registros para el período</p></div>';
