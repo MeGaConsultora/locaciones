@@ -3295,6 +3295,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
 
   const nuevoSaldo = Math.max(0, (p.saldo||0) - montoRegular);
   const nroMes = pagosActuales.findIndex(x=>x.id===p.id)+1;
+  const fechaMovimiento = document.getElementById('gp-fecha-pago')?.value || TODAY;
 
   await sbPatch('pagos', p.id, {
     saldo: nuevoSaldo,
@@ -3302,6 +3303,21 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     pago_nro: String(nroMes),
     ...pagadoPorItem
   });
+
+  // Guardar movimiento en historial de transacciones
+  try {
+    const itemsRegular = itemsRecibo.filter(i => i.label !== (document.getElementById('cobro-chk-honorarios')?.closest('div')?.querySelector('label')?.textContent?.trim()||'__'));
+    await sbPost('movimientos_pagos', {
+      pago_id: p.id,
+      contrato_id: contratoId,
+      hoja,
+      mes: p.mes,
+      fecha: fechaMovimiento,
+      monto: montoRegular,
+      concepto: itemsRegular.map(i => i.label).join(', ') || 'Cobro',
+      items: JSON.stringify(itemsRegular)
+    });
+  } catch(e) { console.warn('movimientos_pagos no guardado:', e); }
 
   toast('Cobro registrado ✓');
 
@@ -3344,7 +3360,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     contrato: c,
     nroMes,
     mes: p.mes,
-    fechaPago: TODAY,
+    fechaPago: fechaMovimiento,
     itemsAbonados: itemsRecibo,
     totalAbonado: totalCobrado,
     nuevoSaldo,
@@ -3883,68 +3899,108 @@ async function imprimirHistorial(contratoId) {
   const c = DB.contratos.find(x => x.id === contratoId);
   if (!c) return;
   const hojaEncoded = encodeURIComponent(c.hoja);
-  const cpagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc&limit=500`);
-  const TODAY_DATE = TODAY;
+
+  const [cpagos, movimientos] = await Promise.all([
+    sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc&limit=500`),
+    sbGet('movimientos_pagos', `contrato_id=eq.${contratoId}&order=fecha.asc,id.asc&limit=1000`).catch(() => [])
+  ]);
+
   const pagos = cpagos.filter(p => {
     if (!p.mes) return false;
-    if (p.saldo && p.saldo > 0) return p.mes.substring(0,7) <= TODAY_DATE.substring(0,7);
+    if (p.saldo && p.saldo > 0) return p.mes.substring(0,7) <= TODAY.substring(0,7);
     return true;
   });
+
+  const fmtFecha = str => {
+    if (!str) return '—';
+    const d = str.split('T')[0].split('-');
+    return `${d[2]}/${d[1]}/${d[0]}`;
+  };
+  const fmtMes = str => {
+    if (!str) return '—';
+    const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    const [y,m] = str.split('-');
+    return `${meses[parseInt(m)-1]} ${y}`;
+  };
+  const fmt = n => n > 0 ? '$ ' + Math.round(n).toLocaleString('es-AR') : (n < 0 ? '$ -' + Math.abs(Math.round(n)).toLocaleString('es-AR') : '—');
+
+  const filasResumen = pagos.map(p => {
+    const pend = p.saldo && p.saldo > 0;
+    const abonado = (p.total||0) - (p.saldo||0);
+    return `<tr class="${pend?'impago':'pagado'}">
+      <td><strong>${fmtMes(p.mes)}</strong></td>
+      <td>${fmtFecha(p.fecha_pago_hasta)}</td>
+      <td class="r">${fmt(p.importe_alquiler)}</td>
+      <td class="r">${fmt(p.monto_epe)}</td>
+      <td class="r">${fmt(p.monto_agua)}</td>
+      <td class="r">${fmt(p.monto_tgiu)}</td>
+      <td class="r">${fmt(p.monto_seguro)}</td>
+      <td class="r">${fmt(p.monto_otros)}</td>
+      <td class="r"><strong>${fmt(p.total)}</strong></td>
+      <td class="r" style="color:${abonado>0?'#2d7a4f':'#888'};font-weight:${abonado>0?700:400}">${abonado>0?fmt(abonado):'—'}</td>
+      <td class="r" style="${pend?'color:#c8483a;font-weight:700':'color:#2d7a4f'}">${pend?fmt(p.saldo):'✓'}</td>
+      <td><span style="font-size:0.72rem;font-weight:600;padding:2px 8px;border-radius:100px;background:${pend?'#f8d7da':'#d4edda'};color:${pend?'#721c24':'#155724'}">${pend?'Pendiente':'Pagado'}</span></td>
+    </tr>`;
+  }).join('');
+
+  const filasMovimientos = movimientos.length ? movimientos.map(m => {
+    let items = [];
+    try { items = JSON.parse(m.items||'[]'); } catch(e) {}
+    const detalle = items.length ? items.map(i => `${i.label}: ${fmt(i.monto)}`).join(' · ') : (m.concepto||'—');
+    return `<tr>
+      <td><strong>${fmtFecha(m.fecha)}</strong></td>
+      <td>${fmtMes(m.mes)}</td>
+      <td style="font-size:0.78rem;color:#555">${detalle}</td>
+      <td class="r" style="color:#2d7a4f;font-weight:700">${fmt(m.monto)}</td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="4" style="text-align:center;color:#aaa;padding:16px">Sin movimientos registrados — los cobros confirmados a partir de ahora quedarán registrados aquí</td></tr>`;
 
   const ventana = window.open('', '_blank', 'width=1100,height=800');
   ventana.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8">
-<link rel="icon" type="image/x-icon" href="https://megaconsultora.github.io/locaciones/favicon.ico"><title>Historial - ${c.titulo}</title>
+    <link rel="icon" type="image/x-icon" href="https://megaconsultora.github.io/locaciones/favicon.ico">
+    <title>Historial - ${c.titulo}</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }
       body { font-family:'DM Sans',Arial,sans-serif; padding:20px; background:#f5f0e8; }
       .no-print { text-align:center; margin-bottom:16px; }
       .no-print button { background:#1a1a2e; color:white; border:none; padding:10px 28px; border-radius:8px; font-size:1rem; cursor:pointer; }
-      .card { background:white; border-radius:10px; padding:24px; box-shadow:0 2px 12px rgba(0,0,0,0.1); }
+      .card { background:white; border-radius:10px; padding:24px; box-shadow:0 2px 12px rgba(0,0,0,0.1); margin-bottom:20px; }
       h1 { font-size:1.3rem; color:#1a1a2e; margin-bottom:4px; }
-      .sub { font-size:0.82rem; color:#888; margin-bottom:16px; }
+      h2 { font-size:1rem; color:#1a1a2e; margin-bottom:12px; padding-bottom:6px; border-bottom:2px solid #f0ece4; }
+      .sub { font-size:0.82rem; color:#888; margin-bottom:20px; }
       table { width:100%; border-collapse:collapse; font-size:0.82rem; }
       th { background:#1a1a2e; color:white; padding:7px 8px; text-align:left; font-size:0.7rem; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; }
       th.r, td.r { text-align:right; }
-      td { padding:6px 8px; border-bottom:1px solid #f0ece4; }
-      tr.impago td { background:#fff0f0; color:#721c24; }
+      td { padding:6px 8px; border-bottom:1px solid #f0ece4; vertical-align:top; }
+      tr.impago td { background:#fff8f8; }
       tr.pagado td { background:white; }
-      @media print { body { background:white; padding:0; } .no-print { display:none; } .card { box-shadow:none; border-radius:0; } }
+      @media print { body { background:white; padding:0; } .no-print { display:none; } .card { box-shadow:none; border-radius:0; page-break-inside:avoid; } }
     </style>
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir</button></div>
     <div class="card">
       <h1>MeGa Consultora — Historial de Pagos</h1>
-      <div class="sub">${c.titulo} · ${c.locador||''} / ${c.locatario||''} · ${formatDate(c.vigencia_desde,true)} — ${formatDate(c.vigencia_hasta,true)}</div>
+      <div class="sub">${c.titulo} &nbsp;·&nbsp; ${c.locador||''} / ${c.locatario||''} &nbsp;·&nbsp; ${fmtFecha(c.vigencia_desde)} — ${fmtFecha(c.vigencia_hasta)}</div>
+      <h2>Resumen por mes</h2>
       <table>
         <thead><tr>
           <th>Mes</th><th>Vence</th>
           <th class="r">Alquiler</th><th class="r">EPE</th><th class="r">Agua</th><th class="r">TGIU</th>
-          <th class="r">Seguro</th><th class="r">Otros</th><th class="r">Total</th><th class="r">Abonado</th><th class="r">Saldo</th><th>Fecha pago</th><th>Estado</th>
+          <th class="r">Seguro</th><th class="r">Otros</th><th class="r">Total</th>
+          <th class="r">Abonado</th><th class="r">Saldo</th><th>Estado</th>
         </tr></thead>
-        <tbody>
-          ${pagos.map(p => {
-            const pend = p.saldo && p.saldo > 0;
-            const abonado = (p.total||0) - (p.saldo||0);
-            const fechaPago = p.fecha_pago_hasta ? (() => { const [y,m,d] = p.fecha_pago_hasta.split('T')[0].split('-'); return `${d}/${m}/${y}`; })() : '—';
-            return `<tr class="${pend?'impago':'pagado'}">
-              <td><strong>${formatDate(p.mes)}</strong></td>
-              <td>${formatDate(p.fecha_pago_hasta,true)}</td>
-              <td class="r">${formatMoney(p.importe_alquiler)}</td>
-              <td class="r">${formatMoney(p.monto_epe)}</td>
-              <td class="r">${formatMoney(p.monto_agua)}</td>
-              <td class="r">${formatMoney(p.monto_tgiu)}</td>
-              <td class="r">${formatMoney(p.monto_seguro)}</td>
-              <td class="r">${formatMoney(p.monto_otros)}</td>
-              <td class="r"><strong>${formatMoney(p.total)}</strong></td>
-              <td class="r" style="color:${abonado>0?'#2d7a4f':'#888'};font-weight:${abonado>0?'700':'400'}">${abonado>0?formatMoney(abonado):'—'}</td>
-              <td class="r" style="${pend?'color:#c8483a;font-weight:700':'color:#2d7a4f'}">${pend?formatMoney(p.saldo):'✓'}</td>
-              <td>${fechaPago}</td>
-              <td><span style="font-size:0.72rem;font-weight:600;padding:2px 8px;border-radius:100px;background:${pend?'#f8d7da':'#d4edda'};color:${pend?'#721c24':'#155724'}">${pend?'Pendiente':'Pagado'}</span></td>
-            </tr>`;
-          }).join('')}
-        </tbody>
+        <tbody>${filasResumen}</tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>Detalle de cobros</h2>
+      <table>
+        <thead><tr>
+          <th>Fecha cobro</th><th>Período</th><th>Detalle</th><th class="r">Importe</th>
+        </tr></thead>
+        <tbody>${filasMovimientos}</tbody>
       </table>
     </div>
   </body></html>`);
