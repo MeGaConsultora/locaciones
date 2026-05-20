@@ -3733,31 +3733,33 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }
-      body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; padding:12px; gap:0; font-family:'DM Sans',Arial,sans-serif; }
+      body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; padding:12px; gap:0; font-family:'DM Sans',Arial,sans-serif; }
       .no-print { text-align:center; padding:10px 0; width:100%; }
       .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; font-family:'DM Sans',sans-serif; font-weight:600; }
-      .recibo-mitad { background:white; width:190mm; height:138mm; overflow:hidden; }
-      .recibo-inner { transform-origin:top left; padding:12px 18px; }
-      .separador { width:190mm; height:1px; border:none; border-top:2px dashed #999; margin:0; background:none; }
-      @page { size: A4 portrait; margin: 8mm 10mm; }
+      .recibo-mitad { background:white; width:190mm; height:141mm; overflow:hidden; position:relative; }
+      .recibo-label { padding:3px 18px 0; font-size:0.62rem; color:#aaa; text-transform:uppercase; letter-spacing:.1em; }
+      .recibo-inner { transform-origin:top left; padding:6px 18px 10px; }
+      .separador { width:190mm; height:0; border:none; border-top:2px dashed #999; }
+      @page { size: A4 portrait; margin: 0; }
       @media print {
-        html, body { width:210mm; height:297mm; background:white; padding:0; margin:0; justify-content:flex-start; }
+        html, body { width:210mm; height:297mm; background:white; padding:0; margin:0; display:block; }
         .no-print { display:none; }
-        .recibo-mitad { width:194mm; height:138mm; }
-        .separador { width:194mm; }
+        .recibo-mitad { width:210mm; height:148.5mm; }
+        .separador { width:210mm; }
       }
     </style>
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
-    <div class="recibo-mitad"><div style="padding:3px 18px 0;font-size:0.62rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em;background:white">Original</div><div class="recibo-inner" id="rp1" style="padding:6px 18px 10px">${reciboHtml}</div></div>
-    <hr class="separador">
-    <div class="recibo-mitad"><div style="padding:3px 18px 0;font-size:0.62rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em;background:white">Duplicado</div><div class="recibo-inner" id="rp2" style="padding:6px 18px 10px">${reciboHtml}</div></div>
+    <div class="recibo-mitad"><div class="recibo-label">Original</div><div class="recibo-inner" id="rp1">${reciboHtml}</div></div>
+    <div class="separador"></div>
+    <div class="recibo-mitad"><div class="recibo-label">Duplicado</div><div class="recibo-inner" id="rp2">${reciboHtml}</div></div>
     <script>
       function ajustarEscala(id) {
         const wrap = document.getElementById(id);
         if (!wrap) return;
-        const parent = wrap.parentElement;
-        const avail = parent.clientHeight - 20;
+        const mitad = wrap.parentElement;
+        const label = mitad.querySelector('.recibo-label');
+        const avail = mitad.clientHeight - (label ? label.offsetHeight : 0) - 2;
         const actual = wrap.scrollHeight;
         if (actual > avail) {
           const scale = avail / actual;
@@ -5018,31 +5020,33 @@ function imprimirRecibo(data) {
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }
-      body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; padding:12px; gap:0; font-family:'DM Sans',Arial,sans-serif; }
+      body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; padding:12px; gap:0; font-family:'DM Sans',Arial,sans-serif; }
       .no-print { text-align:center; padding:10px 0; width:100%; }
       .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; font-family:'DM Sans',sans-serif; font-weight:600; }
       .no-print button:hover { background:#c8483a; }
-      .recibo-mitad { background:white; width:190mm; height:138mm; overflow:hidden; }
-      .recibo-inner { transform-origin:top left; padding:10px 16px; }
-      .separador { width:190mm; height:1px; border:none; border-top:2px dashed #999; margin:0; background:none; }
-      @page { size: A4 portrait; margin: 8mm 10mm; }
+      .recibo-mitad { background:white; width:190mm; height:141mm; overflow:hidden; position:relative; }
+      .recibo-label { padding:3px 16px 0; font-size:0.62rem; color:#aaa; text-transform:uppercase; letter-spacing:.1em; }
+      .recibo-inner { transform-origin:top left; padding:6px 16px 10px; }
+      .separador { width:190mm; height:0; border:none; border-top:2px dashed #999; }
+      @page { size: A4 portrait; margin: 0; }
       @media print {
-        html, body { width:210mm; height:297mm; background:white; padding:0; margin:0; justify-content:flex-start; }
+        html, body { width:210mm; height:297mm; background:white; padding:0; margin:0; display:block; }
         .no-print { display:none; }
-        .recibo-mitad { width:194mm; height:138mm; }
-        .separador { width:194mm; }
+        .recibo-mitad { width:210mm; height:148.5mm; }
+        .separador { width:210mm; }
       }</style>
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
-    <div class="recibo-mitad"><div style="padding:3px 16px 0;font-size:0.62rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em;background:white">Original</div><div class="recibo-inner" id="ri1" style="padding:6px 16px 10px">${recibo}</div></div>
-    <hr class="separador">
-    <div class="recibo-mitad"><div style="padding:3px 16px 0;font-size:0.62rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em;background:white">Duplicado</div><div class="recibo-inner" id="ri2" style="padding:6px 16px 10px">${recibo}</div></div>
+    <div class="recibo-mitad"><div class="recibo-label">Original</div><div class="recibo-inner" id="ri1">${recibo}</div></div>
+    <div class="separador"></div>
+    <div class="recibo-mitad"><div class="recibo-label">Duplicado</div><div class="recibo-inner" id="ri2">${recibo}</div></div>
     <script>
       function ajustarEscala(id) {
         const wrap = document.getElementById(id);
         if (!wrap) return;
-        const parent = wrap.parentElement;
-        const avail = parent.clientHeight - 20;
+        const mitad = wrap.parentElement;
+        const label = mitad.querySelector('.recibo-label');
+        const avail = mitad.clientHeight - (label ? label.offsetHeight : 0) - 2;
         const actual = wrap.scrollHeight;
         if (actual > avail) {
           const scale = avail / actual;
