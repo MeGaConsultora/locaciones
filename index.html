@@ -87,7 +87,8 @@
   .tab-dropdown-menu .submenu-header:hover, .tab-dropdown-menu .submenu-wrap:hover .submenu-header { background:rgba(255,255,255,0.12); color:white; }
   .tab-dropdown-menu .submenu-items { display:none; position:absolute; left:100%; top:0; background:var(--ink2); min-width:210px; border-radius:0 0 10px 10px; box-shadow:4px 4px 16px rgba(0,0,0,0.4); z-index:10000; }
   .tab-dropdown-menu .submenu-wrap:not(.submenu-nivel3):hover > .submenu-items { display:block; }
-  .tab-dropdown-menu .submenu-nivel3:hover > .submenu-items { display:block; }
+  .tab-dropdown-menu .submenu-nivel3 > .submenu-header:hover ~ .submenu-items { display:block; }
+  .tab-dropdown-menu .submenu-nivel3 > .submenu-items:hover { display:block; }
   .tab-dropdown-menu .submenu-items button { font-size:0.84rem; }
   .tab-dropdown.active > .tab-btn { color:var(--cream); border-bottom-color:var(--accent); }
 
