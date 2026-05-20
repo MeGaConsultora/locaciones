@@ -3738,7 +3738,7 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
       .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; font-family:'DM Sans',sans-serif; font-weight:600; }
       .recibo-mitad { background:white; width:190mm; height:141mm; overflow:hidden; position:relative; }
       .recibo-label { padding:3px 18px 0; font-size:0.62rem; color:#aaa; text-transform:uppercase; letter-spacing:.1em; }
-      .recibo-inner { transform-origin:top left; padding:6px 18px 10px; }
+      .recibo-inner { padding:6px 18px 10px; }
       .separador { width:190mm; height:0; border:none; border-top:2px dashed #999; }
       @page { size: A4 portrait; margin: 0; }
       @media print {
@@ -3754,20 +3754,33 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     <div class="separador"></div>
     <div class="recibo-mitad"><div class="recibo-label">Duplicado</div><div class="recibo-inner" id="rp2">${reciboHtml}</div></div>
     <script>
-      function ajustarEscala(id) {
-        const wrap = document.getElementById(id);
-        if (!wrap) return;
-        const mitad = wrap.parentElement;
+      function ajustarEscala(mitad) {
+        const inner = mitad.querySelector('.recibo-inner');
         const label = mitad.querySelector('.recibo-label');
+        if (!inner) return;
+        inner.style.zoom = '';
         const avail = mitad.clientHeight - (label ? label.offsetHeight : 0) - 2;
-        const actual = wrap.scrollHeight;
-        if (actual > avail) {
-          const scale = avail / actual;
-          wrap.style.transform = 'scale(' + scale + ')';
-          wrap.style.width = (100 / scale) + '%';
-        }
+        const actual = inner.scrollHeight;
+        if (actual > avail) inner.style.zoom = String(avail / actual);
       }
-      window.addEventListener('load', () => { ajustarEscala('rp1'); ajustarEscala('rp2'); });
+      window.addEventListener('load', () => {
+        document.querySelectorAll('.recibo-mitad').forEach(ajustarEscala);
+      });
+      window.addEventListener('beforeprint', () => {
+        const PX = 96 / 25.4;
+        document.querySelectorAll('.recibo-mitad').forEach(mitad => {
+          const inner = mitad.querySelector('.recibo-inner');
+          const label = mitad.querySelector('.recibo-label');
+          if (!inner) return;
+          inner.style.zoom = '';
+          const avail = Math.floor(148.5 * PX) - (label ? label.offsetHeight : 0) - 4;
+          const actual = inner.scrollHeight;
+          if (actual > avail) inner.style.zoom = String(avail / actual);
+        });
+      });
+      window.addEventListener('afterprint', () => {
+        document.querySelectorAll('.recibo-mitad').forEach(ajustarEscala);
+      });
     <\/script>
   </body></html>`);
   ventana.document.close();
@@ -5026,7 +5039,7 @@ function imprimirRecibo(data) {
       .no-print button:hover { background:#c8483a; }
       .recibo-mitad { background:white; width:190mm; height:141mm; overflow:hidden; position:relative; }
       .recibo-label { padding:3px 16px 0; font-size:0.62rem; color:#aaa; text-transform:uppercase; letter-spacing:.1em; }
-      .recibo-inner { transform-origin:top left; padding:6px 16px 10px; }
+      .recibo-inner { padding:6px 16px 10px; }
       .separador { width:190mm; height:0; border:none; border-top:2px dashed #999; }
       @page { size: A4 portrait; margin: 0; }
       @media print {
@@ -5041,20 +5054,33 @@ function imprimirRecibo(data) {
     <div class="separador"></div>
     <div class="recibo-mitad"><div class="recibo-label">Duplicado</div><div class="recibo-inner" id="ri2">${recibo}</div></div>
     <script>
-      function ajustarEscala(id) {
-        const wrap = document.getElementById(id);
-        if (!wrap) return;
-        const mitad = wrap.parentElement;
+      function ajustarEscala(mitad) {
+        const inner = mitad.querySelector('.recibo-inner');
         const label = mitad.querySelector('.recibo-label');
+        if (!inner) return;
+        inner.style.zoom = '';
         const avail = mitad.clientHeight - (label ? label.offsetHeight : 0) - 2;
-        const actual = wrap.scrollHeight;
-        if (actual > avail) {
-          const scale = avail / actual;
-          wrap.style.transform = 'scale(' + scale + ')';
-          wrap.style.width = (100 / scale) + '%';
-        }
+        const actual = inner.scrollHeight;
+        if (actual > avail) inner.style.zoom = String(avail / actual);
       }
-      window.addEventListener('load', () => { ajustarEscala('ri1'); ajustarEscala('ri2'); });
+      window.addEventListener('load', () => {
+        document.querySelectorAll('.recibo-mitad').forEach(ajustarEscala);
+      });
+      window.addEventListener('beforeprint', () => {
+        const PX = 96 / 25.4;
+        document.querySelectorAll('.recibo-mitad').forEach(mitad => {
+          const inner = mitad.querySelector('.recibo-inner');
+          const label = mitad.querySelector('.recibo-label');
+          if (!inner) return;
+          inner.style.zoom = '';
+          const avail = Math.floor(148.5 * PX) - (label ? label.offsetHeight : 0) - 4;
+          const actual = inner.scrollHeight;
+          if (actual > avail) inner.style.zoom = String(avail / actual);
+        });
+      });
+      window.addEventListener('afterprint', () => {
+        document.querySelectorAll('.recibo-mitad').forEach(ajustarEscala);
+      });
     <\/script>
   </body></html>`);
   ventana.document.close();
