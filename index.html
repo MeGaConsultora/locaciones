@@ -4783,9 +4783,13 @@ async function guardarContrato() {
       await generarGastosCuotas(nuevoContrato.id, body);
     }
 
-    await loadAll();
     closeModal();
-    if (nuevoContrato) openContrato(nuevoContrato.id);
+    await loadAll();
+    // Find the saved contract by id or titulo after loadAll
+    const contratoGuardado = nuevoContrato?.id
+      ? DB.contratos.find(c => c.id === nuevoContrato.id)
+      : DB.contratos.find(c => c.hoja === titulo || c.titulo === titulo);
+    if (contratoGuardado) openContrato(contratoGuardado.id);
   } catch(e) { toast('Error al guardar: '+e.message,'error'); }
 }
 
