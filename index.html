@@ -38,7 +38,10 @@
     font-family:'DM Sans',sans-serif; font-size:0.82rem; font-weight:500;
     display:flex; align-items:center; gap:6px; transition:background 0.2s;
   }
-  .sync-btn:hover { background:rgba(255,255,255,0.22); }
+  .submenu-nivel3 { position:relative; }
+  .submenu-nivel3 > .submenu-items { display:none; position:absolute; left:100%; top:0; background:var(--ink); border-radius:8px; min-width:200px; box-shadow:4px 4px 16px rgba(0,0,0,0.3); z-index:200; padding:4px 0; }
+  .submenu-nivel3:hover > .submenu-items { display:block; }
+  .submenu-nivel3 > .submenu-header { cursor:default; }
   .sync-status { font-size:0.75rem; color:rgba(245,240,232,0.5); }
 
   .header-search { position:relative; }
@@ -361,7 +364,15 @@
       <div class="submenu-wrap">
         <div class="submenu-header">📊 Informes ▸</div>
         <div class="submenu-items">
-          <button onclick="selectInforme('mensual')">📅 Reportes mensuales</button>
+          <div class="submenu-wrap submenu-nivel3">
+            <div class="submenu-header">📅 Reportes mensuales ▸</div>
+            <div class="submenu-items">
+              <button onclick="selectInforme('mensual')">📋 Totalizados</button>
+              <button onclick="selectInforme('srv-epe')">⚡ EPE a abonar</button>
+              <button onclick="selectInforme('srv-agua')">💧 Agua a abonar</button>
+              <button onclick="selectInforme('srv-tgiu')">🏛️ TGIU a abonar</button>
+            </div>
+          </div>
           <button onclick="selectInforme('reporte-total')">📋 Reportes totales</button>
         </div>
       </div>
@@ -461,6 +472,41 @@
     </div>
     <div id="informe-contenido">
       <div class="empty-state"><div class="icon">📊</div><p>Seleccioná un año y mes para ver el informe</p></div>
+    </div>
+  </div>
+
+  </div>
+
+  <!-- INFORMES DE SERVICIOS (EPE / AGUA / TGIU) -->
+  <div id="panel-srv-informe" class="panel" style="display:none">
+    <div class="toolbar" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+      <strong style="font-size:0.95rem" id="srv-inf-titulo">⚡ EPE a abonar</strong>
+      <select class="filter-select" id="srv-inf-anio" style="width:auto" onchange="renderSrvInforme()">
+        <option value="">-- Año --</option>
+      </select>
+      <select class="filter-select" id="srv-inf-mes" style="width:auto" onchange="renderSrvInforme()">
+        <option value="">-- Mes --</option>
+        <option value="01">Enero</option><option value="02">Febrero</option>
+        <option value="03">Marzo</option><option value="04">Abril</option>
+        <option value="05">Mayo</option><option value="06">Junio</option>
+        <option value="07">Julio</option><option value="08">Agosto</option>
+        <option value="09">Septiembre</option><option value="10">Octubre</option>
+        <option value="11">Noviembre</option><option value="12">Diciembre</option>
+      </select>
+      <select class="filter-select" id="srv-inf-estado" style="width:auto" onchange="renderSrvInforme()">
+        <option value="">Todos</option>
+        <option value="pendiente">No abonados</option>
+        <option value="pagado">Abonados</option>
+      </select>
+      <button class="btn btn-secondary" onclick="srvInfSelAll(true)">✓ Seleccionar todos</button>
+      <button class="btn btn-secondary" onclick="srvInfSelAll(false)">✕ Deseleccionar</button>
+    </div>
+    <div id="srv-inf-totales" style="display:none;background:white;border-radius:10px;padding:0.75rem 1.2rem;margin-bottom:1rem;display:flex;gap:2rem;align-items:center;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+      <span style="font-size:0.82rem;color:#666">Seleccionados: <strong id="srv-inf-count">0</strong></span>
+      <span style="font-size:1rem;font-weight:700;color:var(--ink)">Total a abonar: <span id="srv-inf-total" style="color:var(--accent)">$ 0</span></span>
+    </div>
+    <div id="srv-inf-contenido">
+      <div class="empty-state"><div class="icon">📊</div><p>Seleccioná año y mes</p></div>
     </div>
   </div>
 
@@ -5419,7 +5465,7 @@ function selectInforme(tipo) {
   document.getElementById('informes-menu').style.display = 'none';
 
   // First hide ALL main panels (same as showTab)
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','srv-informe','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -5437,6 +5483,7 @@ function selectInforme(tipo) {
   else if (tipo === 'vencimientos') panelId = 'panel-vencimientos';
   else if (tipo === 'recibos-emitir') panelId = 'panel-recibos-emitir';
   else if (tipo === 'numeracion-servicios') panelId = 'panel-numeracion-servicios';
+  else if (tipo === 'srv-epe' || tipo === 'srv-agua' || tipo === 'srv-tgiu') panelId = 'panel-srv-informe';
 
   const el = document.getElementById(panelId);
   if (el) { el.style.display = 'block'; el.classList.add('active'); }
@@ -5446,17 +5493,105 @@ function selectInforme(tipo) {
   else if (tipo === 'reporte-total') renderReporteTotal();
   else if (tipo === 'recibos-emitir') { populateRecibosAnios(); renderRecibosEmitir(); }
   else if (tipo === 'numeracion-servicios') renderNumeracionServicios();
+  else if (tipo === 'srv-epe' || tipo === 'srv-agua' || tipo === 'srv-tgiu') {
+    window._srvInformeTipo = tipo;
+    const labels = { 'srv-epe':'⚡ EPE a abonar', 'srv-agua':'💧 Agua a abonar', 'srv-tgiu':'🏛️ TGIU a abonar' };
+    document.getElementById('srv-inf-titulo').textContent = labels[tipo];
+    populateSrvInformeAnios();
+    renderSrvInforme();
+  }
   else { populateInformeAnios(); renderInforme(); }
 }
 
-// Close dropdown on outside click
-document.addEventListener('click', () => {
-  document.querySelectorAll('.tab-dropdown-menu').forEach(m => m.style.display='none');
-});
+  else { populateInformeAnios(); renderInforme(); }
+}
+
+function populateSrvInformeAnios() {
+  const sel = document.getElementById('srv-inf-anio');
+  const anios = [...new Set(DB.pagos.map(p => p.mes?.substring(0,4)).filter(Boolean))].sort().reverse();
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">-- Año --</option>' + anios.map(a => `<option value="${a}" ${a===cur?'selected':''}>${a}</option>`).join('');
+  if (!cur && anios.length) sel.value = anios[0];
+}
+
+function renderSrvInforme() {
+  const tipo = window._srvInformeTipo || 'srv-epe';
+  const campo = tipo === 'srv-epe' ? 'monto_epe' : tipo === 'srv-agua' ? 'monto_agua' : 'monto_tgiu';
+  const campoPagado = tipo === 'srv-epe' ? 'pagado_epe' : tipo === 'srv-agua' ? 'pagado_agua' : 'pagado_tgiu';
+  const anio = document.getElementById('srv-inf-anio')?.value;
+  const mes = document.getElementById('srv-inf-mes')?.value;
+  const estado = document.getElementById('srv-inf-estado')?.value;
+  const contenedor = document.getElementById('srv-inf-contenido');
+  const totalesBar = document.getElementById('srv-inf-totales');
+
+  if (!anio || !mes) {
+    contenedor.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Seleccioná año y mes</p></div>';
+    totalesBar.style.display = 'none';
+    return;
+  }
+  const mesKey = `${anio}-${mes}`;
+  let pagos = DB.pagos.filter(p => p.mes?.startsWith(mesKey) && (p[campo]||0) > 0);
+
+  if (estado === 'pendiente') pagos = pagos.filter(p => (p[campoPagado]||0) < (p[campo]||0));
+  else if (estado === 'pagado') pagos = pagos.filter(p => (p[campoPagado]||0) >= (p[campo]||0));
+
+  if (!pagos.length) {
+    contenedor.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Sin registros para el período</p></div>';
+    totalesBar.style.display = 'none';
+    return;
+  }
+
+  totalesBar.style.display = 'flex';
+
+  const rows = pagos.map(p => {
+    const c = DB.contratos.find(x => x.hoja === p.hoja);
+    const monto = p[campo] || 0;
+    const abonado = p[campoPagado] || 0;
+    const saldo = monto - abonado;
+    const pagadoFlag = abonado >= monto;
+    const nroSrv = c ? (tipo==='srv-epe' ? c.nro_epe : tipo==='srv-agua' ? c.nro_agua : c.nro_tgiu) : '';
+    return `<tr>
+      <td style="width:32px;text-align:center"><input type="checkbox" class="srv-chk" data-monto="${saldo>0?saldo:monto}" ${!pagadoFlag?'checked':''} onchange="srvInfActualizarTotal()"></td>
+      <td style="font-size:0.82rem"><strong>${c?.titulo||p.hoja}</strong></td>
+      <td style="font-size:0.78rem;color:#666">${nroSrv||'—'}</td>
+      <td style="text-align:right;font-size:0.82rem">${formatMoney(monto)}</td>
+      <td style="text-align:right;font-size:0.82rem;color:${abonado>0?'#2d7a4f':'#aaa'}">${abonado>0?formatMoney(abonado):'—'}</td>
+      <td style="text-align:right;font-size:0.82rem;font-weight:700;color:${saldo>0?'#c8483a':'#2d7a4f'}">${saldo>0?formatMoney(saldo):'✓'}</td>
+    </tr>`;
+  }).join('');
+
+  contenedor.innerHTML = `<table style="width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+    <thead><tr style="background:#1a1a2e;color:white">
+      <th style="padding:8px;width:32px"></th>
+      <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Contrato</th>
+      <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Nº servicio</th>
+      <th style="padding:8px;text-align:right;font-size:0.72rem;text-transform:uppercase">Total</th>
+      <th style="padding:8px;text-align:right;font-size:0.72rem;text-transform:uppercase">Abonado</th>
+      <th style="padding:8px;text-align:right;font-size:0.72rem;text-transform:uppercase">Saldo</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+
+  srvInfActualizarTotal();
+}
+
+function srvInfActualizarTotal() {
+  const chks = document.querySelectorAll('.srv-chk:checked');
+  const total = [...chks].reduce((s,c) => s + parseFloat(c.dataset.monto||0), 0);
+  document.getElementById('srv-inf-count').textContent = chks.length;
+  document.getElementById('srv-inf-total').textContent = formatMoney(total);
+}
+
+function srvInfSelAll(sel) {
+  document.querySelectorAll('.srv-chk').forEach(c => c.checked = sel);
+  srvInfActualizarTotal();
+}
+
+
 
 function showTab(name, btn) {
   // Hide ALL panels using both class and inline style
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','srv-informe','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -6149,7 +6284,7 @@ document.addEventListener('visibilitychange', () => {
 // ============================================================
 // Initialize panel visibility
 (function() {
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','srv-informe','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) el.style.display = id === 'dashboard' ? 'block' : 'none';
