@@ -5503,9 +5503,6 @@ function selectInforme(tipo) {
   else { populateInformeAnios(); renderInforme(); }
 }
 
-  else { populateInformeAnios(); renderInforme(); }
-}
-
 function populateSrvInformeAnios() {
   const sel = document.getElementById('srv-inf-anio');
   const anios = [...new Set(DB.pagos.map(p => p.mes?.substring(0,4)).filter(Boolean))].sort().reverse();
