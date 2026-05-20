@@ -369,6 +369,7 @@
         <option value="">Todos los estados</option>
         <option value="vigente">Vigentes</option>
         <option value="vencido">Vencidos</option>
+        <option value="rescindido">Rescindidos</option>
       </select>
       <select class="filter-select" id="filter-tipo" onchange="renderContratos()">
         <option value="">Todos los tipos</option>
@@ -828,6 +829,7 @@ function normTipo(t) {
   return t;
 }
 function getEstado(c) {
+  if (c.fecha_rescision) return 'rescindido';
   if (!c.vigencia_hasta) return 'indefinido';
   return c.vigencia_hasta >= TODAY ? 'vigente' : 'vencido';
 }
@@ -875,13 +877,15 @@ function populateFiltros() {
 function renderDashboard() {
   const vigentes = DB.contratos.filter(c => getEstado(c)==='vigente').length;
   const vencidos = DB.contratos.filter(c => getEstado(c)==='vencido').length;
+  const rescindidos = DB.contratos.filter(c => getEstado(c)==='rescindido').length;
   const pendientes = DB.pagos.filter(p => p.saldo && p.saldo > 0 && p.mes && p.mes.substring(0,7) <= TODAY.substring(0,7));
   const totalPendiente = pendientes.reduce((s,p) => s+(p.saldo||0), 0);
-  const proxVenc = DB.contratos.filter(c => { if(!c.vigencia_hasta) return false; const d=daysDiff(c.vigencia_hasta,TODAY); return d>=0&&d<=60; }).length;
+  const proxVenc = DB.contratos.filter(c => { if(!c.vigencia_hasta||c.fecha_rescision) return false; const d=daysDiff(c.vigencia_hasta,TODAY); return d>=0&&d<=60; }).length;
 
   document.getElementById('stats-row').innerHTML = `
     <div class="stat-card green"><div class="stat-label">Contratos vigentes</div><div class="stat-val">${vigentes}</div><div class="stat-sub">de ${DB.contratos.length} totales</div></div>
     <div class="stat-card accent"><div class="stat-label">Vencidos</div><div class="stat-val">${vencidos}</div><div class="stat-sub">contratos finalizados</div></div>
+    <div class="stat-card" style="border-left-color:#721c24"><div class="stat-label">Rescindidos</div><div class="stat-val">${rescindidos}</div><div class="stat-sub">contratos rescindidos</div></div>
     <div class="stat-card warn"><div class="stat-label">Vencen en 60 días</div><div class="stat-val">${proxVenc}</div><div class="stat-sub">requieren atención</div></div>
     <div class="stat-card gold"><div class="stat-label">Saldo pendiente</div><div class="stat-val" style="font-size:1.3rem">${formatMoney(totalPendiente)}</div><div class="stat-sub">${pendientes.length} cuotas sin cobrar</div></div>
   `;
@@ -1123,7 +1127,7 @@ async function openContrato(id) {
       <div class="detail-item"><label>Vigencia</label><span>${formatDate(c.vigencia_desde,true)} → ${formatDate(c.vigencia_hasta,true)}</span></div>
       <div class="detail-item"><label>Tipo</label><span>${normTipo(c.tipo_inmueble)}</span></div>
       <div class="detail-item"><label>Actualización</label><span>${c.periodicidad_actualizacion||'—'} ${c.indice_actualizacion?'· '+c.indice_actualizacion:''}</span></div>
-      <div class="detail-item"><label>Estado</label><span><span class="badge ${est==='vigente'?'badge-green':'badge-gray'}">${est}</span></span></div>
+      <div class="detail-item"><label>Estado</label><span><span class="badge ${est==='vigente'?'badge-green':est==='rescindido'?'badge-red':'badge-gray'}">${est}</span></span></div>
       <div class="detail-item" id="detail-total-alq"><label>Total acumulado</label><span>—</span></div>
       <div class="detail-item" id="detail-saldo"><label>Saldo pendiente</label><span>—</span></div>
       <div class="detail-item"><label>Inmueble</label><span style="display:flex;align-items:center;gap:0.5rem">
