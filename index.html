@@ -4732,7 +4732,8 @@ async function guardarContrato() {
 
   try {
     const r = await sbPost('contratos', body);
-    const nuevoContrato = r[0];
+    const nuevoContrato = Array.isArray(r) ? r[0] : r;
+    if (!nuevoContrato?.id) { toast('Error: no se recibió el ID del contrato nuevo','error'); return; }
     toast('Contrato guardado ✓');
 
     // Save contrato_personas relationships
@@ -4770,12 +4771,16 @@ async function guardarContrato() {
         gsm++;
         if (gsm > 12) { gsm = 1; gsy++; }
       }
-      // Insert in batches of 50
-      for (let i=0; i<mesesGenerados.length; i+=50) {
-        const batch = mesesGenerados.slice(i, i+50);
-        await sbPost('pagos', batch);
+      if (mesesGenerados.length === 0) {
+        toast('Advertencia: no se generaron meses (verificá las fechas de vigencia)', 'error');
+      } else {
+        // Insert in batches of 50
+        for (let i=0; i<mesesGenerados.length; i+=50) {
+          const batch = mesesGenerados.slice(i, i+50);
+          await sbPost('pagos', batch);
+        }
+        toast(`${mesesGenerados.length} meses generados ✓`);
       }
-      toast(`${mesesGenerados.length} meses generados ✓`);
     }
 
     // Generate gastos inicio cuotas
