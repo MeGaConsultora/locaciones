@@ -1144,6 +1144,11 @@ async function recargarGrilla(c) {
   try {
     const hojaEncoded = encodeURIComponent(c.hoja);
     pagosActuales = await sbGetAll('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc`);
+    pagosActuales = pagosActuales.filter(p => {
+      if (!p.mes) return false;
+      const anio = parseInt(p.mes.substring(0,4));
+      return anio >= 2000 && anio <= 2100;
+    });
 
     // Load extras for all pagos
     if (pagosActuales.length > 0) {
@@ -3317,17 +3322,33 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
 
   // Guardar movimiento en historial de transacciones
   try {
-    const itemsRegular = itemsRecibo.filter(i => i.label !== (document.getElementById('cobro-chk-honorarios')?.closest('div')?.querySelector('label')?.textContent?.trim()||'__'));
-    await sbPost('movimientos_pagos', {
-      pago_id: p.id,
-      contrato_id: contratoId,
-      hoja,
-      mes: p.mes,
-      fecha: fechaMovimiento,
-      monto: montoRegular,
-      concepto: itemsRegular.map(i => i.label).join(', ') || 'Cobro',
-      items: JSON.stringify(itemsRegular)
-    });
+    const labelsMap = {alquiler:'Alquiler',epe:'EPE',agua:'Agua',tgiu:'TGIU',seguro:'Seguro',internet:'Internet',expensas:'Expensas'};
+    const itemsMovimiento = [];
+    // Solo los ítems que realmente recibieron pago en esta transacción
+    for (const [key, newTotal] of Object.entries(pagadoPorItem)) {
+      const oldVal = parseFloat(p[key]) || 0;
+      const estePago = newTotal - oldVal;
+      if (estePago > 0) itemsMovimiento.push({ label: labelsMap[key.replace('pagado_','')] || key, monto: estePago });
+    }
+    // A cuenta e interés si aplican
+    if (acuenta > 0) itemsMovimiento.push({ label: acuentaConcepto, monto: acuenta });
+    const interesChkRef = document.getElementById('gp-interes-chk');
+    if (interesChkRef?.checked) {
+      const iv = parseFloat(interesChkRef.dataset.interes||0);
+      if (iv > 0) itemsMovimiento.push({ label: 'Interés punitorio', monto: iv });
+    }
+    if (itemsMovimiento.length > 0) {
+      await sbPost('movimientos_pagos', {
+        pago_id: p.id,
+        contrato_id: contratoId,
+        hoja,
+        mes: p.mes,
+        fecha: fechaMovimiento,
+        monto: montoRegular,
+        concepto: itemsMovimiento.map(i => i.label).join(', '),
+        items: JSON.stringify(itemsMovimiento)
+      });
+    }
   } catch(e) { console.warn('movimientos_pagos no guardado:', e); }
 
   toast('Cobro registrado ✓');
@@ -3931,6 +3952,8 @@ async function imprimirHistorial(contratoId) {
 
   const pagos = cpagos.filter(p => {
     if (!p.mes) return false;
+    const anio = parseInt(p.mes.substring(0, 4));
+    if (anio < 2000 || anio > 2100) return false;
     if (p.saldo && p.saldo > 0) return p.mes.substring(0,7) <= TODAY.substring(0,7);
     return true;
   });
