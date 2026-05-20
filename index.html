@@ -476,8 +476,6 @@
     </div>
   </div>
 
-  </div>
-
   <!-- INFORMES DE SERVICIOS (EPE / AGUA / TGIU) -->
   <div id="panel-srv-informe" class="panel" style="display:none">
     <div class="toolbar" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
@@ -593,9 +591,6 @@
     </div>
     <div id="venc-list" class="venc-list"></div>
   </div>
-
-
-
 
   <!-- INMUEBLES -->
   <div id="panel-inmuebles" class="tab-content" style="display:none">
@@ -811,7 +806,6 @@ async function loadAll() {
     DB.contratos = contratos;
     DB.pagos = pagos;
     DB_GASTOS_CUOTAS = gastosCuotas;
-    console.log('DB_GASTOS_CUOTAS loaded:', DB_GASTOS_CUOTAS.length);
     // Load inmuebles separately so a failure doesn't break everything
     try {
       DB_INMUEBLES = await sbGet('inmuebles', 'select=*&order=localidad.asc,calle.asc&limit=2000');
@@ -1222,8 +1216,6 @@ function renderVencimientos() {
   }).join('');
 }
 
-
-
 // ============================================================
 // MODAL DETALLE CONTRATO - GRILLA ESTILO EXCEL
 // ============================================================
@@ -1353,7 +1345,6 @@ function getEstadoLabel(p) {
 function renderGrilla(c) {
   // Render honorarios row above grid
   const honorariosRowEl = document.getElementById('honorarios-row');
-  console.log('honorarios row:', honorariosRowEl ? 'found' : 'NOT FOUND', 'DB_GASTOS_CUOTAS:', DB_GASTOS_CUOTAS.length, 'for contrato', c.id, ':', DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id).length);
   if (honorariosRowEl) {
     const cuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id);
     if (cuotas.length) {
@@ -1520,18 +1511,6 @@ async function editarMesConSolapa(hoja, contratoId, mesPreseleccionado, solapa) 
 function calcularTotal(p, extras) {
   const totalExtras = (extras||[]).reduce((s,e)=>s+(parseFloat(e.importe)||0),0);
   return (p.importe_alquiler||0)+(p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0)+totalExtras;
-}
-
-async function actualizarCampo(pagoId, campo, valor) {
-  const val = parseFloat(valor)||0;
-  try {
-    await sbPatch('pagos', pagoId, { [campo]: val });
-    const p = pagosActuales.find(x=>x.id===pagoId);
-    if (p) {
-      p[campo] = val;
-      await recalcularFilaPago(pagoId);
-    }
-  } catch(e) { toast('Error al guardar: '+e.message,'error'); }
 }
 
 async function recalcularFilaPago(pagoId) {
@@ -2328,8 +2307,6 @@ async function cargarListaServicios(filtro='') {
         </div>`;
       }).join('');
     };
-
-
 
     // Build cargados HTML
     // Build cargados HTML - grouped by nro (same logic as sinCargar)
@@ -3568,10 +3545,6 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     }
   }
 
-
-
-
-
   // Calculate pending items for recibo
   const orden2 = ['alquiler','epe','agua','tgiu','seguro','internet','expensas'];
   const labels2 = {alquiler:'Alquiler',epe:'EPE',agua:'Agua',tgiu:'TGIU',seguro:'Seguro',internet:'Internet',expensas:'Expensas'};
@@ -3876,42 +3849,6 @@ function verReporteTotales() {
 }
 
 
-function exportarReporteTotalCSV() {
-  const rows = [];
-  rows.push(['Contrato','Propietario','Inquilino','Total facturado','Total cobrado','Saldo pendiente','Estado']);
-  DB.contratos.forEach(c => {
-    const pagos = DB.pagos.filter(p => p.hoja===c.hoja && p.mes && p.mes.substring(0,7)<=TODAY.substring(0,7));
-    const totalFacturado = pagos.reduce((s,p)=>s+(p.total||0),0);
-    const totalCobrado = pagos.reduce((s,p)=>s+((p.total||0)-(p.saldo||0)),0);
-    const saldo = pagos.reduce((s,p)=>s+(p.saldo||0),0);
-    rows.push([c.titulo||c.hoja, c.locador||'', c.locatario||'', totalFacturado, totalCobrado, saldo, getEstado(c)]);
-  });
-  const csv = rows.map(r => r.map(v => '"'+String(v).replace(/"/g,'\"\"')+'"').join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
-  a.download = `reporte-total-${TODAY.substring(0,10)}.csv`;
-  a.click();
-}
-
-
-function exportarInformeCSV() {
-  const rows = window._informeRows;
-  if (!rows?.length) { toast('Generá el informe primero','error'); return; }
-  const headers = ['Contrato','Total mes','Abonado','Saldo','Comisión','EPE','Agua','TGIU','Seguro','Extras'];
-  const csvRows = [headers.join(',')];
-  rows.forEach(r => {
-    csvRows.push([
-      r.p.hoja,
-      r.p.total||0, (r.abonado||0), (r.saldo||0), (r.comision||0),
-      r.p.monto_epe||0, r.p.monto_agua||0, r.p.monto_tgiu||0, r.p.monto_seguro||0,
-      r.extrasInqTotal||0
-    ].join(','));
-  });
-  const blob = new Blob([csvRows.join('\n')], {type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download=`informe_${window._informeMesKey}.csv`; a.click();
-  URL.revokeObjectURL(url);
-}
 
 async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
   const mes = mesKey+'-01';
@@ -5438,16 +5375,6 @@ async function openModal2ForContrato(contratoId) {
 // ============================================================
 // TABS
 // ============================================================
-function toggleSubmenu(id) {
-  const items = document.getElementById(id);
-  if (!items) return;
-  const isOpen = items.classList.contains('open');
-  items.classList.toggle('open', !isOpen);
-  const key = id.replace('submenu-', '');
-  const arrow = document.getElementById('arrow-' + key);
-  if (arrow) arrow.textContent = isOpen ? '▸' : '▾';
-}
-
 function toggleInformesMenu(e) {
   e.stopPropagation();
   const menu = document.getElementById('informes-menu');
@@ -6234,8 +6161,6 @@ function selPersonaVinc(id, apellido, nombre) {
   document.getElementById('vinc-sugerencias').style.display='none';
   document.getElementById('vinc-busca').value = apellido + ', ' + nombre;
 }
-
-
 
 async function guardarVinculacion(usuarioId) {
   const personaId = document.getElementById('vinc-persona-id').value;
@@ -7029,36 +6954,6 @@ async function eliminarContrato(id) {
     await loadAll();
     renderContratos();
   } catch(e) { toast('Error: ' + e.message, 'error'); }
-}
-
-async function abrirCobroGastos(contratoId, hoja) {
-  const cuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).sort((a,b) => a.mes > b.mes ? 1 : -1);
-  if (!cuotas.length) { toast('No hay cuotas de gastos configuradas', 'error'); return; }
-  
-  document.getElementById('modal2-title').textContent = 'Cobro de gastos de inicio';
-  document.getElementById('modal2-subtitle').textContent = hoja;
-  document.getElementById('modal2-body').innerHTML = `
-    <div style="margin-bottom:1rem;font-size:0.85rem;color:#666">Tildá las cuotas cobradas o ingresá un importe parcial</div>
-    ${cuotas.map((g,i) => {
-      const mes = g.mes ? new Date(g.mes+'T00:00:00').toLocaleDateString('es-AR',{month:'long',year:'numeric'}) : '—';
-      const saldo = (g.monto_inquilino||0) - (parseFloat(g.pagado_inquilino)||0);
-      const pagado = parseFloat(g.pagado_inquilino)||0;
-      return `<div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0;border-bottom:1px solid #eee">
-        <input type="checkbox" id="gc-chk-${g.id}" ${saldo<=0?'checked disabled':'checked'} style="width:15px;height:15px" onchange="recalcCobroGastos()">
-        <span style="flex:1;font-size:0.85rem">Cuota ${i+1} — ${mes}</span>
-        <span style="font-size:0.75rem;color:#888">Debe: ${formatMoney(saldo)} ${pagado>0?'· Pagado: '+formatMoney(pagado):''}</span>
-        <input type="number" id="gc-imp-${g.id}" value="${saldo>0?saldo:0}" min="0" max="${saldo}"
-          style="width:120px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem;text-align:right"
-          oninput="recalcCobroGastos()" ${saldo<=0?'disabled':''}>
-      </div>`;
-    }).join('')}
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem;padding-top:0.75rem;border-top:2px solid var(--border)">
-      <strong>Total a cobrar: <span id="gc-total" style="color:var(--green)">$0</span></strong>
-      <button class="btn btn-primary" onclick="confirmarCobroGastos(${contratoId})">✓ Registrar cobro</button>
-    </div>
-  `;
-  document.getElementById('modal2-overlay').classList.add('open');
-  recalcCobroGastos();
 }
 
 function recalcCobroGastos() {
