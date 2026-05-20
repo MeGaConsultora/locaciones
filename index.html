@@ -898,7 +898,7 @@ function renderDashboard() {
     `<div class="bar-row"><div class="bar-label" title="${t}">${t}</div><div class="bar-track"><div class="bar-fill" style="width:${(n/maxT*100).toFixed(1)}%"></div></div><div class="bar-val">${n}</div></div>`
   ).join('');
 
-  const vencList = DB.contratos.filter(c => { if(!c.vigencia_hasta) return false; const d=daysDiff(c.vigencia_hasta,TODAY); return d>=-30&&d<=30; }).sort((a,b)=>a.vigencia_hasta.localeCompare(b.vigencia_hasta)).slice(0,8);
+  const vencList = DB.contratos.filter(c => { if(!c.vigencia_hasta||c.fecha_rescision) return false; const d=daysDiff(c.vigencia_hasta,TODAY); return d>=-30&&d<=30; }).sort((a,b)=>a.vigencia_hasta.localeCompare(b.vigencia_hasta)).slice(0,8);
   document.getElementById('chart-venc').innerHTML = vencList.length === 0
     ? '<div class="empty-state"><p>Sin vencimientos próximos</p></div>'
     : vencList.map(c => {
@@ -1064,7 +1064,7 @@ function imprimirVencimientos() {
 }
 
 function renderVencimientos() {
-  let lista = DB.contratos.filter(c => c.vigencia_hasta);
+  let lista = DB.contratos.filter(c => c.vigencia_hasta && !c.fecha_rescision);
   if (vencFiltro==='vencidos') lista = lista.filter(c => c.vigencia_hasta<TODAY);
   else if (vencFiltro!=='todos') { const d=parseInt(vencFiltro); lista=lista.filter(c => { const dd=daysDiff(c.vigencia_hasta,TODAY); return dd>=0&&dd<=d; }); }
   lista.sort((a,b) => a.vigencia_hasta.localeCompare(b.vigencia_hasta));
