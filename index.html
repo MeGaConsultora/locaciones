@@ -2188,6 +2188,7 @@ async function confirmarProyeccionContrato(contratoId, hoja) {
 }
 
 async function abrirCargarServicios() {
+  document.getElementById('informes-menu').style.display = 'none';
   document.getElementById('modal-title').textContent = '⚡ Cargar servicios del mes';
   document.getElementById('modal-subtitle').textContent = '';
   document.getElementById('modal-overlay').dataset.contratoId = '';
@@ -2305,12 +2306,11 @@ async function cargarListaServicios(filtro='') {
       return `${ny}-${String(nm).padStart(2,'0')}`;
     })();
 
-    // Check pct sum - use ALL contracts with same nro (not just current list)
+    // Check pct sum - use only VIGENTE contracts with same nro
     const nroCampo = `nro_${srv}`;
     const pctWarnings = [];
     const nrosVistos = {};
-    // Use ALL DB contracts for shared nro validation
-    const todosContratos = DB.contratos.filter(c => c[nroCampo]);
+    const todosContratos = DB.contratos.filter(c => c[nroCampo] && getEstado(c) === 'vigente');
     todosContratos.forEach(c => {
       const nro = c[nroCampo];
       if (!nrosVistos[nro]) nrosVistos[nro] = { contratos: [], totalPct: 0 };
@@ -2347,7 +2347,7 @@ async function cargarListaServicios(filtro='') {
       return Object.values(grupos).map(g => {
         // For pctOk, sum pct of ALL contracts that have this service ticked AND same nro
         const todosConNro = g.nro 
-          ? DB.contratos.filter(c => c[`nro_${srv}`] === g.nro && (c.servicios_inquilino||'').toLowerCase().includes(srv))
+          ? DB.contratos.filter(c => c[`nro_${srv}`] === g.nro && (c.servicios_inquilino||'').toLowerCase().includes(srv) && getEstado(c) === 'vigente')
           : g.contratos;
         const totalPct = todosConNro.reduce((s,c) => {
           const v = c['pct_'+srv] ?? 100;
@@ -5541,6 +5541,7 @@ function toggleInformesMenu(e) {
 
 function selectInforme(tipo) {
   document.getElementById('informes-menu').style.display = 'none';
+  document.getElementById('informes-menu').style.display = 'none';
 
   // First hide ALL main panels (same as showTab)
   const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','srv-informe','inmuebles','clientes','admin'];
@@ -6430,6 +6431,7 @@ setInterval(async () => {
 // IMPORTAR PDF DE SERVICIOS
 // ============================================================
 function abrirImportarPDF() {
+  document.getElementById('informes-menu').style.display = 'none';
   document.getElementById('modal-title').textContent = '📄 Importar PDF de servicios';
   document.getElementById('modal-subtitle').textContent = '';
   document.getElementById('modal-overlay').dataset.contratoId = '';
