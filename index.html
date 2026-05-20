@@ -898,18 +898,31 @@ function renderDashboard() {
     `<div class="bar-row"><div class="bar-label" title="${t}">${t}</div><div class="bar-track"><div class="bar-fill" style="width:${(n/maxT*100).toFixed(1)}%"></div></div><div class="bar-val">${n}</div></div>`
   ).join('');
 
-  const vencList = DB.contratos.filter(c => { if(!c.vigencia_hasta||c.fecha_rescision) return false; const d=daysDiff(c.vigencia_hasta,TODAY); return d>=-30&&d<=30; }).sort((a,b)=>a.vigencia_hasta.localeCompare(b.vigencia_hasta)).slice(0,8);
-  document.getElementById('chart-venc').innerHTML = vencList.length === 0
-    ? '<div class="empty-state"><p>Sin vencimientos próximos</p></div>'
-    : vencList.map(c => {
-        const d = daysDiff(c.vigencia_hasta, TODAY);
-        const cls = d<0?'badge-gray':d<=15?'badge-red':d<=30?'badge-yellow':'badge-green';
-        const txt = d<0?`Venció hace ${-d}d`:d===0?'Hoy':`En ${d}d`;
-        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid #f0ece4;cursor:pointer" onclick="openContrato(${c.id})">
-          <span style="font-size:0.82rem;flex:1">${c.titulo}</span>
-          <span class="badge ${cls}">${txt}</span>
-        </div>`;
-      }).join('');
+  const vencList = DB.contratos.filter(c => { if(!c.vigencia_hasta||c.fecha_rescision) return false; const d=daysDiff(c.vigencia_hasta,TODAY); return d>=-30&&d<=30; }).sort((a,b)=>a.vigencia_hasta.localeCompare(b.vigencia_hasta));
+  const VISIBLE = 5;
+  const makeItem = c => {
+    const d = daysDiff(c.vigencia_hasta, TODAY);
+    const cls = d<0?'badge-gray':d<=15?'badge-red':d<=30?'badge-yellow':'badge-green';
+    const txt = d<0?`Venció hace ${-d}d`:d===0?'Hoy':`En ${d}d`;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid #f0ece4;cursor:pointer" onclick="openContrato(${c.id})">
+      <span style="font-size:0.82rem;flex:1">${c.titulo}</span>
+      <span class="badge ${cls}">${txt}</span>
+    </div>`;
+  };
+  if (vencList.length === 0) {
+    document.getElementById('chart-venc').innerHTML = '<div class="empty-state"><p>Sin vencimientos próximos</p></div>';
+  } else {
+    const visibles = vencList.slice(0, VISIBLE).map(makeItem).join('');
+    const restantes = vencList.slice(VISIBLE);
+    const extra = restantes.length ? `
+      <div id="venc-extra" style="display:none">${restantes.map(makeItem).join('')}</div>
+      <div onclick="const e=document.getElementById('venc-extra');const b=document.getElementById('venc-toggle');const open=e.style.display!=='none';e.style.display=open?'none':'block';b.textContent=open?'▼ Ver ${restantes.length} más':'▲ Ocultar';"
+        id="venc-toggle"
+        style="text-align:center;padding:0.4rem;font-size:0.75rem;color:var(--accent);cursor:pointer;font-weight:600;margin-top:2px">
+        ▼ Ver ${restantes.length} más
+      </div>` : '';
+    document.getElementById('chart-venc').innerHTML = visibles + extra;
+  }
 }
 
 // ============================================================
