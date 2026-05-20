@@ -1110,7 +1110,7 @@ async function openContrato(id) {
   document.getElementById('modal-body').innerHTML = `
     <div style="display:flex;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="openEditContrato(${c.id})">✏️ Editar contrato</button>
-      <button class="btn btn-secondary" style="font-size:0.78rem" onclick="imprimirHistorial(${c.id})">🖨️ Imprimir historial</button>
+      <button class="btn btn-secondary" style="font-size:0.78rem" onclick="imprimirHistorial(${c.id})">📋 Historial</button>
       <button class="btn btn-secondary" style="font-size:0.78rem;color:var(--green);border-color:var(--green)" onclick="abrirCrearAcceso(${c.id},'${c.hoja}')">🔑 Acceso inquilino</button>
       ${c.periodicidad_actualizacion && c.periodicidad_actualizacion !== 'Sin actualización' ? `<button class="btn btn-secondary" style="font-size:0.78rem;color:#6610f2;border-color:#6610f2" onclick="abrirProyectarContrato(${c.id},'${c.hoja}')">📈 Proyectar alquiler</button>` : ''}
       ${!c.fecha_rescision ? '<button class="btn btn-secondary" style="font-size:0.78rem;color:var(--accent);border-color:var(--accent)" onclick="abrirRescision('+c.id+',\''+c.hoja+'\')">✂ Rescindir contrato</button>' : '<span class="badge badge-red" style="font-size:0.78rem">Rescindido '+formatDate(c.fecha_rescision,true)+'</span>'}
@@ -3905,11 +3905,13 @@ async function imprimirHistorial(contratoId) {
         <thead><tr>
           <th>Mes</th><th>Vence</th>
           <th class="r">Alquiler</th><th class="r">EPE</th><th class="r">Agua</th><th class="r">TGIU</th>
-          <th class="r">Seguro</th><th class="r">Otros</th><th class="r">Total</th><th class="r">Saldo</th><th>Estado</th>
+          <th class="r">Seguro</th><th class="r">Otros</th><th class="r">Total</th><th class="r">Abonado</th><th class="r">Saldo</th><th>Fecha pago</th><th>Estado</th>
         </tr></thead>
         <tbody>
           ${pagos.map(p => {
             const pend = p.saldo && p.saldo > 0;
+            const abonado = (p.total||0) - (p.saldo||0);
+            const fechaPago = p.fecha_pago_hasta ? (() => { const [y,m,d] = p.fecha_pago_hasta.split('T')[0].split('-'); return `${d}/${m}/${y}`; })() : '—';
             return `<tr class="${pend?'impago':'pagado'}">
               <td><strong>${formatDate(p.mes)}</strong></td>
               <td>${formatDate(p.fecha_pago_hasta,true)}</td>
@@ -3920,7 +3922,9 @@ async function imprimirHistorial(contratoId) {
               <td class="r">${formatMoney(p.monto_seguro)}</td>
               <td class="r">${formatMoney(p.monto_otros)}</td>
               <td class="r"><strong>${formatMoney(p.total)}</strong></td>
+              <td class="r" style="color:${abonado>0?'#2d7a4f':'#888'};font-weight:${abonado>0?'700':'400'}">${abonado>0?formatMoney(abonado):'—'}</td>
               <td class="r" style="${pend?'color:#c8483a;font-weight:700':'color:#2d7a4f'}">${pend?formatMoney(p.saldo):'✓'}</td>
+              <td>${fechaPago}</td>
               <td><span style="font-size:0.72rem;font-weight:600;padding:2px 8px;border-radius:100px;background:${pend?'#f8d7da':'#d4edda'};color:${pend?'#721c24':'#155724'}">${pend?'Pendiente':'Pagado'}</span></td>
             </tr>`;
           }).join('')}
