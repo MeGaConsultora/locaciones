@@ -476,6 +476,8 @@
     </div>
   </div>
 
+  </div>
+
   <!-- INFORMES DE SERVICIOS (EPE / AGUA / TGIU) -->
   <div id="panel-srv-informe" class="panel" style="display:none">
     <div class="toolbar" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
@@ -591,6 +593,9 @@
     </div>
     <div id="venc-list" class="venc-list"></div>
   </div>
+
+
+
 
   <!-- INMUEBLES -->
   <div id="panel-inmuebles" class="tab-content" style="display:none">
@@ -806,6 +811,7 @@ async function loadAll() {
     DB.contratos = contratos;
     DB.pagos = pagos;
     DB_GASTOS_CUOTAS = gastosCuotas;
+    console.log('DB_GASTOS_CUOTAS loaded:', DB_GASTOS_CUOTAS.length);
     // Load inmuebles separately so a failure doesn't break everything
     try {
       DB_INMUEBLES = await sbGet('inmuebles', 'select=*&order=localidad.asc,calle.asc&limit=2000');
@@ -1216,6 +1222,8 @@ function renderVencimientos() {
   }).join('');
 }
 
+
+
 // ============================================================
 // MODAL DETALLE CONTRATO - GRILLA ESTILO EXCEL
 // ============================================================
@@ -1247,34 +1255,8 @@ async function openContrato(id) {
     </div>
     <p style="font-size:0.78rem;color:#999;margin-bottom:0.75rem">💡 Clic en un mes para editarlo o registrar cobro</p>
     <div class="detail-grid" style="margin-bottom:1rem">
-      <div class="detail-item"><label>Propietario/s</label><span>${
-        (() => {
-          const props = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'propietario');
-          if (!props.length) return c._locador||c.locador||'—';
-          return props.map(cp => {
-            const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
-            return p ? `<span onclick="openEditPersona(${p.id}, ${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.88rem" title="Editar">${formatNombrePersona(p)}</span>` : '—';
-          }).join(', ');
-        })()
-      }</span></div>
-      <div class="detail-item"><label>Inquilino/s</label><span>${
-        (() => {
-          const inqs = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'inquilino');
-          if (!inqs.length) return c._locatario||c.locatario||'—';
-          return inqs.map(cp => {
-            const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
-            return p ? `<span onclick="openEditPersona(${p.id}, ${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.88rem" title="Editar">${formatNombrePersona(p)}</span>` : '—';
-          }).join(', ');
-        })()
-      }</span></div>
-      ${(() => {
-        const gars = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'garante');
-        if (!gars.length) return '';
-        return `<div class="detail-item"><label>Garante/s</label><span>${gars.map(cp => {
-          const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
-          return p ? `<span onclick="openEditPersona(${p.id}, ${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.88rem" title="Editar">${formatNombrePersona(p)}</span>` : '—';
-        }).join(', ')}</span></div>`;
-      })()}
+      <div class="detail-item"><label>Propietario/s</label><span>${c._locador||c.locador||'—'}</span></div>
+      <div class="detail-item"><label>Inquilino/s</label><span>${c._locatario||c.locatario||'—'}</span></div>
       <div class="detail-item"><label>Vigencia</label><span>${formatDate(c.vigencia_desde,true)} → ${formatDate(c.vigencia_hasta,true)}</span></div>
       <div class="detail-item"><label>Tipo</label><span>${normTipo(c.tipo_inmueble)}</span></div>
       <div class="detail-item"><label>Actualización</label><span>${c.periodicidad_actualizacion||'—'} ${c.indice_actualizacion?'· '+c.indice_actualizacion:''}</span></div>
@@ -1371,6 +1353,7 @@ function getEstadoLabel(p) {
 function renderGrilla(c) {
   // Render honorarios row above grid
   const honorariosRowEl = document.getElementById('honorarios-row');
+  console.log('honorarios row:', honorariosRowEl ? 'found' : 'NOT FOUND', 'DB_GASTOS_CUOTAS:', DB_GASTOS_CUOTAS.length, 'for contrato', c.id, ':', DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id).length);
   if (honorariosRowEl) {
     const cuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id);
     if (cuotas.length) {
@@ -1537,6 +1520,18 @@ async function editarMesConSolapa(hoja, contratoId, mesPreseleccionado, solapa) 
 function calcularTotal(p, extras) {
   const totalExtras = (extras||[]).reduce((s,e)=>s+(parseFloat(e.importe)||0),0);
   return (p.importe_alquiler||0)+(p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0)+totalExtras;
+}
+
+async function actualizarCampo(pagoId, campo, valor) {
+  const val = parseFloat(valor)||0;
+  try {
+    await sbPatch('pagos', pagoId, { [campo]: val });
+    const p = pagosActuales.find(x=>x.id===pagoId);
+    if (p) {
+      p[campo] = val;
+      await recalcularFilaPago(pagoId);
+    }
+  } catch(e) { toast('Error al guardar: '+e.message,'error'); }
 }
 
 async function recalcularFilaPago(pagoId) {
@@ -2213,7 +2208,7 @@ async function cargarListaServicios(filtro='') {
     const campo = `monto_${srv}`;
     // Get ALL contracts with this service (both loaded and not loaded)
     const todosConServicio = DB.contratos.filter(c => {
-      if (getEstado(c) !== 'vigente') return false;
+      if (getEstado(c) === 'rescindido') return false;
       const servicios = (c.servicios_inquilino||'').toLowerCase();
       if (!servicios.includes(srv)) return false;
       if (filtro && !(c.titulo||c.hoja||'').toLowerCase().includes(filtro)) return false;
@@ -2333,6 +2328,8 @@ async function cargarListaServicios(filtro='') {
         </div>`;
       }).join('');
     };
+
+
 
     // Build cargados HTML
     // Build cargados HTML - grouped by nro (same logic as sinCargar)
@@ -3571,6 +3568,10 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     }
   }
 
+
+
+
+
   // Calculate pending items for recibo
   const orden2 = ['alquiler','epe','agua','tgiu','seguro','internet','expensas'];
   const labels2 = {alquiler:'Alquiler',epe:'EPE',agua:'Agua',tgiu:'TGIU',seguro:'Seguro',internet:'Internet',expensas:'Expensas'};
@@ -3875,6 +3876,42 @@ function verReporteTotales() {
 }
 
 
+function exportarReporteTotalCSV() {
+  const rows = [];
+  rows.push(['Contrato','Propietario','Inquilino','Total facturado','Total cobrado','Saldo pendiente','Estado']);
+  DB.contratos.forEach(c => {
+    const pagos = DB.pagos.filter(p => p.hoja===c.hoja && p.mes && p.mes.substring(0,7)<=TODAY.substring(0,7));
+    const totalFacturado = pagos.reduce((s,p)=>s+(p.total||0),0);
+    const totalCobrado = pagos.reduce((s,p)=>s+((p.total||0)-(p.saldo||0)),0);
+    const saldo = pagos.reduce((s,p)=>s+(p.saldo||0),0);
+    rows.push([c.titulo||c.hoja, c.locador||'', c.locatario||'', totalFacturado, totalCobrado, saldo, getEstado(c)]);
+  });
+  const csv = rows.map(r => r.map(v => '"'+String(v).replace(/"/g,'\"\"')+'"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
+  a.download = `reporte-total-${TODAY.substring(0,10)}.csv`;
+  a.click();
+}
+
+
+function exportarInformeCSV() {
+  const rows = window._informeRows;
+  if (!rows?.length) { toast('Generá el informe primero','error'); return; }
+  const headers = ['Contrato','Total mes','Abonado','Saldo','Comisión','EPE','Agua','TGIU','Seguro','Extras'];
+  const csvRows = [headers.join(',')];
+  rows.forEach(r => {
+    csvRows.push([
+      r.p.hoja,
+      r.p.total||0, (r.abonado||0), (r.saldo||0), (r.comision||0),
+      r.p.monto_epe||0, r.p.monto_agua||0, r.p.monto_tgiu||0, r.p.monto_seguro||0,
+      r.extrasInqTotal||0
+    ].join(','));
+  });
+  const blob = new Blob([csvRows.join('\n')], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=`informe_${window._informeMesKey}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
 
 async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
   const mes = mesKey+'-01';
@@ -4732,8 +4769,7 @@ async function guardarContrato() {
 
   try {
     const r = await sbPost('contratos', body);
-    const nuevoContrato = Array.isArray(r) ? r[0] : r;
-    if (!nuevoContrato?.id) { toast('Error: no se recibió el ID del contrato nuevo','error'); return; }
+    const nuevoContrato = r[0];
     toast('Contrato guardado ✓');
 
     // Save contrato_personas relationships
@@ -4754,7 +4790,6 @@ async function guardarContrato() {
     // Auto-generate all months in vigencia as empty pagos
     if (vigDesde && vigHasta && nuevoContrato) {
       const mesesGenerados = [];
-      const importeInicial = parseFloat(document.getElementById('f-importe-inicial')?.value)||0;
       let [gsy, gsm] = vigDesde.substring(0,7).split('-').map(Number);
       const [gey, gem] = vigHasta.substring(0,7).split('-').map(Number);
       while (gsy < gey || (gsy === gey && gsm <= gem)) {
@@ -4763,24 +4798,20 @@ async function guardarContrato() {
           hoja: titulo,
           mes: mesStr,
           corresponde_a_mes: mesStr,
-          importe_alquiler: importeInicial,
-          total: importeInicial,
-          saldo: importeInicial,
+          importe_alquiler: 0,
+          total: 0,
+          saldo: 0,
           pagado: '0'
         });
         gsm++;
         if (gsm > 12) { gsm = 1; gsy++; }
       }
-      if (mesesGenerados.length === 0) {
-        toast('Advertencia: no se generaron meses (verificá las fechas de vigencia)', 'error');
-      } else {
-        // Insert in batches of 50
-        for (let i=0; i<mesesGenerados.length; i+=50) {
-          const batch = mesesGenerados.slice(i, i+50);
-          await sbPost('pagos', batch);
-        }
-        toast(`${mesesGenerados.length} meses generados ✓`);
+      // Insert in batches of 50
+      for (let i=0; i<mesesGenerados.length; i+=50) {
+        const batch = mesesGenerados.slice(i, i+50);
+        await sbPost('pagos', batch);
       }
+      toast(`${mesesGenerados.length} meses generados ✓`);
     }
 
     // Generate gastos inicio cuotas
@@ -4790,11 +4821,6 @@ async function guardarContrato() {
 
     closeModal();
     await loadAll();
-    // Find the saved contract by id or titulo after loadAll
-    const contratoGuardado = nuevoContrato?.id
-      ? DB.contratos.find(c => c.id === nuevoContrato.id)
-      : DB.contratos.find(c => c.hoja === titulo || c.titulo === titulo);
-    if (contratoGuardado) openContrato(contratoGuardado.id);
   } catch(e) { toast('Error al guardar: '+e.message,'error'); }
 }
 
@@ -5412,6 +5438,16 @@ async function openModal2ForContrato(contratoId) {
 // ============================================================
 // TABS
 // ============================================================
+function toggleSubmenu(id) {
+  const items = document.getElementById(id);
+  if (!items) return;
+  const isOpen = items.classList.contains('open');
+  items.classList.toggle('open', !isOpen);
+  const key = id.replace('submenu-', '');
+  const arrow = document.getElementById('arrow-' + key);
+  if (arrow) arrow.textContent = isOpen ? '▸' : '▾';
+}
+
 function toggleInformesMenu(e) {
   e.stopPropagation();
   const menu = document.getElementById('informes-menu');
@@ -5821,15 +5857,14 @@ function renderClientes() {
 function openPersona(id) {
   const p = DB_PERSONAS.find(x => x.id === id);
   if (!p) return;
-  const cpRows = DB_CONTRATO_PERSONAS.filter(x => x.persona_id === id);
-  const contratos = cpRows.map(cp => ({ ...DB.contratos.find(c => c.id === cp.contrato_id), _rol: cp.rol })).filter(c => c.id);
+  const contratos = DB.contratos.filter(c => c.propietario_id == id || c.inquilino_id == id);
+  const rol = getRolPersona(p);
 
   document.getElementById('modal-title').textContent = formatNombrePersona(p);
-  document.getElementById('modal-subtitle').textContent = contratos.length ? `${contratos.length} contrato${contratos.length!==1?'s':''}` : 'Sin contratos vinculados';
+  document.getElementById('modal-subtitle').textContent = getRolPersona(p) === '—' ? 'Sin contratos activos' : `${contratos.length} contrato${contratos.length!==1?'s':''}`;
   document.getElementById('modal-body').innerHTML = `
-    <div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;flex-wrap:wrap">
+    <div style="display:flex;gap:0.75rem;margin-bottom:1.5rem">
       <button class="btn btn-secondary" onclick="openEditPersona(${id})">✏️ Editar datos</button>
-      <button class="btn btn-secondary" style="color:#721c24;border-color:#721c24" onclick="eliminarPersona(${id})">🗑 Eliminar</button>
     </div>
     <div class="detail-grid">
       <div class="detail-item"><label>Apellido/s</label><span>${p.apellido||'—'}</span></div>
@@ -5839,16 +5874,17 @@ function openPersona(id) {
       <div class="detail-item"><label>Domicilio</label><span>${p.domicilio||'—'}</span></div>
       <div class="detail-item"><label>Teléfono</label><span>${p.telefono||'—'}</span></div>
       <div class="detail-item"><label>Email</label><span>${p.email||'—'}</span></div>
+      <div class="detail-item"><label>Rol</label><span>${getRolBadge(rol)}</span></div>
     </div>
     ${contratos.length > 0 ? `
       <div class="section-title">Contratos vinculados</div>
       ${contratos.map(c => `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="closeModal();openContrato(${c.id})">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openContrato(${c.id})">
           <div>
             <strong style="font-size:0.88rem">${c.titulo}</strong>
-            <div style="font-size:0.75rem;color:#888">${c._rol?.charAt(0).toUpperCase()+c._rol?.slice(1)||'—'} · ${formatDate(c.vigencia_desde,true)} — ${formatDate(c.vigencia_hasta,true)}</div>
+            <div style="font-size:0.75rem;color:#888">${c.propietario_id == id ? 'Propietario' : 'Inquilino'} · ${formatDate(c.vigencia_desde,true)} — ${formatDate(c.vigencia_hasta,true)}</div>
           </div>
-          <span class="badge ${getEstado(c)==='vigente'?'badge-green':getEstado(c)==='rescindido'?'badge-red':'badge-gray'}">${getEstado(c)}</span>
+          <span class="badge ${getEstado(c)==='vigente'?'badge-green':'badge-gray'}">${getEstado(c)}</span>
         </div>
       `).join('')}
     ` : ''}
@@ -5856,30 +5892,9 @@ function openPersona(id) {
   document.getElementById('modal-overlay').classList.add('open');
 }
 
-async function eliminarPersona(id) {
-  const p = DB_PERSONAS.find(x => x.id === id);
-  if (!p) return;
-  const cpRows = DB_CONTRATO_PERSONAS.filter(x => x.persona_id === id);
-  if (cpRows.length > 0) {
-    toast(`No se puede eliminar: está vinculada a ${cpRows.length} contrato/s`, 'error');
-    return;
-  }
-  if (!confirm(`¿Eliminar a ${formatNombrePersona(p)}? Esta acción no se puede deshacer.`)) return;
-  try {
-    await sbDelete('personas', id);
-    DB_PERSONAS = DB_PERSONAS.filter(x => x.id !== id);
-    toast('Persona eliminada ✓');
-    closeModal();
-    renderClientes();
-  } catch(e) { toast('Error: '+e.message, 'error'); }
-}
-
-function openEditPersona(id, contratoId) {
+function openEditPersona(id) {
   const p = DB_PERSONAS.find(x => x.id === id) || {};
   document.getElementById('modal-title').textContent = id ? 'Editar persona' : 'Nueva persona';
-  const volverOnclick = contratoId
-    ? `openContrato(${contratoId})`
-    : id ? `openPersona(${id})` : `closeModal()`;
   document.getElementById('modal-body').innerHTML = `
     <div class="form-grid">
       <div class="form-group"><label>Apellido/s</label><input id="ep-apellido" type="text" value="${p.apellido||''}"></div>
@@ -5891,8 +5906,8 @@ function openEditPersona(id, contratoId) {
       <div class="form-group"><label>Email</label><input id="ep-email" type="email" value="${p.email||''}"></div>
     </div>
     <div class="form-actions">
-      <button class="btn btn-secondary" onclick="${volverOnclick}">← Volver</button>
-      <button class="btn btn-primary" onclick="guardarPersona(${id||'null'}, ${contratoId||'null'})">Guardar</button>
+      <button class="btn btn-secondary" onclick="${id?'openPersona('+id+')':'closeModal()'}"}>← Volver</button>
+      <button class="btn btn-primary" onclick="guardarPersona(${id||'null'})">Guardar</button>
     </div>
   `;
   document.getElementById('modal-overlay').classList.add('open');
@@ -5900,7 +5915,7 @@ function openEditPersona(id, contratoId) {
 
 function openNuevaPersona() { openEditPersona(null); }
 
-async function guardarPersona(id, contratoId) {
+async function guardarPersona(id) {
   const body = {
     apellido: document.getElementById('ep-apellido').value.trim(),
     nombre: document.getElementById('ep-nombre').value.trim(),
@@ -5921,8 +5936,7 @@ async function guardarPersona(id, contratoId) {
     await loadPersonas();
     await loadAll();
     renderClientes();
-    if (contratoId) openContrato(contratoId);
-    else closeModal();
+    closeModal();
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
@@ -6220,6 +6234,8 @@ function selPersonaVinc(id, apellido, nombre) {
   document.getElementById('vinc-sugerencias').style.display='none';
   document.getElementById('vinc-busca').value = apellido + ', ' + nombre;
 }
+
+
 
 async function guardarVinculacion(usuarioId) {
   const personaId = document.getElementById('vinc-persona-id').value;
@@ -7013,6 +7029,36 @@ async function eliminarContrato(id) {
     await loadAll();
     renderContratos();
   } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function abrirCobroGastos(contratoId, hoja) {
+  const cuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).sort((a,b) => a.mes > b.mes ? 1 : -1);
+  if (!cuotas.length) { toast('No hay cuotas de gastos configuradas', 'error'); return; }
+  
+  document.getElementById('modal2-title').textContent = 'Cobro de gastos de inicio';
+  document.getElementById('modal2-subtitle').textContent = hoja;
+  document.getElementById('modal2-body').innerHTML = `
+    <div style="margin-bottom:1rem;font-size:0.85rem;color:#666">Tildá las cuotas cobradas o ingresá un importe parcial</div>
+    ${cuotas.map((g,i) => {
+      const mes = g.mes ? new Date(g.mes+'T00:00:00').toLocaleDateString('es-AR',{month:'long',year:'numeric'}) : '—';
+      const saldo = (g.monto_inquilino||0) - (parseFloat(g.pagado_inquilino)||0);
+      const pagado = parseFloat(g.pagado_inquilino)||0;
+      return `<div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0;border-bottom:1px solid #eee">
+        <input type="checkbox" id="gc-chk-${g.id}" ${saldo<=0?'checked disabled':'checked'} style="width:15px;height:15px" onchange="recalcCobroGastos()">
+        <span style="flex:1;font-size:0.85rem">Cuota ${i+1} — ${mes}</span>
+        <span style="font-size:0.75rem;color:#888">Debe: ${formatMoney(saldo)} ${pagado>0?'· Pagado: '+formatMoney(pagado):''}</span>
+        <input type="number" id="gc-imp-${g.id}" value="${saldo>0?saldo:0}" min="0" max="${saldo}"
+          style="width:120px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem;text-align:right"
+          oninput="recalcCobroGastos()" ${saldo<=0?'disabled':''}>
+      </div>`;
+    }).join('')}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem;padding-top:0.75rem;border-top:2px solid var(--border)">
+      <strong>Total a cobrar: <span id="gc-total" style="color:var(--green)">$0</span></strong>
+      <button class="btn btn-primary" onclick="confirmarCobroGastos(${contratoId})">✓ Registrar cobro</button>
+    </div>
+  `;
+  document.getElementById('modal2-overlay').classList.add('open');
+  recalcCobroGastos();
 }
 
 function recalcCobroGastos() {
