@@ -5608,13 +5608,22 @@ function srvInfSelAll(sel) {
 // Nivel 3 submenu: open on header hover, close on leave with small delay
 document.addEventListener('mouseover', e => {
   const header = e.target.closest('.submenu-nivel3 > .submenu-header');
-  if (header) { clearTimeout(header.parentElement._n3timer); header.parentElement.classList.add('n3-open'); }
+  if (header) {
+    const n3 = header.parentElement;
+    clearTimeout(n3._n3timer);
+    clearTimeout(n3._n3openTimer);
+    n3._n3openTimer = setTimeout(() => n3.classList.add('n3-open'), 250);
+  }
   const items = e.target.closest('.submenu-nivel3 > .submenu-items');
-  if (items) { clearTimeout(items.parentElement._n3timer); }
+  if (items) {
+    clearTimeout(items.parentElement._n3timer);
+    clearTimeout(items.parentElement._n3openTimer);
+  }
 });
 document.addEventListener('mouseout', e => {
   const n3 = e.target.closest('.submenu-nivel3');
   if (n3 && !n3.contains(e.relatedTarget)) {
+    clearTimeout(n3._n3openTimer);
     n3._n3timer = setTimeout(() => n3.classList.remove('n3-open'), 120);
   }
 });
