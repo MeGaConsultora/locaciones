@@ -1226,8 +1226,8 @@ function renderGrilla(c) {
       if (saldoInq > 0 || saldoProp > 0) {
         honorariosRowEl.innerHTML = `<div style="background:#fffbea;border:1px solid #f0c040;border-radius:8px;padding:0.7rem 1rem;margin-bottom:0.75rem;font-size:0.82rem;display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">
           <strong>🏷 Honorarios pendientes</strong>
-          ${saldoInq > 0 ? `<span><strong>Inquilino:</strong> $${formatMoney(saldoInq)} (${cuotas.length} cuota/s de ${formatMoney(montoCuotaInq)})</span>` : ''}
-          ${saldoProp > 0 ? `<span><strong>Propietario:</strong> $${formatMoney(saldoProp)} (${cuotas.length} cuota/s de ${formatMoney(montoCuotaProp)})</span>` : ''}
+          ${saldoInq > 0 ? `<span><strong>Inquilino:</strong> ${formatMoney(saldoInq)} (${cuotas.length} cuota/s de ${formatMoney(montoCuotaInq)})</span>` : ''}
+          ${saldoProp > 0 ? `<span><strong>Propietario:</strong> ${formatMoney(saldoProp)} (${cuotas.length} cuota/s de ${formatMoney(montoCuotaProp)})</span>` : ''}
         </div>`;
       } else {
         honorariosRowEl.innerHTML = '';
