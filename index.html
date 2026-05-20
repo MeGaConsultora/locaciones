@@ -4753,6 +4753,7 @@ async function guardarContrato() {
     // Auto-generate all months in vigencia as empty pagos
     if (vigDesde && vigHasta && nuevoContrato) {
       const mesesGenerados = [];
+      const importeInicial = parseFloat(document.getElementById('f-importe-inicial')?.value)||0;
       let [gsy, gsm] = vigDesde.substring(0,7).split('-').map(Number);
       const [gey, gem] = vigHasta.substring(0,7).split('-').map(Number);
       while (gsy < gey || (gsy === gey && gsm <= gem)) {
@@ -4761,9 +4762,9 @@ async function guardarContrato() {
           hoja: titulo,
           mes: mesStr,
           corresponde_a_mes: mesStr,
-          importe_alquiler: 0,
-          total: 0,
-          saldo: 0,
+          importe_alquiler: importeInicial,
+          total: importeInicial,
+          saldo: importeInicial,
           pagado: '0'
         });
         gsm++;
@@ -4782,8 +4783,9 @@ async function guardarContrato() {
       await generarGastosCuotas(nuevoContrato.id, body);
     }
 
-    closeModal();
     await loadAll();
+    closeModal();
+    if (nuevoContrato) openContrato(nuevoContrato.id);
   } catch(e) { toast('Error al guardar: '+e.message,'error'); }
 }
 
