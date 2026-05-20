@@ -639,32 +639,39 @@ async function refreshAdminToken() {
   } catch(e) { console.error('Token refresh error:', e); return false; }
 }
 
-async function sbGet(table, params='') {
-  const headers = { ...HEADERS, 'Range': '0-9999', 'Prefer': 'count=none' };
-  let r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers });
+function esErrorJWT(status, texto) {
+  return status === 401 || status === 403
+    || (typeof texto === 'string' && (texto.includes('JWT expired') || texto.includes('PGRST303') || texto.includes('invalid claim')));
+}
+
+async function sbFetch(url, opts = {}) {
+  let r = await fetch(url, { ...opts, headers: { ...HEADERS, ...(opts.headers||{}) } });
   if (r.status === 401 || r.status === 403) {
     const ok = await refreshAdminToken();
-    if (ok) {
-      const headers2 = { ...HEADERS, 'Range': '0-9999', 'Prefer': 'count=none' };
-      r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers: headers2 });
-    }
+    if (!ok) { sesionExpirada(); throw new Error('sesion_expirada'); }
+    r = await fetch(url, { ...opts, headers: { ...HEADERS, ...(opts.headers||{}) } });
   }
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) {
+    const errText = await r.text();
+    if (esErrorJWT(r.status, errText)) { sesionExpirada(); throw new Error('sesion_expirada'); }
+    throw new Error(errText);
+  }
+  return r;
+}
+
+async function sbGet(table, params='') {
+  const r = await sbFetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers: { 'Range': '0-9999', 'Prefer': 'count=none' } });
   return r.json();
 }
 
 async function sbGetAll(table, params='') {
-  // Paginate by id to avoid missing records at page boundaries
   let all = [];
   let lastId = 0;
   const pageSize = 1000;
   while (true) {
-    // Remove any existing order from params and use id-based pagination
     const baseParams = params.replace(/&?order=[^&]*/g, '');
     const url = `${SB_URL}/rest/v1/${table}?${baseParams}&id=gt.${lastId}&order=id.asc&limit=${pageSize}`;
-    const headers = { ...HEADERS, 'Prefer': 'count=none' };
-    const r = await fetch(url, { headers });
-    if (!r.ok) throw new Error(await r.text());
+    const r = await sbFetch(url, { headers: { 'Prefer': 'count=none' } });
     const data = await r.json();
     if (!data.length) break;
     all = all.concat(data);
@@ -673,37 +680,25 @@ async function sbGetAll(table, params='') {
   }
   return all;
 }
+
 async function sbPost(table, body) {
-  let r = await fetch(`${SB_URL}/rest/v1/${table}`, { method:'POST', headers: HEADERS, body: JSON.stringify(body) });
-  if (r.status === 401 || r.status === 403) {
-    await refreshAdminToken();
-    r = await fetch(`${SB_URL}/rest/v1/${table}`, { method:'POST', headers: HEADERS, body: JSON.stringify(body) });
-  }
-  if (!r.ok) {
-    const errText = await r.text();
-    if (r.status === 401 || errText.includes('JWT expired') || errText.includes('PGRST303')) { sesionExpirada(); return {}; }
-    throw new Error(errText);
-  }
+  const r = await sbFetch(`${SB_URL}/rest/v1/${table}`, { method:'POST', body: JSON.stringify(body) });
   const text = await r.text();
   return text ? JSON.parse(text) : {};
 }
+
 async function sbPatch(table, id, body) {
-  let r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'PATCH', headers: HEADERS, body: JSON.stringify(body) });
-  if (r.status === 401 || r.status === 403) {
-    await refreshAdminToken();
-    r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'PATCH', headers: HEADERS, body: JSON.stringify(body) });
-  }
-  if (!r.ok) {
-    const errText = await r.text();
-    if (r.status === 401 || errText.includes('JWT expired') || errText.includes('PGRST303')) { sesionExpirada(); return {}; }
-    throw new Error(errText);
-  }
-  const text2 = await r.text();
-  return text2 ? JSON.parse(text2) : {};
+  const r = await sbFetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'PATCH', body: JSON.stringify(body) });
+  const text = await r.text();
+  return text ? JSON.parse(text) : {};
 }
+
 async function sbDelete(table, id) {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'DELETE', headers: HEADERS });
-  if (!r.ok) throw new Error(await r.text());
+  await sbFetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'DELETE' });
+}
+
+async function sbDeleteWhere(table, where) {
+  await sbFetch(`${SB_URL}/rest/v1/${table}?${where}`, { method:'DELETE' });
 }
 
 // ============================================================
@@ -1458,7 +1453,7 @@ async function actualizarExtra(extraId, campo, valor) {
 async function eliminarExtra(extraId, pagoId) {
   if (!confirm('¿Eliminar este concepto extra?')) return;
   try {
-    await fetch(`${SB_URL}/rest/v1/pagos_extras?id=eq.${extraId}`, { method:'DELETE', headers:HEADERS });
+    await sbDelete('pagos_extras', extraId);
     if (extrasActuales[pagoId]) extrasActuales[pagoId] = extrasActuales[pagoId].filter(e=>e.id!==extraId);
     const el = document.getElementById(`extra-item-${extraId}`);
     if (el) el.remove();
@@ -1524,7 +1519,7 @@ async function confirmarRescision(contratoId, hoja) {
     const mesRescision = fechaRescision.substring(0, 7); // YYYY-MM
     const pagosContrato = DB.pagos.filter(p => p.hoja === hoja && p.mes && p.mes.substring(0,7) > mesRescision);
     for (const p of pagosContrato) {
-      await fetch(`${SB_URL}/rest/v1/pagos?id=eq.${p.id}`, {method:'DELETE', headers:HEADERS});
+      await sbDelete('pagos', p.id);
     }
 
     toast('Contrato rescindido ✓');
@@ -3053,7 +3048,7 @@ function actualizarLabelsTipoExtra(id) {
 async function eliminarExtraGP(extraId, hoja, contratoId, mesKey, comisionPct) {
   if (!confirm('¿Eliminar este concepto?')) return;
   try {
-    await fetch(`${SB_URL}/rest/v1/pagos_extras?id=eq.${extraId}`, {method:'DELETE', headers:HEADERS});
+    await sbDelete('pagos_extras', extraId);
     document.getElementById(`gp-extra-${extraId}`)?.remove();
     toast('Concepto eliminado ✓');
   } catch(e) { toast('Error: '+e.message,'error'); }
@@ -4666,7 +4661,7 @@ async function actualizarContrato(id) {
       }
     }
     // Update contrato_personas - delete old and insert new
-    await fetch(`${SB_URL}/rest/v1/contrato_personas?contrato_id=eq.${id}`, {method:'DELETE', headers:HEADERS});
+    await sbDeleteWhere('contrato_personas', `contrato_id=eq.${id}`);
     for (let i=0; i<propIds.length; i++) {
       await sbPost('contrato_personas', {contrato_id:id, persona_id:propIds[i], rol:'propietario', orden:i+1});
     }
@@ -4764,7 +4759,7 @@ async function actualizarContrato(id) {
             for (const p of huerfanos) {
               // Only delete if empty (no imports loaded)
               if (!p.total || p.total === 0) {
-                await fetch(`${SB_URL}/rest/v1/pagos?id=eq.${p.id}`, {method:'DELETE', headers:HEADERS});
+                await sbDelete('pagos', p.id);
               }
             }
             toast('Meses fuera de vigencia eliminados ✓');
@@ -6238,7 +6233,7 @@ async function confirmarImportarPDF() {
           await sbPatch('pagos', p.id, patch);
     
       if (window._pdfFileName) {
-        const delResp = await fetch(`${SB_URL}/rest/v1/pagos_pdf?pago_id=eq.${p.id}&servicio=eq.${srv}`, { method: 'DELETE', headers: HEADERS });
+        await sbDeleteWhere('pagos_pdf', `pago_id=eq.${p.id}&servicio=eq.${srv}`);
               await sbPost('pagos_pdf', { pago_id: p.id, servicio: srv, pdf_path: window._pdfFileName, pdf_pagina: r.pagina });
             }
       cargados++;
@@ -6302,9 +6297,7 @@ async function generarGastosCuotas(contratoId, body) {
     return `${y}-${String(m).padStart(2,'0')}`;
   });
   const toDelete = existing.filter(r => !mesKeys.some(k => r.mes?.startsWith(k)));
-  if (toDelete.length) await Promise.all(toDelete.map(r => 
-    fetch(`${SB_URL}/rest/v1/gastos_inicio_cuotas?id=eq.${r.id}`, {method:'DELETE', headers:HEADERS})
-  ));
+  if (toDelete.length) await Promise.all(toDelete.map(r => sbDelete('gastos_inicio_cuotas', r.id)));
   // Reload local cache so grid and GP reflect new values immediately
   try { DB_GASTOS_CUOTAS = await sbGet('gastos_inicio_cuotas', 'select=*&order=mes.asc&limit=5000'); } catch(e) {}
 }
@@ -6594,15 +6587,15 @@ async function eliminarContrato(id) {
   if (!confirm(`¿Eliminar el contrato "${c?.titulo||c?.hoja}"?\n\nSe eliminarán también todos sus pagos, extras y cuotas de gastos. Esta acción no se puede deshacer.`)) return;
   try {
     // Delete related records first
-    await fetch(`${SB_URL}/rest/v1/gastos_inicio_cuotas?contrato_id=eq.${id}`, {method:'DELETE', headers:HEADERS});
-    await fetch(`${SB_URL}/rest/v1/contrato_personas?contrato_id=eq.${id}`, {method:'DELETE', headers:HEADERS});
+    await sbDeleteWhere('gastos_inicio_cuotas', `contrato_id=eq.${id}`);
+    await sbDeleteWhere('contrato_personas', `contrato_id=eq.${id}`);
     const pagos = DB.pagos.filter(p => p.hoja === c?.hoja);
     if (pagos.length) {
       const pagoIds = pagos.map(p => p.id).join(',');
-      await fetch(`${SB_URL}/rest/v1/pagos_extras?pago_id=in.(${pagoIds})`, {method:'DELETE', headers:HEADERS});
+      await sbDeleteWhere('pagos_extras', `pago_id=in.(${pagoIds})`);
     }
-    await fetch(`${SB_URL}/rest/v1/pagos?hoja=eq.${encodeURIComponent(c?.hoja||'')}`, {method:'DELETE', headers:HEADERS});
-    await fetch(`${SB_URL}/rest/v1/contratos?id=eq.${id}`, {method:'DELETE', headers:HEADERS});
+    await sbDeleteWhere('pagos', `hoja=eq.${encodeURIComponent(c?.hoja||'')}`);
+    await sbDelete('contratos', id);
     toast('Contrato eliminado ✓');
     closeModal();
     await loadAll();
