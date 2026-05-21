@@ -2436,9 +2436,9 @@ async function cargarListaServicios(filtro='') {
             <div style="font-size:0.75rem;color:#666;margin-top:2px">${detalle}</div>
           </div>
           <div>
-            <input type="number" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}"
+            <input type="text" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}"
               value="${totalBoleta}" data-original="${totalBoleta}"
-              placeholder="$ importe cuota" style="width:150px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem" type="text">
+              placeholder="$ importe cuota" style="width:150px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem">
             <div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Total boleta: ${formatMoney(totalBoleta)}</div>
           </div>
         </div>
