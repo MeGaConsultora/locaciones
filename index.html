@@ -248,10 +248,10 @@
   .solapa-panel.active { display:block; }
 
   /* GRILLA PAGOS ESTILO EXCEL */
-  .grid-table { width:100%; border-collapse:collapse; font-size:0.75rem; table-layout:fixed; }
-  .grid-table th { background:var(--ink); color:var(--cream); padding:6px 4px; text-align:left; font-size:0.62rem; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; position:sticky; top:0; z-index:2; overflow:hidden; text-overflow:ellipsis; }
+  .grid-table { width:max-content; border-collapse:collapse; font-size:0.82rem; }
+  .grid-table th { background:var(--ink); color:var(--cream); padding:6px 6px; text-align:left; font-size:0.68rem; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; position:sticky; top:0; z-index:2; }
   .grid-table th.r { text-align:right; }
-  .grid-table td { padding:3px 4px; border-bottom:1px solid #e8e4dc; border-right:1px solid #e8e4dc; vertical-align:middle; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .grid-table td { padding:3px 5px; border-bottom:1px solid #e8e4dc; border-right:1px solid #e8e4dc; vertical-align:middle; white-space:nowrap; }
   .grid-table td.num { text-align:right; white-space:nowrap; }
   .grid-table tr.row-futuro td { background:#f0f4ff; color:#555; }
   .grid-table tr.row-pagado td { background:#f0fff4; }
@@ -836,6 +836,18 @@ async function loadAll() {
 // ============================================================
 // HELPERS
 // ============================================================
+function ajustarZoomGrilla() {
+  const wrap = document.getElementById('grilla-zoom-wrap');
+  const table = wrap?.querySelector('.grid-table');
+  if (!wrap || !table) return;
+  table.style.zoom = '';
+  const available = wrap.clientWidth;
+  const natural = table.scrollWidth;
+  if (natural > available) {
+    table.style.zoom = String(available / natural);
+  }
+}
+
 function parseMonto(val) {
   if (!val && val !== 0) return 0;
   const s = String(val).trim();
@@ -1495,7 +1507,7 @@ function renderGrilla(c) {
   }).join('');
 
   document.getElementById('grilla-container').innerHTML = `
-    <div style="max-height:55vh;overflow-y:auto;overflow-x:hidden">
+    <div id="grilla-zoom-wrap" style="max-height:55vh;overflow-y:auto;overflow-x:hidden">
       <table class="grid-table">
         <thead><tr>
           <th>Mes</th>
@@ -1519,6 +1531,7 @@ function renderGrilla(c) {
       </table>
     </div>
   `;
+  setTimeout(ajustarZoomGrilla, 50);
 }
 
 function verDetallePago(pagoId, hoja) {
@@ -1568,6 +1581,7 @@ function verDetallePago(pagoId, hoja) {
     </div>
   `;
   document.getElementById('grilla-container').appendChild(panel);
+  setTimeout(ajustarZoomGrilla, 50);
 }
 
 async function editarMes(hoja, contratoId, mesPreseleccionado) {
