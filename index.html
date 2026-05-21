@@ -363,6 +363,7 @@
 <nav>
   <button class="tab-btn active" onclick="showTab('dashboard',this)">📊 Dashboard</button>
   <button class="tab-btn" onclick="showTab('contratos',this)">📋 Contratos</button>
+  <button class="tab-btn" onclick="showTab('consorcios',this)">🏢 Consorcios</button>
   <div class="tab-dropdown" id="dropdown-informes">
     <button class="tab-btn" onclick="toggleInformesMenu(event)">⚙️ Gestión ▾</button>
     <div class="tab-dropdown-menu" id="informes-menu" style="display:none">
@@ -512,6 +513,15 @@
     <div id="srv-inf-contenido">
       <div class="empty-state"><div class="icon">📊</div><p>Seleccioná año y mes</p></div>
     </div>
+  </div>
+
+  <!-- CONSORCIOS -->
+  <div id="panel-consorcios" class="panel" style="display:none">
+    <div class="toolbar" style="margin-bottom:1rem;gap:0.75rem;flex-wrap:wrap">
+      <strong style="font-size:0.95rem">🏢 Consorcios</strong>
+      <button class="btn btn-primary" style="font-size:0.82rem" onclick="abrirFormConsorcio()">+ Nuevo consorcio</button>
+    </div>
+    <div id="consorcios-lista"></div>
   </div>
 
   <!-- NUMERACIÓN DE SERVICIOS -->
@@ -789,6 +799,10 @@ async function sbDeleteWhere(table, where) {
 let DB = { contratos: [], pagos: [] };
 let DB_INMUEBLES = [];
 let DB_GASTOS_CUOTAS = [];
+let DB_CONSORCIOS = [];
+let DB_CONSORCIO_CONTRATOS = [];
+let DB_CONSORCIO_GASTOS = [];
+let DB_CONSORCIO_PAGOS = [];
 const PG = { contratos:1, pagos:1, pendientes:1 };
 const PER_PAGE = 25;
 let sortState = { contratos:{col:'titulo',dir:'asc'}, pagos:{col:'hoja',dir:'asc'} };
@@ -814,6 +828,14 @@ async function loadAll() {
     try {
       DB_INMUEBLES = await sbGet('inmuebles', 'select=*&order=localidad.asc,calle.asc&limit=2000');
     } catch(e) { console.error('Error loading inmuebles:', e); DB_INMUEBLES = []; }
+    try {
+      [DB_CONSORCIOS, DB_CONSORCIO_CONTRATOS, DB_CONSORCIO_GASTOS, DB_CONSORCIO_PAGOS] = await Promise.all([
+        sbGet('consorcios', 'select=*&order=nombre.asc'),
+        sbGet('consorcio_contratos', 'select=*'),
+        sbGet('consorcio_gastos', 'select=*&order=mes.desc&limit=2000'),
+        sbGet('consorcio_pagos', 'select=*&limit=5000')
+      ]);
+    } catch(e) { console.error('Error loading consorcios:', e); }
     document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR', {timeZone:'America/Argentina/Buenos_Aires'})}`;
     populateFiltros();
     await loadPersonas();
@@ -5624,7 +5646,7 @@ function selectInforme(tipo) {
   document.getElementById('informes-menu').style.display = 'none';
 
   // First hide ALL main panels (same as showTab)
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','srv-informe','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -5642,6 +5664,7 @@ function selectInforme(tipo) {
   else if (tipo === 'vencimientos') panelId = 'panel-vencimientos';
   else if (tipo === 'recibos-emitir') panelId = 'panel-recibos-emitir';
   else if (tipo === 'numeracion-servicios') panelId = 'panel-numeracion-servicios';
+  else if (tipo === 'consorcios') panelId = 'panel-consorcios';
   else if (tipo === 'srv-epe' || tipo === 'srv-agua' || tipo === 'srv-tgiu') panelId = 'panel-srv-informe';
 
   const el = document.getElementById(panelId);
@@ -5652,6 +5675,7 @@ function selectInforme(tipo) {
   else if (tipo === 'reporte-total') renderReporteTotal();
   else if (tipo === 'recibos-emitir') { populateRecibosAnios(); renderRecibosEmitir(); }
   else if (tipo === 'numeracion-servicios') renderNumeracionServicios();
+  else if (tipo === 'consorcios') renderConsorcios();
   else if (tipo === 'srv-epe' || tipo === 'srv-agua' || tipo === 'srv-tgiu') {
     window._srvInformeTipo = tipo;
     const labels = { 'srv-epe':'⚡ EPE a abonar', 'srv-agua':'💧 Agua a abonar', 'srv-tgiu':'🏛️ TGIU a abonar' };
@@ -5763,7 +5787,7 @@ function showTab(name, btn) {
   // Close Gestión dropdown
   document.getElementById('informes-menu').style.display = 'none';
   // Hide ALL panels using both class and inline style
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','srv-informe','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -5781,6 +5805,7 @@ function showTab(name, btn) {
   if (name === 'admin') loadUsuarios();
   if (name === 'clientes') renderClientes();
   if (name === 'contratos') renderContratos();
+  if (name === 'consorcios') renderConsorcios();
   if (name === 'informes') { populateInformeAnios(); document.getElementById('informes-menu').style.display = 'none'; }
   if (name === 'inmuebles') { if (!DB_INMUEBLES.length) loadAll().then(renderInmuebles); else renderInmuebles(); }
 }
@@ -6476,7 +6501,7 @@ document.addEventListener('visibilitychange', () => {
 // ============================================================
 // Initialize panel visibility
 (function() {
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','srv-informe','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) el.style.display = id === 'dashboard' ? 'block' : 'none';
@@ -7367,6 +7392,192 @@ function abrirContratoDesdeNumeracion(contratoId) {
     restore: () => selectInforme('numeracion-servicios')
   };
   openContrato(contratoId);
+}
+
+// ============================================================
+// CONSORCIOS
+// ============================================================
+function renderConsorcios() {
+  const cont = document.getElementById('consorcios-lista');
+  if (!cont) return;
+  if (!DB_CONSORCIOS.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">🏢</div><p>No hay consorcios creados</p></div>';
+    return;
+  }
+  cont.innerHTML = DB_CONSORCIOS.map(cs => {
+    const miembros = DB_CONSORCIO_CONTRATOS.filter(x => x.consorcio_id === cs.id);
+    const totalPct = miembros.reduce((s,m) => s + (m.porcentaje||0), 0);
+    const pctOk = Math.abs(totalPct - 100) < 1;
+    const srvs = ['epe','agua','tgiu','seguro','internet','expensas'].filter(s => cs['nro_'+s]).map(s => `${s.toUpperCase()}: ${cs['nro_'+s]}`).join(' · ');
+    return `<div style="background:white;border-radius:10px;padding:1rem 1.25rem;margin-bottom:0.75rem;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:700;font-size:0.95rem">${cs.nombre}</div>
+          ${cs.descripcion ? `<div style="font-size:0.78rem;color:#888;margin-top:2px">${cs.descripcion}</div>` : ''}
+          ${srvs ? `<div style="font-size:0.75rem;color:#666;margin-top:3px">📋 ${srvs}</div>` : ''}
+          <div style="font-size:0.75rem;margin-top:4px;color:${pctOk?'#2d7a4f':'#c8483a'}">
+            ${miembros.length} contrato/s · ${totalPct.toFixed(0)}%${!pctOk?' ⚠ no suma 100%':''}
+          </div>
+        </div>
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn btn-secondary" style="font-size:0.78rem" onclick="abrirFormConsorcio(${cs.id})">✏️ Editar</button>
+          <button class="btn btn-secondary" style="font-size:0.78rem;color:#721c24;border-color:#721c24" onclick="eliminarConsorcio(${cs.id})">🗑 Eliminar</button>
+        </div>
+      </div>
+      ${miembros.length ? `
+      <div style="margin-top:0.75rem;border-top:1px solid #f0ece4;padding-top:0.75rem;display:flex;flex-direction:column;gap:0.4rem">
+        ${miembros.map(m => {
+          const c = DB.contratos.find(x => x.id === m.contrato_id);
+          if (!c) return '';
+          return `<div style="display:flex;align-items:center;gap:0.75rem;font-size:0.82rem">
+            <span onclick="abrirContratoDesdeNumeracion(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;flex:1">${c.titulo||c.hoja}</span>
+            <span style="color:#888">${m.porcentaje}%</span>
+          </div>`;
+        }).join('')}
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function abrirFormConsorcio(id) {
+  const cs = id ? DB_CONSORCIOS.find(x => x.id === id) : null;
+  const miembros = id ? DB_CONSORCIO_CONTRATOS.filter(x => x.consorcio_id === id) : [];
+  document.getElementById('modal-title').textContent = cs ? 'Editar consorcio' : 'Nuevo consorcio';
+  document.getElementById('modal-subtitle').textContent = '';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-grid" style="margin-bottom:1rem">
+      <div class="form-group" style="grid-column:1/-1"><label>Nombre</label><input id="cs-nombre" type="text" value="${cs?.nombre||''}" placeholder="Ej: Galería San Martín"></div>
+      <div class="form-group" style="grid-column:1/-1"><label>Descripción</label><input id="cs-desc" type="text" value="${cs?.descripcion||''}" placeholder="Opcional"></div>
+    </div>
+    <div class="section-title" style="margin:0.75rem 0 0.5rem">Números de cuenta</div>
+    <div class="form-grid" style="margin-bottom:1rem">
+      ${['epe','agua','tgiu','seguro','internet','expensas'].map(s => `
+        <div class="form-group"><label>${s.toUpperCase()}</label><input id="cs-nro-${s}" type="text" value="${cs?.['nro_'+s]||''}" placeholder="N° cuenta"></div>
+      `).join('')}
+    </div>
+    <div class="section-title" style="margin:0.75rem 0 0.5rem">Contratos miembro</div>
+    <div id="cs-miembros-lista" style="margin-bottom:0.75rem">
+      ${miembros.map(m => {
+        const c = DB.contratos.find(x => x.id === m.contrato_id);
+        return c ? `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid #f0ece4">
+          <span onclick="abrirContratoDesdeNumeracion(${c.id})" style="flex:1;cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.85rem">${c.titulo||c.hoja}</span>
+          <input type="number" value="${m.porcentaje}" min="0" max="100" step="0.01" id="cs-pct-${m.contrato_id}"
+            style="width:80px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem;text-align:right" placeholder="%">
+          <span style="font-size:0.75rem;color:#888">%</span>
+          <button onclick="this.closest('div').remove();actualizarTotalPct()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer">✕</button>
+        </div>` : '';
+      }).join('')}
+    </div>
+    <div id="cs-pct-total" style="font-size:0.82rem;margin-bottom:0.75rem"></div>
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
+      <select id="cs-agregar-sel" style="flex:1;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem">
+        <option value="">— Agregar contrato —</option>
+        ${DB.contratos.filter(c => getEstado(c)==='vigente' && !miembros.find(m=>m.contrato_id===c.id)).sort((a,b)=>(a.titulo||'').localeCompare(b.titulo||'')).map(c=>`<option value="${c.id}">${c.titulo||c.hoja}</option>`).join('')}
+      </select>
+      <button class="btn btn-secondary" style="font-size:0.82rem" onclick="agregarMiembroConsorcio()">+ Agregar</button>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarConsorcio(${id||'null'})">Guardar</button>
+    </div>
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
+  actualizarTotalPct();
+}
+
+function actualizarTotalPct() {
+  const divs = document.querySelectorAll('#cs-miembros-lista > div');
+  let total = 0;
+  divs.forEach(div => {
+    const inp = div.querySelector('input[type="number"]');
+    if (inp) total += parseFloat(inp.value)||0;
+  });
+  const el = document.getElementById('cs-pct-total');
+  if (el) el.innerHTML = `<span style="color:${Math.abs(total-100)<1?'#2d7a4f':'#c8483a'};font-weight:600">Total: ${total.toFixed(1)}%</span> ${Math.abs(total-100)<1?'✓':'⚠ debe ser 100%'}`;
+}
+
+function agregarMiembroConsorcio() {
+  const sel = document.getElementById('cs-agregar-sel');
+  const contratoId = parseInt(sel.value);
+  if (!contratoId) return;
+  const c = DB.contratos.find(x => x.id === contratoId);
+  if (!c) return;
+  const lista = document.getElementById('cs-miembros-lista');
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid #f0ece4';
+  div.innerHTML = `
+    <span onclick="abrirContratoDesdeNumeracion(${c.id})" style="flex:1;cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.85rem">${c.titulo||c.hoja}</span>
+    <input type="number" value="100" min="0" max="100" step="0.01" id="cs-pct-${c.id}"
+      style="width:80px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem;text-align:right" oninput="actualizarTotalPct()" placeholder="%">
+    <span style="font-size:0.75rem;color:#888">%</span>
+    <button onclick="this.closest('div').remove();actualizarTotalPct()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer">✕</button>
+  `;
+  lista.appendChild(div);
+  // Remove from select
+  sel.querySelector(`option[value="${contratoId}"]`)?.remove();
+  sel.value = '';
+  actualizarTotalPct();
+}
+
+async function guardarConsorcio(id) {
+  const nombre = document.getElementById('cs-nombre').value.trim();
+  if (!nombre) { toast('El nombre es obligatorio', 'error'); return; }
+  const body = {
+    nombre,
+    descripcion: document.getElementById('cs-desc').value.trim() || null,
+    nro_epe: document.getElementById('cs-nro-epe').value.trim() || null,
+    nro_agua: document.getElementById('cs-nro-agua').value.trim() || null,
+    nro_tgiu: document.getElementById('cs-nro-tgiu').value.trim() || null,
+    nro_seguro: document.getElementById('cs-nro-seguro').value.trim() || null,
+    nro_internet: document.getElementById('cs-nro-internet').value.trim() || null,
+    nro_expensas: document.getElementById('cs-nro-expensas').value.trim() || null,
+  };
+  try {
+    let csId = id;
+    if (id) {
+      await sbPatch('consorcios', id, body);
+      const cs = DB_CONSORCIOS.find(x => x.id === id);
+      if (cs) Object.assign(cs, body);
+    } else {
+      const r = await sbPost('consorcios', body);
+      const nuevo = Array.isArray(r) ? r[0] : r;
+      csId = nuevo.id;
+      DB_CONSORCIOS.push({ ...body, id: csId });
+    }
+    // Update miembros
+    await sbDeleteWhere('consorcio_contratos', `consorcio_id=eq.${csId}`);
+    DB_CONSORCIO_CONTRATOS = DB_CONSORCIO_CONTRATOS.filter(x => x.consorcio_id !== csId);
+    const divs = document.querySelectorAll('#cs-miembros-lista > div');
+    for (const div of divs) {
+      const span = div.querySelector('span[onclick]');
+      const inp = div.querySelector('input[type="number"]');
+      if (!span || !inp) continue;
+      const onclick = span.getAttribute('onclick');
+      const match = onclick.match(/\d+/);
+      if (!match) continue;
+      const contratoId = parseInt(match[0]);
+      const pct = parseFloat(inp.value)||0;
+      const row = await sbPost('consorcio_contratos', { consorcio_id: csId, contrato_id: contratoId, porcentaje: pct });
+      const newRow = Array.isArray(row) ? row[0] : row;
+      if (newRow?.id) DB_CONSORCIO_CONTRATOS.push(newRow);
+    }
+    toast('Consorcio guardado ✓');
+    closeModal();
+    renderConsorcios();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function eliminarConsorcio(id) {
+  const cs = DB_CONSORCIOS.find(x => x.id === id);
+  if (!confirm(`¿Eliminar el consorcio "${cs?.nombre}"?\nSe eliminarán todos los gastos y pagos asociados.`)) return;
+  try {
+    await sbDelete('consorcios', id);
+    DB_CONSORCIOS = DB_CONSORCIOS.filter(x => x.id !== id);
+    DB_CONSORCIO_CONTRATOS = DB_CONSORCIO_CONTRATOS.filter(x => x.consorcio_id !== id);
+    DB_CONSORCIO_GASTOS = DB_CONSORCIO_GASTOS.filter(x => x.consorcio_id !== id);
+    toast('Consorcio eliminado ✓');
+    renderConsorcios();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
 function formatDireccion(inm, short=false) {
