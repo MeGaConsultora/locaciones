@@ -146,7 +146,11 @@
   tbody tr:hover { background:#faf7f2; }
   td { padding:0.75rem 1rem; font-size:0.875rem; vertical-align:middle; }
   .num { text-align:right; }
-  td.num { font-family:'Roboto Mono','Courier New',monospace; font-size:0.82rem; }
+  td.num, td.r,
+  .stat-val, .stat-card .stat-val,
+  .cobro-total, #cobro-total-val, #cobro-total,
+  .detail-item span { font-family:'Roboto Mono','Courier New',monospace; }
+  td.num { font-size:0.82rem; }
   .money { font-family:'Roboto Mono','Courier New',monospace; }
 
   .badge { display:inline-block; padding:2px 10px; border-radius:100px; font-size:0.7rem; font-weight:600; letter-spacing:0.04em; }
@@ -965,7 +969,7 @@ function calcularIntereses(alquiler, fechaVencStr, fechaPagoStr, interesdiario) 
 
 function formatMoney(n) {
   if (n == null || isNaN(n)) return '—';
-  return '<span style="font-family:\'Roboto Mono\',\'Courier New\',monospace">' + '$ ' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</span>';
+  return '$ ' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function normTipo(t) {
   if (!t || t==='nan') return 'Otro';
