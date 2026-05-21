@@ -840,12 +840,16 @@ function ajustarZoomGrilla() {
   const wrap = document.getElementById('grilla-zoom-wrap');
   const table = wrap?.querySelector('.grid-table');
   if (!wrap || !table) return;
-  table.style.zoom = '';
-  const available = wrap.clientWidth;
-  const natural = table.scrollWidth;
-  if (natural > available) {
-    table.style.zoom = String(available / natural);
-  }
+  table.style.zoom = '1';
+  requestAnimationFrame(() => {
+    const available = wrap.clientWidth;
+    const natural = table.scrollWidth;
+    if (natural > available + 4) {
+      table.style.zoom = String(available / natural);
+    } else {
+      table.style.zoom = '1';
+    }
+  });
 }
 
 function parseMonto(val) {
@@ -1531,7 +1535,7 @@ function renderGrilla(c) {
       </table>
     </div>
   `;
-  setTimeout(ajustarZoomGrilla, 50);
+  setTimeout(ajustarZoomGrilla, 200);
 }
 
 function verDetallePago(pagoId, hoja) {
@@ -1581,7 +1585,7 @@ function verDetallePago(pagoId, hoja) {
     </div>
   `;
   document.getElementById('grilla-container').appendChild(panel);
-  setTimeout(ajustarZoomGrilla, 50);
+  setTimeout(ajustarZoomGrilla, 200);
 }
 
 async function editarMes(hoja, contratoId, mesPreseleccionado) {
