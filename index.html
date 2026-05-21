@@ -519,6 +519,7 @@
   <div id="panel-consorcios" class="panel" style="display:none">
     <div class="toolbar" style="margin-bottom:1rem;gap:0.75rem;flex-wrap:wrap">
       <strong style="font-size:0.95rem">🏢 Consorcios</strong>
+      <input type="text" class="search-input" id="cs-buscar" placeholder="Buscar consorcio..." style="width:220px" oninput="renderConsorcios()">
       <button class="btn btn-primary" style="font-size:0.82rem" onclick="abrirFormConsorcio()">+ Nuevo consorcio</button>
     </div>
     <div id="consorcios-lista"></div>
@@ -7394,17 +7395,33 @@ function abrirContratoDesdeNumeracion(contratoId) {
   openContrato(contratoId);
 }
 
+function abrirContratoDesdeConsorcios(contratoId) {
+  document.getElementById('modal-overlay').classList.remove('open');
+  window._volverAServiciosModal = {
+    titulo: '🏢 Consorcios',
+    restore: () => showTab('consorcios', document.querySelector('.tab-btn[onclick*="consorcios"]'))
+  };
+  openContrato(contratoId);
+}
+
 // ============================================================
 // CONSORCIOS
 // ============================================================
 function renderConsorcios() {
   const cont = document.getElementById('consorcios-lista');
   if (!cont) return;
-  if (!DB_CONSORCIOS.length) {
-    cont.innerHTML = '<div class="empty-state"><div class="icon">🏢</div><p>No hay consorcios creados</p></div>';
+  const q = (document.getElementById('cs-buscar')?.value || '').toLowerCase().trim();
+  let lista = DB_CONSORCIOS;
+  if (q) lista = lista.filter(cs =>
+    (cs.nombre||'').toLowerCase().includes(q) ||
+    (cs.direccion||'').toLowerCase().includes(q) ||
+    (cs.descripcion||'').toLowerCase().includes(q)
+  );
+  if (!lista.length) {
+    cont.innerHTML = `<div class="empty-state"><div class="icon">🏢</div><p>${q ? 'Sin resultados' : 'No hay consorcios creados'}</p></div>`;
     return;
   }
-  cont.innerHTML = DB_CONSORCIOS.map(cs => {
+  cont.innerHTML = lista.map(cs => {
     const miembros = DB_CONSORCIO_CONTRATOS.filter(x => x.consorcio_id === cs.id);
     const totalPct = miembros.reduce((s,m) => s + (m.porcentaje||0), 0);
     const pctOk = Math.abs(totalPct - 100) < 1;
@@ -7431,7 +7448,7 @@ function renderConsorcios() {
           const c = DB.contratos.find(x => x.id === m.contrato_id);
           if (!c) return '';
           return `<div style="display:flex;align-items:center;gap:0.75rem;font-size:0.82rem">
-            <span onclick="abrirContratoDesdeNumeracion(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;flex:1">${c.titulo||c.hoja}</span>
+            <span onclick="abrirContratoDesdeConsorcios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;flex:1">${c.titulo||c.hoja}</span>
             <span style="color:#888">${m.porcentaje}%</span>
           </div>`;
         }).join('')}
@@ -7462,7 +7479,7 @@ function abrirFormConsorcio(id) {
       ${miembros.map(m => {
         const c = DB.contratos.find(x => x.id === m.contrato_id);
         return c ? `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid #f0ece4">
-          <span onclick="abrirContratoDesdeNumeracion(${c.id})" style="flex:1;cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.85rem">${c.titulo||c.hoja}</span>
+          <span onclick="abrirContratoDesdeConsorcios(${c.id})" style="flex:1;cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.85rem">${c.titulo||c.hoja}</span>
           <input type="number" value="${m.porcentaje}" min="0" max="100" step="0.01" id="cs-pct-${m.contrato_id}"
             style="width:80px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem;text-align:right" placeholder="%">
           <span style="font-size:0.75rem;color:#888">%</span>
@@ -7471,12 +7488,8 @@ function abrirFormConsorcio(id) {
       }).join('')}
     </div>
     <div id="cs-pct-total" style="font-size:0.82rem;margin-bottom:0.75rem"></div>
-    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;position:relative">
-      <input type="text" id="cs-agregar-input" placeholder="Buscar contrato para agregar..."
-        style="flex:1;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem"
-        oninput="buscarContratoConsorcio(this.value)" autocomplete="off">
-      <div id="cs-agregar-sugerencias" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid var(--border);border-radius:8px;max-height:200px;overflow-y:auto;z-index:300;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.1)"></div>
-    </div>
+    <div id="cs-miembros-agregar" style="margin-bottom:0.5rem"></div>
+    <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarContratoConsorcio()">+ Agregar contrato</button>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarConsorcio(${id||'null'})">Guardar</button>
@@ -7497,78 +7510,66 @@ function actualizarTotalPct() {
   if (el) el.innerHTML = `<span style="color:${Math.abs(total-100)<1?'#2d7a4f':'#c8483a'};font-weight:600">Total: ${total.toFixed(1)}%</span> ${Math.abs(total-100)<1?'✓':'⚠ debe ser 100%'}`;
 }
 
-function buscarContratoConsorcio(q) {
-  const sug = document.getElementById('cs-agregar-sugerencias');
+let _csChipCounter = 0;
+
+function agregarContratoConsorcio() {
+  const contenedor = document.getElementById('cs-miembros-agregar');
+  const idx = _csChipCounter++;
+  const div = document.createElement('div');
+  div.dataset.csChip = idx;
+  div.dataset.contratoId = '';
+  div.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.6rem 0.75rem;margin-bottom:0.4rem;display:flex;align-items:center;gap:0.5rem;position:relative';
+  div.innerHTML = `
+    <input type="text" placeholder="Buscar contrato..." style="flex:1;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem"
+      oninput="buscarContratoChip(this,${idx})">
+    <div id="cs-sug-${idx}" style="position:absolute;top:100%;left:0;right:40px;background:white;border:1px solid var(--border);border-radius:8px;max-height:180px;overflow-y:auto;z-index:300;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
+    <input type="number" value="100" min="0" max="100" step="0.01" id="cs-chipct-${idx}"
+      style="width:75px;padding:5px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem;text-align:right" oninput="actualizarTotalPct()" placeholder="%">
+    <span style="font-size:0.75rem;color:#888">%</span>
+    <button onclick="this.closest('[data-cs-chip]').remove();actualizarTotalPct()"
+      style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
+  `;
+  contenedor.appendChild(div);
+  div.querySelector('input[type="text"]').focus();
+}
+
+function buscarContratoChip(input, idx) {
+  const q = input.value.toLowerCase();
+  const sug = document.getElementById(`cs-sug-${idx}`);
   if (!sug) return;
-  if (!q || q.length < 1) { sug.style.display = 'none'; return; }
-  const ql = q.toLowerCase();
-  // Get already-added contrato IDs
-  const yaAgregados = new Set([...document.querySelectorAll('#cs-miembros-lista > div')].map(div => {
-    const m = div.querySelector('span[onclick]')?.getAttribute('onclick')?.match(/\d+/);
-    return m ? parseInt(m[0]) : null;
-  }).filter(Boolean));
+  if (!q) { sug.style.display = 'none'; return; }
+  const yaAgregados = new Set([
+    ...[...document.querySelectorAll('#cs-miembros-lista > div')].map(d => parseInt(d.querySelector('span[onclick]')?.getAttribute('onclick')?.match(/\d+/)?.[0])),
+    ...[...document.querySelectorAll('[data-cs-chip]')].filter(d => d.dataset.contratoId).map(d => parseInt(d.dataset.contratoId))
+  ].filter(Boolean));
   const matches = DB.contratos.filter(c =>
     getEstado(c) === 'vigente' &&
     !yaAgregados.has(c.id) &&
-    ((c.titulo||'').toLowerCase().includes(ql) ||
-     (c.locatario||'').toLowerCase().includes(ql) ||
-     (c.hoja||'').toLowerCase().includes(ql))
+    ((c.titulo||'').toLowerCase().includes(q) || (c.locatario||'').toLowerCase().includes(q))
   ).slice(0, 8);
   if (!matches.length) { sug.innerHTML = '<div style="padding:8px 12px;font-size:0.82rem;color:#aaa">Sin resultados</div>'; sug.style.display = 'block'; return; }
   sug.innerHTML = matches.map(c => `
-    <div onclick="seleccionarContratoConsorcio(${c.id})"
-      style="padding:8px 12px;cursor:pointer;font-size:0.85rem;border-bottom:1px solid #f0ece4"
+    <div onclick="selContratoChip(${idx},${c.id})"
+      style="padding:7px 12px;cursor:pointer;font-size:0.85rem;border-bottom:1px solid #f0ece4"
       onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background=''">
-      <strong>${c.titulo||c.hoja}</strong>
-      ${c.locatario ? `<span style="color:#888;font-size:0.78rem"> · ${c.locatario}</span>` : ''}
+      <strong>${c.titulo||c.hoja}</strong>${c.locatario ? ` <span style="color:#888;font-size:0.78rem">· ${c.locatario}</span>` : ''}
     </div>`).join('');
   sug.style.display = 'block';
 }
 
-function seleccionarContratoConsorcio(contratoId) {
-  const sug = document.getElementById('cs-agregar-sugerencias');
-  const inp = document.getElementById('cs-agregar-input');
-  if (sug) sug.style.display = 'none';
+function selContratoChip(idx, contratoId) {
   const c = DB.contratos.find(x => x.id === contratoId);
   if (!c) return;
-  if (inp) inp.value = c.titulo || c.hoja;
-  // Show pending confirm row
-  const pending = document.getElementById('cs-pending-row');
-  if (pending) pending.remove();
-  const div = document.createElement('div');
-  div.id = 'cs-pending-row';
-  div.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.6rem 0.75rem;background:#fffbea;border:1.5px solid #f0c040;border-radius:8px;margin-bottom:0.5rem';
-  div.innerHTML = `
-    <span style="flex:1;font-size:0.85rem;font-weight:600">${c.titulo||c.hoja}</span>
-    <input type="number" id="cs-pending-pct" value="100" min="0" max="100" step="0.01"
-      style="width:80px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem;text-align:right">
-    <span style="font-size:0.75rem;color:#888">%</span>
-    <button onclick="confirmarAgregarMiembro(${c.id})"
-      style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:0.82rem;font-family:'DM Sans',sans-serif">Agregar</button>
-    <button onclick="document.getElementById('cs-pending-row')?.remove();document.getElementById('cs-agregar-input').value=''"
-      style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:5px 8px;cursor:pointer">✕</button>
-  `;
-  document.getElementById('cs-agregar-input').closest('div').after(div);
-}
-
-function confirmarAgregarMiembro(contratoId) {
-  const c = DB.contratos.find(x => x.id === contratoId);
-  if (!c) return;
-  const pct = parseFloat(document.getElementById('cs-pending-pct')?.value) || 100;
-  const lista = document.getElementById('cs-miembros-lista');
-  const div = document.createElement('div');
-  div.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid #f0ece4';
-  div.innerHTML = `
-    <span onclick="abrirContratoDesdeNumeracion(${c.id})" style="flex:1;cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.85rem">${c.titulo||c.hoja}</span>
-    <input type="number" value="${pct}" min="0" max="100" step="0.01" id="cs-pct-${c.id}"
-      style="width:80px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem;text-align:right" oninput="actualizarTotalPct()">
-    <span style="font-size:0.75rem;color:#888">%</span>
-    <button onclick="this.closest('div').remove();actualizarTotalPct()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer">✕</button>
-  `;
-  lista.appendChild(div);
-  document.getElementById('cs-pending-row')?.remove();
-  document.getElementById('cs-agregar-input').value = '';
-  actualizarTotalPct();
+  const chip = document.querySelector(`[data-cs-chip="${idx}"]`);
+  if (!chip) return;
+  chip.dataset.contratoId = contratoId;
+  const inp = chip.querySelector('input[type="text"]');
+  inp.value = c.titulo || c.hoja;
+  inp.style.color = 'var(--green)';
+  inp.style.fontWeight = '600';
+  inp.readOnly = true;
+  document.getElementById(`cs-sug-${idx}`).style.display = 'none';
+  chip.querySelector(`#cs-chipct-${idx}`)?.focus();
 }
 
 function agregarMiembroConsorcio() {}
@@ -7599,19 +7600,30 @@ async function guardarConsorcio(id) {
       csId = nuevo.id;
       DB_CONSORCIOS.push({ ...body, id: csId });
     }
-    // Update miembros
+    // Update miembros - existing (from cs-miembros-lista) + new chips
     await sbDeleteWhere('consorcio_contratos', `consorcio_id=eq.${csId}`);
     DB_CONSORCIO_CONTRATOS = DB_CONSORCIO_CONTRATOS.filter(x => x.consorcio_id !== csId);
-    const divs = document.querySelectorAll('#cs-miembros-lista > div');
-    for (const div of divs) {
+
+    // Existing members
+    const existingDivs = document.querySelectorAll('#cs-miembros-lista > div');
+    for (const div of existingDivs) {
       const span = div.querySelector('span[onclick]');
       const inp = div.querySelector('input[type="number"]');
       if (!span || !inp) continue;
-      const onclick = span.getAttribute('onclick');
-      const match = onclick.match(/\d+/);
+      const match = span.getAttribute('onclick')?.match(/\d+/);
       if (!match) continue;
       const contratoId = parseInt(match[0]);
       const pct = parseFloat(inp.value)||0;
+      const row = await sbPost('consorcio_contratos', { consorcio_id: csId, contrato_id: contratoId, porcentaje: pct });
+      const newRow = Array.isArray(row) ? row[0] : row;
+      if (newRow?.id) DB_CONSORCIO_CONTRATOS.push(newRow);
+    }
+    // New chips
+    const chips = document.querySelectorAll('[data-cs-chip]');
+    for (const chip of chips) {
+      const contratoId = parseInt(chip.dataset.contratoId);
+      if (!contratoId) continue;
+      const pct = parseFloat(chip.querySelector('input[type="number"]')?.value)||0;
       const row = await sbPost('consorcio_contratos', { consorcio_id: csId, contrato_id: contratoId, porcentaje: pct });
       const newRow = Array.isArray(row) ? row[0] : row;
       if (newRow?.id) DB_CONSORCIO_CONTRATOS.push(newRow);
