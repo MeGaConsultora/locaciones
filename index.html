@@ -3017,7 +3017,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
     </div>` : (totalInqH > 0 ? `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:5px 0;border-bottom:1px solid #f0ece4">
       <span style="font-size:0.85rem;color:#2d7a4f">✓ Honorarios: pagado en su totalidad</span>
-      <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px" onclick="revertirHonorarios(${contratoId},'${hoja}','${mesKey}',${comisionPct})">↩ Revertir</button>
+      <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px" onclick="revertirHonorarios(window._gpContratoId,window._gpHoja,window._gpMesKey,window._gpComision)">↩ Revertir</button>
     </div>` : '');
 
   return paidSection + ((p.saldo||0) > 0 ? items.map(it => `
