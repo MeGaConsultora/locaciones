@@ -853,6 +853,23 @@ function parseMonto(val) {
 }
 
 
+function abrirContratoDesdeServicios(contratoId) {
+  window._volverAServiciosModal = {
+    titulo: document.getElementById('modal-title')?.textContent,
+    body: document.getElementById('modal-body')?.innerHTML
+  };
+  closeModal();
+  openContrato(contratoId);
+}
+
+function volverAServiciosModal() {
+  if (!window._volverAServiciosModal) return;
+  document.getElementById('modal-title').textContent = window._volverAServiciosModal.titulo;
+  document.getElementById('modal-body').innerHTML = window._volverAServiciosModal.body;
+  window._volverAServiciosModal = null;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
 function buscarContratoHeader(q) {
   const res = document.getElementById('header-search-results');
   if (!q || q.length < 2) { res.classList.remove('open'); return; }
@@ -946,7 +963,7 @@ function calcularIntereses(alquiler, fechaVencStr, fechaPagoStr, interesdiario) 
 
 function formatMoney(n) {
   if (n == null || isNaN(n)) return '—';
-  return '$ ' + Math.round(n).toLocaleString('es-AR');
+  return '$ ' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function normTipo(t) {
   if (!t || t==='nan') return 'Otro';
@@ -1255,6 +1272,7 @@ async function openContrato(id) {
   document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · Cargando...`;
   document.getElementById('modal-body').innerHTML = `
     <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px">
+      ${window._volverAServiciosModal ? `<button class="btn btn-secondary" style="font-size:0.78rem;white-space:nowrap;color:var(--green);border-color:var(--green)" onclick="volverAServiciosModal()">← Cargar servicios</button>` : ''}
       <button class="btn btn-secondary" style="font-size:0.78rem;white-space:nowrap" onclick="openEditContrato(${c.id})">✏️ Editar</button>
       <button class="btn btn-secondary" style="font-size:0.78rem;white-space:nowrap" onclick="imprimirHistorial(${c.id})">📋 Historial</button>
       <button class="btn btn-secondary" style="font-size:0.78rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="abrirCrearAcceso(${c.id},'${c.hoja}')">🔑 Acceso inquilino</button>
@@ -2376,7 +2394,7 @@ async function cargarListaServicios(filtro='') {
           return s + v + vp;
         }, 0);
         const pctOk = Math.abs(totalPct - 100) < 1;
-        const detalle = g.contratos.map(c => `${c.titulo||c.hoja} (${c['pct_'+srv]||100}%)`).join(', ');
+        const detalle = g.contratos.map(c => `<span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline">${c.titulo||c.hoja}</span> (${c['pct_'+srv]||100}%)`).join(', ');
         const hojas = g.contratos.map(c => c.hoja).join('|');
         const ids = g.contratos.map(c => c.id).join(',');
         let epeExtra = '';
@@ -2426,7 +2444,7 @@ async function cargarListaServicios(filtro='') {
           break;
         }
       }
-      const detalle = g.contratos.map(c => `${c.titulo||c.hoja} (${c['pct_'+srv]||0}%)`).join(', ');
+      const detalle = g.contratos.map(c => `<span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline">${c.titulo||c.hoja}</span> (${c['pct_'+srv]||0}%)`).join(', ');
       const hojas = g.contratos.map(c => c.hoja).join('|');
       const ids = g.contratos.map(c => c.id).join(',');
       return `<div class="ya-cargado-${srv}" style="display:none;background:#f0fff4;border:1.5px solid var(--green);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem">
