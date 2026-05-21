@@ -7414,6 +7414,7 @@ function renderConsorcios() {
         <div>
           <div style="font-weight:700;font-size:0.95rem">${cs.nombre}</div>
           ${cs.descripcion ? `<div style="font-size:0.78rem;color:#888;margin-top:2px">${cs.descripcion}</div>` : ''}
+          ${cs.direccion ? `<div style="font-size:0.78rem;color:#888;margin-top:1px">📍 ${cs.direccion}</div>` : ''}
           ${srvs ? `<div style="font-size:0.75rem;color:#666;margin-top:3px">📋 ${srvs}</div>` : ''}
           <div style="font-size:0.75rem;margin-top:4px;color:${pctOk?'#2d7a4f':'#c8483a'}">
             ${miembros.length} contrato/s · ${totalPct.toFixed(0)}%${!pctOk?' ⚠ no suma 100%':''}
@@ -7447,6 +7448,7 @@ function abrirFormConsorcio(id) {
   document.getElementById('modal-body').innerHTML = `
     <div class="form-grid" style="margin-bottom:1rem">
       <div class="form-group" style="grid-column:1/-1"><label>Nombre</label><input id="cs-nombre" type="text" value="${cs?.nombre||''}" placeholder="Ej: Galería San Martín"></div>
+      <div class="form-group" style="grid-column:1/-1"><label>Dirección</label><input id="cs-dir" type="text" value="${cs?.direccion||''}" placeholder="Opcional"></div>
       <div class="form-group" style="grid-column:1/-1"><label>Descripción</label><input id="cs-desc" type="text" value="${cs?.descripcion||''}" placeholder="Opcional"></div>
     </div>
     <div class="section-title" style="margin:0.75rem 0 0.5rem">Números de cuenta</div>
@@ -7525,6 +7527,7 @@ async function guardarConsorcio(id) {
   const body = {
     nombre,
     descripcion: document.getElementById('cs-desc').value.trim() || null,
+    direccion: document.getElementById('cs-dir').value.trim() || null,
     nro_epe: document.getElementById('cs-nro-epe').value.trim() || null,
     nro_agua: document.getElementById('cs-nro-agua').value.trim() || null,
     nro_tgiu: document.getElementById('cs-nro-tgiu').value.trim() || null,
