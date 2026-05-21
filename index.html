@@ -832,6 +832,27 @@ async function loadAll() {
 // ============================================================
 // HELPERS
 // ============================================================
+function parseMonto(val) {
+  if (!val && val !== 0) return 0;
+  const s = String(val).trim();
+  if (!s) return 0;
+  // Remove currency symbols and spaces
+  let clean = s.replace(/[$\s]/g, '');
+  // Detect format: if last separator is comma → 131.960,48 (ES) → replace . with '' and , with .
+  // If last separator is dot → 131,960.48 (EN) → remove , only
+  const lastComma = clean.lastIndexOf(',');
+  const lastDot = clean.lastIndexOf('.');
+  if (lastComma > lastDot) {
+    // ES format: 131.960,48
+    clean = clean.replace(/\./g, '').replace(',', '.');
+  } else {
+    // EN format or plain: 131,960.48 or 131960.48
+    clean = clean.replace(/,/g, '');
+  }
+  return parseFloat(clean) || 0;
+}
+
+
 function buscarContratoHeader(q) {
   const res = document.getElementById('header-search-results');
   if (!q || q.length < 2) { res.classList.remove('open'); return; }
@@ -2376,7 +2397,7 @@ async function cargarListaServicios(filtro='') {
               <div style="font-size:0.75rem;color:#666;margin-top:2px">${detalle}</div>
               ${!pctOk ? `<div style="font-size:0.72rem;color:var(--accent);margin-top:2px">⚠ Los % suman ${totalPct}% — deben ser 100%</div>` : ''}
             </div>
-            <div><input type="number" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}" placeholder="$ importe cuota" style="width:150px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem" ${!pctOk ? 'disabled title="Corregí los porcentajes primero"' : ''}></div>
+            <div><input type="text" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}" placeholder="$ importe cuota" style="width:150px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem" ${!pctOk ? 'disabled title="Corregí los porcentajes primero"' : ''}></div>
           </div>
           ${epeExtra}
         </div>`;
@@ -2417,7 +2438,7 @@ async function cargarListaServicios(filtro='') {
           <div>
             <input type="number" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}"
               value="${totalBoleta}" data-original="${totalBoleta}"
-              placeholder="$ importe cuota" style="width:150px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem">
+              placeholder="$ importe cuota" style="width:150px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem" type="text">
             <div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Total boleta: ${formatMoney(totalBoleta)}</div>
           </div>
         </div>
@@ -2450,7 +2471,7 @@ async function guardarServicios() {
   for (const srv of ['epe', 'agua', 'tgiu', 'seguro', 'internet', 'expensas']) {
     const inputs = document.querySelectorAll(`[id^="srv-${srv}-"]:not([id*="cuota"])`);
     for (const input of inputs) {
-      const importe = parseFloat(input.value) || 0;
+      const importe = parseMonto(input.value);
       // Process if has value OR if had a previous value (data-original set on ya-cargados)
       const teníaAnterior = input.dataset.original !== undefined;
       if (!importe && !teníaAnterior) continue;
