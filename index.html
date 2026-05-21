@@ -841,13 +841,18 @@ function ajustarZoomGrilla() {
   const table = wrap?.querySelector('.grid-table');
   if (!wrap || !table) return;
   table.style.zoom = '1';
+  table.style.width = 'max-content';
   requestAnimationFrame(() => {
     const available = wrap.clientWidth;
     const natural = table.scrollWidth;
     if (natural > available + 4) {
+      // Table too wide: shrink with zoom
       table.style.zoom = String(available / natural);
+      table.style.width = 'max-content';
     } else {
+      // Table fits or is narrower: stretch to fill
       table.style.zoom = '1';
+      table.style.width = '100%';
     }
   });
 }
