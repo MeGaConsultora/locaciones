@@ -861,11 +861,12 @@ function parseMonto(val) {
 
 
 function abrirContratoDesdeServicios(contratoId) {
+  // Save current modal state
   window._volverAServiciosModal = {
     titulo: document.getElementById('modal-title')?.textContent,
     body: document.getElementById('modal-body')?.innerHTML
   };
-  closeModal();
+  // Replace modal content with contract detail (no closeModal - stays in modal)
   openContrato(contratoId);
 }
 
@@ -1279,7 +1280,6 @@ async function openContrato(id) {
   document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · Cargando...`;
   document.getElementById('modal-body').innerHTML = `
     <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px">
-      ${window._volverAServiciosModal ? `<button class="btn btn-secondary" style="font-size:0.78rem;white-space:nowrap;color:var(--green);border-color:var(--green)" onclick="volverAServiciosModal()">← Cargar servicios</button>` : ''}
       <button class="btn btn-secondary" style="font-size:0.78rem;white-space:nowrap" onclick="openEditContrato(${c.id})">✏️ Editar</button>
       <button class="btn btn-secondary" style="font-size:0.78rem;white-space:nowrap" onclick="imprimirHistorial(${c.id})">📋 Historial</button>
       <button class="btn btn-secondary" style="font-size:0.78rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="abrirCrearAcceso(${c.id},'${c.hoja}')">🔑 Acceso inquilino</button>
@@ -2116,6 +2116,7 @@ function filtrarContratosActualizar() {
 }
 
 async function abrirActualizacionAlquileres() {
+  document.getElementById('informes-menu').style.display = 'none';
   // Get unique periodicidades and indices from active contracts
   const periodicidades = [...new Set(DB.contratos.filter(c=>c.periodicidad_actualizacion&&c.periodicidad_actualizacion!=='Sin actualización'&&!c.fecha_rescision).map(c=>c.periodicidad_actualizacion))].sort();
   const indices = [...new Set(DB.contratos.filter(c=>c.indice_actualizacion&&!c.fecha_rescision).map(c=>c.indice_actualizacion))].sort();
@@ -5527,6 +5528,11 @@ function renderPagination(containerId, total, current, cb) {
 // ============================================================
 function closeModal(e) {
   if (!e || e.target===document.getElementById('modal-overlay')) {
+    // If came from cargar servicios, go back instead of closing
+    if (window._volverAServiciosModal) {
+      volverAServiciosModal();
+      return;
+    }
     const overlay = document.getElementById('modal-overlay');
     const contratoId = overlay.dataset.contratoId;
     overlay.classList.remove('open');
