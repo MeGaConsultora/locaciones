@@ -890,10 +890,18 @@ function abrirContratoDesdeServicios(contratoId) {
 
 function volverAServiciosModal() {
   if (!window._volverAServiciosModal) return;
-  document.getElementById('modal-title').textContent = window._volverAServiciosModal.titulo;
-  document.getElementById('modal-body').innerHTML = window._volverAServiciosModal.body;
+  const state = window._volverAServiciosModal;
   window._volverAServiciosModal = null;
-  document.getElementById('modal-overlay').classList.add('open');
+  if (typeof state.restore === 'function') {
+    // Numeracion servicios: re-render the panel
+    document.getElementById('modal-overlay').classList.remove('open');
+    state.restore();
+  } else {
+    // Cargar servicios: restore saved HTML
+    document.getElementById('modal-title').textContent = state.titulo;
+    document.getElementById('modal-body').innerHTML = state.body;
+    document.getElementById('modal-overlay').classList.add('open');
+  }
 }
 
 function buscarContratoHeader(q) {
@@ -7351,12 +7359,13 @@ async function guardarNroServicio(contratoId, srv) {
 }
 
 function abrirContratoDesdeNumeracion(contratoId) {
-  window._volverANumeracionModal = {
-    titulo: document.getElementById('modal-title')?.textContent,
-    body: document.getElementById('modal-body')?.innerHTML
+  // Close any existing modal overlay first
+  document.getElementById('modal-overlay').classList.remove('open');
+  // Save numeracion state for back navigation
+  window._volverAServiciosModal = {
+    titulo: '🔢 Numeración de servicios',
+    restore: () => selectInforme('numeracion-servicios')
   };
-  // Reuse the same back-mechanism as servicios
-  window._volverAServiciosModal = window._volverANumeracionModal;
   openContrato(contratoId);
 }
 
