@@ -7318,19 +7318,18 @@ async function guardarNroServicio(contratoId, srv) {
   if (nro) {
     const compartidos = DB.contratos.filter(x =>
       x.id !== contratoId &&
-      x[campo] === nro &&
-      getEstado(x) === 'vigente' &&
-      (x.servicios_inquilino||'').toLowerCase().includes(srv)
+      String(x[campo]).trim() === String(nro).trim() &&
+      getEstado(x) === 'vigente'
     );
-    const todos = [c, ...compartidos].filter(x => (x.servicios_inquilino||'').toLowerCase().includes(srv));
-    const totalPct = todos.reduce((s,x) => {
-      const pctInq = x['pct_'+srv] ?? 100;
-      const pctProp = x['pct_prop_'+srv] ?? 0;
+    const todos = [c, ...compartidos];
+    const totalPct = todos.reduce((s, x) => {
+      const pctInq = x['pct_'+srv] != null ? Number(x['pct_'+srv]) : 100;
+      const pctProp = x['pct_prop_'+srv] != null ? Number(x['pct_prop_'+srv]) : 0;
       return s + pctInq + pctProp;
     }, 0);
-    if (todos.length > 1 && Math.abs(totalPct - 100) > 1) {
-      toast(`⚠ Los porcentajes suman ${totalPct}% (deberían ser 100%) — revisá los contratos compartidos`, 'error');
-      // Don't block saving, just warn
+    if (Math.abs(totalPct - 100) > 1) {
+      const nombres = todos.map(x => x.titulo||x.hoja).join(', ');
+      toast(`⚠ Los % suman ${totalPct.toFixed(0)}% para N° ${nro} (${nombres}) — deberían ser 100%`, 'error');
     }
   }
 
