@@ -7288,7 +7288,7 @@ function renderNumeracionServicios() {
         const nroActual = c[campo] || '';
         return `<div style="display:flex;align-items:center;gap:0.75rem;background:#faf7f2;border-radius:8px;padding:0.6rem 1rem;border:1px solid var(--border)">
           <div style="flex:1;min-width:0">
-            <div style="font-weight:600;font-size:0.88rem">${c.titulo||c.hoja}</div>
+            <div style="font-weight:600;font-size:0.88rem;cursor:pointer;color:var(--accent);text-decoration:underline" onclick="abrirContratoDesdeNumeracion(${c.id})">${c.titulo||c.hoja}</div>
             <div style="font-size:0.75rem;color:#888">${dir} · ${c.locatario||'—'}</div>
           </div>
           <div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
@@ -7313,6 +7313,27 @@ async function guardarNroServicio(contratoId, srv) {
   const campo = 'nro_' + srv;
   const c = DB.contratos.find(x => x.id === contratoId);
   if (!c) return;
+
+  // Validate pct sum for all vigente contracts sharing this nro
+  if (nro) {
+    const compartidos = DB.contratos.filter(x =>
+      x.id !== contratoId &&
+      x[campo] === nro &&
+      getEstado(x) === 'vigente' &&
+      (x.servicios_inquilino||'').toLowerCase().includes(srv)
+    );
+    const todos = [c, ...compartidos].filter(x => (x.servicios_inquilino||'').toLowerCase().includes(srv));
+    const totalPct = todos.reduce((s,x) => {
+      const pctInq = x['pct_'+srv] ?? 100;
+      const pctProp = x['pct_prop_'+srv] ?? 0;
+      return s + pctInq + pctProp;
+    }, 0);
+    if (todos.length > 1 && Math.abs(totalPct - 100) > 1) {
+      toast(`⚠ Los porcentajes suman ${totalPct}% (deberían ser 100%) — revisá los contratos compartidos`, 'error');
+      // Don't block saving, just warn
+    }
+  }
+
   try {
     const body = { [campo]: nro || null };
     await sbPatch('contratos', contratoId, body);
@@ -7328,6 +7349,16 @@ async function guardarNroServicio(contratoId, srv) {
     toast('N° ' + srv.toUpperCase() + ' guardado ✓');
     renderNumeracionServicios();
   } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function abrirContratoDesdeNumeracion(contratoId) {
+  window._volverANumeracionModal = {
+    titulo: document.getElementById('modal-title')?.textContent,
+    body: document.getElementById('modal-body')?.innerHTML
+  };
+  // Reuse the same back-mechanism as servicios
+  window._volverAServiciosModal = window._volverANumeracionModal;
+  openContrato(contratoId);
 }
 
 function formatDireccion(inm, short=false) {
