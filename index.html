@@ -5066,8 +5066,8 @@ async function actualizarContrato(id) {
       await sbPost('contrato_personas', {contrato_id:id, persona_id:garIds[i], rol:'garante', orden:i+1});
     }
     toast('Contrato actualizado ✓');
-    // Generate gastos inicio cuotas if configured
-    if (body.gastos_inicio > 0) await generarGastosCuotas(id, body);
+    // Generate gastos inicio cuotas - always call to handle updates and deletions
+    await generarGastosCuotas(id, body);
     // If editing from services screen, reopen services after save
     if (window._volverAServicios) {
       const solapaVolver = window._solapaServicios || '';
@@ -6785,7 +6785,13 @@ async function revertirReciboEmitido(pagoId) {
 // GASTOS DE INICIO
 // ============================================================
 async function generarGastosCuotas(contratoId, body) {
-  if (!body.gastos_inicio || body.gastos_inicio <= 0) return;
+  // If gastos_inicio is 0 or empty, delete all existing cuotas
+  if (!body.gastos_inicio || body.gastos_inicio <= 0) {
+    const existing = await sbGet('gastos_inicio_cuotas', `contrato_id=eq.${contratoId}&order=mes.asc`);
+    if (existing.length) await Promise.all(existing.map(r => sbDelete('gastos_inicio_cuotas', r.id)));
+    try { DB_GASTOS_CUOTAS = await sbGet('gastos_inicio_cuotas', 'select=*&order=mes.asc&limit=5000'); } catch(e) {}
+    return;
+  }
   const cuotas = body.gastos_cuotas || 1;
   const pctInq = body.gastos_pct_inquilino ?? 100;
   const pctProp = body.gastos_pct_propietario ?? 0;
