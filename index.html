@@ -3014,7 +3014,11 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
       <input type="number" id="val-honorarios" value="" placeholder="Importe a cobrar" min="0" max="${saldoInqH}"
         style="width:170px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem;text-align:right"
         oninput="document.getElementById('cobro-chk-honorarios').value=this.value;recalcCobro()">
-    </div>` : '';
+    </div>` : (totalInqH > 0 ? `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:5px 0;border-bottom:1px solid #f0ece4">
+      <span style="font-size:0.85rem;color:#2d7a4f">✓ Honorarios: pagado en su totalidad</span>
+      <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px" onclick="revertirHonorarios(${contratoId},'${hoja}','${mesKey}',${comisionPct})">↩ Revertir</button>
+    </div>` : '');
 
   return paidSection + ((p.saldo||0) > 0 ? items.map(it => `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:5px 0;border-bottom:1px solid #f0ece4">
@@ -5417,7 +5421,7 @@ function imprimirRecibo(data) {
       .separador { display:none; }
       @page { size: A4 portrait; margin: 0; }
       @media print {
-        html, body { width:210mm; height:297mm; background:white; padding:0; margin:0; display:block; }
+        html, body { width:210mm; height:297mm; background:white; padding:0; margin:0; display:block; overflow:hidden; }
         .no-print { display:none; }
         .separador { display:none; }
         .recibo-mitad { width:210mm; height:148.5mm; box-sizing:border-box; }
