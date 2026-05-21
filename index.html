@@ -248,10 +248,10 @@
   .solapa-panel.active { display:block; }
 
   /* GRILLA PAGOS ESTILO EXCEL */
-  .grid-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
-  .grid-table th { background:var(--ink); color:var(--cream); padding:7px 8px; text-align:left; font-size:0.68rem; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; position:sticky; top:0; z-index:2; }
+  .grid-table { width:100%; border-collapse:collapse; font-size:0.75rem; table-layout:fixed; }
+  .grid-table th { background:var(--ink); color:var(--cream); padding:6px 4px; text-align:left; font-size:0.62rem; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; position:sticky; top:0; z-index:2; overflow:hidden; text-overflow:ellipsis; }
   .grid-table th.r { text-align:right; }
-  .grid-table td { padding:3px 6px; border-bottom:1px solid #e8e4dc; border-right:1px solid #e8e4dc; vertical-align:middle; white-space:nowrap; }
+  .grid-table td { padding:3px 4px; border-bottom:1px solid #e8e4dc; border-right:1px solid #e8e4dc; vertical-align:middle; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .grid-table td.num { text-align:right; white-space:nowrap; }
   .grid-table tr.row-futuro td { background:#f0f4ff; color:#555; }
   .grid-table tr.row-pagado td { background:#f0fff4; }
@@ -1495,7 +1495,7 @@ function renderGrilla(c) {
   }).join('');
 
   document.getElementById('grilla-container').innerHTML = `
-    <div style="overflow-x:auto;max-height:55vh;overflow-y:auto">
+    <div style="max-height:55vh;overflow-y:auto;overflow-x:hidden">
       <table class="grid-table">
         <thead><tr>
           <th>Mes</th>
