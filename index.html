@@ -4459,15 +4459,6 @@ function _abrirFormularioContrato(c, esNuevo) {
         <input id="f-gastos-pct-prop" type="number" min="0" max="100" value="${c?.gastos_pct_propietario??0}" style="margin-top:4px"></div>
     </div>
 
-    <div class="section-title" style="margin:1.2rem 0 0.75rem">Suministros</div>
-    <p style="font-size:0.78rem;color:#888;margin-bottom:0.75rem">Servicios e impuestos asociados a este contrato. Podés agregar varios del mismo tipo con distintas cuentas.</p>
-    <div id="lista-suministros" style="margin-bottom:0.75rem">
-      <div style="display:grid;grid-template-columns:140px 1fr 70px 70px 1fr auto;gap:0.5rem;padding:0 0 0.3rem;font-size:0.7rem;color:#888;text-transform:uppercase;letter-spacing:.05em;font-weight:600">
-        <span>Tipo</span><span>N° cuenta / descripción</span><span style="text-align:right">%&nbsp;Inq.</span><span style="text-align:right">%&nbsp;Prop.</span><span>Rinde a</span><span></span>
-      </div>
-    </div>
-    <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarSuministro()">+ Agregar suministro</button>
-
     <div class="section-title" style="margin:1.2rem 0 0.75rem">Propietario/s</div>
     <div id="lista-propietarios"></div>
     <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap">
@@ -4491,6 +4482,15 @@ function _abrirFormularioContrato(c, esNuevo) {
       <button class="btn btn-secondary" style="font-size:0.82rem;color:var(--green);border-color:var(--green)" onclick="abrirNuevaPersonaInline('garante')">+ Nueva persona</button>
     </div>
     <div id="inline-persona-form-garante"></div>
+
+    <div class="section-title" style="margin:1.2rem 0 0.5rem">Suministros</div>
+    <p style="font-size:0.78rem;color:#888;margin-bottom:0.5rem">Servicios e impuestos asociados a este contrato. Podés agregar varios del mismo tipo con distintas cuentas.</p>
+    <div id="lista-suministros" style="margin-bottom:0.5rem">
+      <div style="display:grid;grid-template-columns:130px 1fr 75px 75px 80px 1fr auto;gap:0.4rem;padding:0 0.75rem 0.3rem;font-size:0.68rem;color:#888;text-transform:uppercase;letter-spacing:.04em;font-weight:600">
+        <span>Tipo</span><span>N° cuenta / descripción</span><span style="text-align:center">%&nbsp;Inq.</span><span style="text-align:center">%&nbsp;Prop.</span><span style="text-align:right">Imp. fijo</span><span>Rinde a</span><span></span>
+      </div>
+    </div>
+    <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarSuministro()">+ Agregar suministro</button>
 
     <div id="inline-persona-form"></div>
 
@@ -7377,25 +7377,23 @@ function _renderSuministroRow(s) {
   const div = document.createElement('div');
   div.dataset.suministroId = id;
   if (s.id) div.dataset.suministroDbId = s.id;
-  div.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:grid;grid-template-columns:140px 1fr 70px 70px 1fr auto;gap:0.5rem;align-items:center;font-size:0.82rem';
+  div.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.4rem;display:grid;grid-template-columns:130px 1fr 75px 75px 80px 1fr auto;gap:0.4rem;align-items:center;font-size:0.82rem';
   div.innerHTML = `
     <select style="padding:5px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="onChangeTipoSuministro(this)">
       ${TIPOS_SUMINISTRO.map(t => `<option value="${t.toLowerCase()}" ${s.tipo === t.toLowerCase() || s.tipo === t ? 'selected' : ''}>${t}</option>`).join('')}
     </select>
     <input type="text" placeholder="N° cuenta / descripción" value="${s.nro_cuenta||s.nombre||''}"
       style="padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem">
-    <div style="display:flex;align-items:center;gap:2px">
-      <input type="number" value="${s.pct_inquilino ?? 100}" min="0" max="100" step="0.01"
-        placeholder="%" title="% Inquilino"
-        style="width:100%;padding:5px 4px;border:1.5px solid var(--green);border-radius:6px;font-size:0.82rem;text-align:right">
-      <span style="font-size:0.7rem;color:#888">%I</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:2px">
-      <input type="number" value="${s.pct_propietario ?? 0}" min="0" max="100" step="0.01"
-        placeholder="%" title="% Propietario"
-        style="width:100%;padding:5px 4px;border:1.5px solid #f0c040;border-radius:6px;font-size:0.82rem;text-align:right">
-      <span style="font-size:0.7rem;color:#888">%P</span>
-    </div>
+    <input type="number" value="${s.pct_inquilino ?? 100}" min="0" max="100" step="0.01"
+      placeholder="%" title="% Inquilino"
+      style="padding:5px 4px;border:1.5px solid var(--green);border-radius:6px;font-size:0.82rem;text-align:center">
+    <input type="number" value="${s.pct_propietario ?? 0}" min="0" max="100" step="0.01"
+      placeholder="%" title="% Propietario"
+      style="padding:5px 4px;border:1.5px solid #f0c040;border-radius:6px;font-size:0.82rem;text-align:center">
+    <input type="text" value="${s.monto_fijo != null ? s.monto_fijo : ''}"
+      placeholder="$ fijo" title="Importe fijo mensual"
+      style="padding:5px 4px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem;text-align:right;display:${(s.tipo==='otro'||s.tipo==='Otro')?'block':'none'}"
+      class="srv-monto-fijo">
     <select style="padding:5px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem" title="Rendir a propietario">
       <option value="">— No rinde —</option>
       ${propOptions}
@@ -7404,6 +7402,15 @@ function _renderSuministroRow(s) {
       style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:0.75rem">✕</button>
   `;
   return div;
+}
+
+function onChangeTipoSuministro(sel) {
+  const row = sel.closest('[data-suministro-id]');
+  const montoFijo = row?.querySelector('.srv-monto-fijo');
+  if (montoFijo) {
+    montoFijo.style.display = sel.value === 'otro' ? 'block' : 'none';
+    if (sel.value !== 'otro') montoFijo.value = '';
+  }
 }
 
 function agregarSuministro() {
@@ -7427,7 +7434,8 @@ function leerSuministros() {
       nombre: inputs[1]?.value.trim() || null,
       pct_inquilino: parseFloat(inputs[2]?.value) ?? 100,
       pct_propietario: parseFloat(inputs[3]?.value) ?? 0,
-      propietario_persona_id: parseInt(inputs[4]?.value) || null,
+      monto_fijo: parseMonto(inputs[4]?.value) || null,
+      propietario_persona_id: parseInt(inputs[5]?.value) || null,
     };
   });
 }
@@ -7453,6 +7461,7 @@ async function guardarSuministros(contratoId) {
       nro_cuenta: s.nro_cuenta,
       pct_inquilino: s.pct_inquilino,
       pct_propietario: s.pct_propietario,
+      monto_fijo: s.monto_fijo || null,
       propietario_persona_id: s.propietario_persona_id,
       orden: i
     };
