@@ -8394,7 +8394,8 @@ function editarInmuebleDesdeContrato(inmuebleId) {
     };
   }
   document.getElementById('modal-overlay').classList.remove('open');
-  _abrirFormularioInmueble(inmuebleId);
+  const inm = DB_INMUEBLES.find(x => x.id === inmuebleId);
+  _abrirFormularioInmueble(inm || null);
 }
 
 function abrirNuevoInmuebleDesdeContrato() {
