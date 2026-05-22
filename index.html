@@ -933,12 +933,21 @@ function buscarContratoHeader(q) {
   const res = document.getElementById('header-search-results');
   if (!q || q.length < 2) { res.classList.remove('open'); return; }
   const ql = q.toLowerCase();
-  const matches = (DB.contratos || []).filter(c =>
-    (c.titulo||'').toLowerCase().includes(ql) ||
-    (c.locador||'').toLowerCase().includes(ql) ||
-    (c.locatario||'').toLowerCase().includes(ql) ||
-    (c.hoja||'').toLowerCase().includes(ql)
-  ).slice(0, 8);
+  const matches = (DB.contratos || []).filter(c => {
+    if ((c.titulo||'').toLowerCase().includes(ql)) return true;
+    if ((c.locador||'').toLowerCase().includes(ql)) return true;
+    if ((c.locatario||'').toLowerCase().includes(ql)) return true;
+    if ((c.hoja||'').toLowerCase().includes(ql)) return true;
+    // Also search inmueble address
+    const inm = DB_INMUEBLES.find(x => x.id === c.inmueble_id);
+    if (inm && formatDireccion(inm).toLowerCase().includes(ql)) return true;
+    // Also search personas
+    const personas = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id)
+      .map(x => DB_PERSONAS.find(p => p.id === x.persona_id))
+      .filter(Boolean);
+    if (personas.some(p => `${p.apellido||''} ${p.nombre||''} ${p.dni||''}`.toLowerCase().includes(ql))) return true;
+    return false;
+  }).slice(0, 20);
   if (!matches.length) {
     res.innerHTML = '<div class="hsr-empty">Sin resultados</div>';
   } else {
@@ -1543,6 +1552,7 @@ function renderGrilla(c) {
         <div class="grid-actions">
           ${(!p.saldo||p.saldo===0)?'':`<button class="grid-btn grid-btn-green" onclick="editarMesConSolapa('${c.hoja}',${c.id},'${p.mes?.substring(0,7)}','s2')">✓ Cobrar</button>`}
           ${window._pagosPdf?.[+p.id]?.length ? `<button class="grid-btn" style="background:var(--ink2);color:white" onclick="verBoleta(${p.id})" title="Ver boleta PDF">📄</button>` : ''}
+          <button class="grid-btn grid-btn-red" onclick="eliminarMes(${p.id},'${c.hoja}')" title="Eliminar mes">🗑</button>
         </div>
       </td>
     </tr>`;
@@ -1718,14 +1728,24 @@ async function marcarPagado(pagoId, hoja) {
 }
 
 async function eliminarMes(pagoId, hoja) {
-  if (!confirm('¿Eliminar este mes? Esta acción no se puede deshacer.')) return;
+  const p = pagosActuales.find(x => x.id === pagoId);
+  if (!p) return;
+  const tieneDatos = (p.total > 0) || (p.pagado && p.pagado !== '0') || (p.saldo > 0);
+  if (tieneDatos) {
+    if (!confirm(`Este mes tiene datos cargados (total: ${formatMoney(p.total).replace(/<[^>]+>/g,'')}, pagado: ${p.pagado}).\n\n¿Eliminarlo de todas formas? Esta acción no se puede deshacer.`)) return;
+  } else {
+    if (!confirm('¿Eliminar este mes? Esta acción no se puede deshacer.')) return;
+  }
   try {
+    // Also delete related extras and movimientos
+    try { await sbDeleteWhere('pagos_extras', `pago_id=eq.${pagoId}`); } catch(e) {}
+    try { await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${pagoId}`); } catch(e) {}
     await sbDelete('pagos', pagoId);
-    pagosActuales = pagosActuales.filter(p=>p.id!==pagoId);
-    const c = DB.contratos.find(x=>x.hoja===hoja);
+    pagosActuales = pagosActuales.filter(p => p.id !== pagoId);
+    const c = DB.contratos.find(x => x.hoja === hoja);
     if (c) renderGrilla(c);
     toast('Mes eliminado ✓');
-  } catch(e) { toast('Error: '+e.message,'error'); }
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
 // RESCISIÓN ANTICIPADA
@@ -7823,21 +7843,6 @@ function _abrirFormularioInmueble(inm) {
     </div>
     <div class="form-group" style="margin-bottom:1rem"><label>Descripción (opcional)</label>
       <textarea id="inm-descripcion" rows="2" placeholder="Ej: Local en esquina..." style="margin-top:4px;width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;resize:vertical">${inm?.descripcion||''}</textarea></div>
-    <div class="section-title" style="margin:1rem 0 0.5rem;font-size:0.82rem;text-transform:uppercase;color:#888;letter-spacing:0.05em">Números de cuenta de servicios</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;margin-bottom:1rem">
-      <div class="form-group" style="margin:0"><label>N° EPE</label>
-        <input id="inm-nro-epe" type="text" value="${inm?.nro_epe||''}" placeholder="N° cuenta EPE" style="margin-top:4px"></div>
-      <div class="form-group" style="margin:0"><label>N° Agua</label>
-        <input id="inm-nro-agua" type="text" value="${inm?.nro_agua||''}" placeholder="N° cuenta Agua" style="margin-top:4px"></div>
-      <div class="form-group" style="margin:0"><label>N° TGIU</label>
-        <input id="inm-nro-tgiu" type="text" value="${inm?.nro_tgiu||''}" placeholder="N° TGIU" style="margin-top:4px"></div>
-      <div class="form-group" style="margin:0"><label>N° Seguro</label>
-        <input id="inm-nro-seguro" type="text" value="${inm?.nro_seguro||''}" placeholder="N° póliza" style="margin-top:4px"></div>
-      <div class="form-group" style="margin:0"><label>N° Internet</label>
-        <input id="inm-nro-internet" type="text" value="${inm?.nro_internet||''}" placeholder="N° cuenta" style="margin-top:4px"></div>
-      <div class="form-group" style="margin:0"><label>N° Expensas</label>
-        <input id="inm-nro-expensas" type="text" value="${inm?.nro_expensas||''}" placeholder="N° cuenta" style="margin-top:4px"></div>
-    </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
       ${!esNuevo ? `<button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="confirmarEliminarInmueble(${inm.id})">🗑 Eliminar</button>` : ''}
@@ -7934,12 +7939,6 @@ function _bodyInmueble() {
     piso: document.getElementById('inm-piso')?.value.trim()||null,
     dpto: document.getElementById('inm-dpto')?.value.trim()||null,
     descripcion: document.getElementById('inm-descripcion')?.value.trim()||null,
-    nro_epe: document.getElementById('inm-nro-epe')?.value.trim()||null,
-    nro_agua: document.getElementById('inm-nro-agua')?.value.trim()||null,
-    nro_tgiu: document.getElementById('inm-nro-tgiu')?.value.trim()||null,
-    nro_seguro: document.getElementById('inm-nro-seguro')?.value.trim()||null,
-    nro_internet: document.getElementById('inm-nro-internet')?.value.trim()||null,
-    nro_expensas: document.getElementById('inm-nro-expensas')?.value.trim()||null,
   };
 }
 
