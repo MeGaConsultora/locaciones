@@ -7491,7 +7491,7 @@ async function guardarSuministros(contratoId) {
         const row = Array.isArray(r) ? r[0] : r;
         if (row?.id) DB_SUMINISTROS.push(row);
       }
-    } catch(e) { console.error('Error saving suministro:', e); }
+    } catch(e) { toast('Error guardando suministro: ' + e.message, 'error'); console.error('guardarSuministros error:', e); }
   }
 }
 
