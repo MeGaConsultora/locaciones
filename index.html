@@ -2416,21 +2416,23 @@ async function cargarListaServicios(filtro='') {
       return `${ny}-${String(nm).padStart(2,'0')}`;
     })();
 
+    // Helper: get pct for a contract/service from DB_SUMINISTROS or fallback
+    const getPctInq = (c) => { const s = DB_SUMINISTROS.find(x => x.contrato_id === c.id && x.tipo === srv); return s ? (s.pct_inquilino ?? 100) : (c['pct_'+srv] ?? 100); };
+    const getPctProp = (c) => { const s = DB_SUMINISTROS.find(x => x.contrato_id === c.id && x.tipo === srv); return s ? (s.pct_propietario ?? 0) : (c['pct_prop_'+srv] ?? 0); };
+    const getNroC = (c) => { const s = DB_SUMINISTROS.find(x => x.contrato_id === c.id && x.tipo === srv); return s?.nro_cuenta || c['nro_'+srv] || ''; };
+
     // Check pct sum - use only VIGENTE contracts with same nro
-    const nroCampo = `nro_${srv}`;
     const pctWarnings = [];
     const nrosVistos = {};
-    const todosContratos = DB.contratos.filter(c => c[nroCampo] && getEstado(c) === 'vigente');
+    const todosContratos = DB.contratos.filter(c => getNroC(c) && getEstado(c) === 'vigente');
     todosContratos.forEach(c => {
-      const nro = c[nroCampo];
+      const nro = getNroC(c);
       if (!nrosVistos[nro]) nrosVistos[nro] = { contratos: [], totalPct: 0 };
       nrosVistos[nro].contratos.push(c);
-      nrosVistos[nro].totalPct += (c['pct_'+srv]??100) + (c['pct_prop_'+srv]??0);
+      nrosVistos[nro].totalPct += getPctInq(c) + getPctProp(c);
     });
-    // Check shared nros
     Object.entries(nrosVistos).forEach(([nro, data]) => {
       if (Math.abs(data.totalPct - 100) > 0.5) {
-        // Only warn if at least one contract from this nro is in the current list
         const enLista = data.contratos.some(c => contratos.find(x=>x.id===c.id));
         if (enLista) {
           const ids = data.contratos.map(c=>c.id);
@@ -2438,9 +2440,8 @@ async function cargarListaServicios(filtro='') {
         }
       }
     });
-    // Individual contracts without nro
-    contratos.filter(c => !c[nroCampo]).forEach(c => {
-      const total = (c['pct_'+srv]??100) + (c['pct_prop_'+srv]??0);
+    contratos.filter(c => !getNroC(c)).forEach(c => {
+      const total = getPctInq(c) + getPctProp(c);
       if (Math.abs(total - 100) > 0.5) {
         pctWarnings.push({ msg: `${c.titulo||c.hoja}: suma ${total}% (debería ser 100%)`, ids: [c.id] });
       }
@@ -2450,22 +2451,17 @@ async function cargarListaServicios(filtro='') {
     const agruparSinCargar = (lista) => {
       const grupos = {};
       lista.forEach(c => {
-        const nro = c[`nro_${srv}`] || `_solo_${c.id}`;
-        if (!grupos[nro]) grupos[nro] = { nro: c[`nro_${srv}`]||'', contratos: [] };
+        const nro = getNroC(c) || `_solo_${c.id}`;
+        if (!grupos[nro]) grupos[nro] = { nro: getNroC(c)||'', contratos: [] };
         grupos[nro].contratos.push(c);
       });
       return Object.values(grupos).map(g => {
-        // For pctOk, sum pct of ALL contracts that have this service ticked AND same nro
-        const todosConNro = g.nro 
-          ? DB.contratos.filter(c => c[`nro_${srv}`] === g.nro && (c.servicios_inquilino||'').toLowerCase().includes(srv) && getEstado(c) === 'vigente')
+        const todosConNro = g.nro
+          ? DB.contratos.filter(c => getNroC(c) === g.nro && getEstado(c) === 'vigente' && DB_SUMINISTROS.some(s => s.contrato_id === c.id && s.tipo === srv && (s.pct_inquilino||0) > 0) || (c.servicios_inquilino||'').toLowerCase().includes(srv))
           : g.contratos;
-        const totalPct = todosConNro.reduce((s,c) => {
-          const v = c['pct_'+srv] ?? 100;
-          const vp = c['pct_prop_'+srv] ?? 0;
-          return s + v + vp;
-        }, 0);
+        const totalPct = todosConNro.reduce((s,c) => s + getPctInq(c) + getPctProp(c), 0);
         const pctOk = Math.abs(totalPct - 100) < 1;
-        const detalle = g.contratos.map(c => `<span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline">${c.titulo||c.hoja}</span> (${c['pct_'+srv]||100}%)`).join(', ');
+        const detalle = g.contratos.map(c => `<span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline">${c.titulo||c.hoja}</span> (${getPctInq(c)}%)`).join(', ');
         const hojas = g.contratos.map(c => c.hoja).join('|');
         const ids = g.contratos.map(c => c.id).join(',');
         let epeExtra = '';
@@ -2509,13 +2505,13 @@ async function cargarListaServicios(filtro='') {
       for (const c of g.contratos) {
         const p = pagosPorHoja[c.hoja];
         const monto = p?.[campo] || 0;
-        const pct = c['pct_'+srv];
+        const pct = getPctInq(c);
         if (monto > 0 && pct > 0) {
           totalBoleta = Math.round(monto * 100 / pct);
           break;
         }
       }
-      const detalle = g.contratos.map(c => `<span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline">${c.titulo||c.hoja}</span> (${c['pct_'+srv]||0}%)`).join(', ');
+      const detalle = g.contratos.map(c => `<span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline">${c.titulo||c.hoja}</span> (${getPctInq(c)}%)`).join(', ');
       const hojas = g.contratos.map(c => c.hoja).join('|');
       const ids = g.contratos.map(c => c.id).join(',');
       return `<div class="ya-cargado-${srv}" style="display:none;background:#f0fff4;border:1.5px solid var(--green);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem">
@@ -3127,18 +3123,18 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
       ];
       let html = '';
       for (const srv of srvList) {
-        if (!srv.monto && !(c?.['pct_prop_'+srv.key] > 0)) continue;
-        const pctInq = c?.['pct_'+srv.key] ?? 100;
-        const pctProp = c?.['pct_prop_'+srv.key] ?? 0;
-        const seRinde = servRinde.includes(srv.key);
+        const sum = DB_SUMINISTROS.find(s => s.contrato_id === c?.id && s.tipo === srv.key);
+        const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv.key] ?? 100);
+        const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv.key] ?? 0);
+        const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv.key);
+        if (!srv.monto && !pctProp) continue;
 
         if (seRinde) {
-          // Sum monto from ALL contracts sharing same nro for this service
-          const nro = c?.['nro_'+srv.key];
+          const nro = sum?.nro_cuenta || c?.['nro_'+srv.key];
           const mesKey = p.mes?.substring(0,7) || '';
           let totalRendidoInq = srv.monto;
           if (nro) {
-            const otrosContratos = DB.contratos.filter(x => x.id !== c?.id && x['nro_'+srv.key] === nro && getEstado(x) === 'vigente');
+            const otrosContratos = DB.contratos.filter(x => x.id !== c?.id && (DB_SUMINISTROS.find(s => s.contrato_id === x.id && s.tipo === srv.key)?.nro_cuenta || x['nro_'+srv.key]) === nro && getEstado(x) === 'vigente');
             for (const oc of otrosContratos) {
               // Find pago for this other contract in the same month
               const ocPago = DB.pagos.find(pg => pg.hoja === oc.hoja && pg.mes && pg.mes.startsWith(mesKey));
@@ -4445,7 +4441,11 @@ function _abrirFormularioContrato(c, esNuevo) {
 
     <div class="section-title" style="margin:1.2rem 0 0.75rem">Suministros</div>
     <p style="font-size:0.78rem;color:#888;margin-bottom:0.75rem">Servicios e impuestos asociados a este contrato. Podés agregar varios del mismo tipo con distintas cuentas.</p>
-    <div id="lista-suministros" style="margin-bottom:0.75rem"></div>
+    <div id="lista-suministros" style="margin-bottom:0.75rem">
+      <div style="display:grid;grid-template-columns:140px 1fr 70px 70px 1fr auto;gap:0.5rem;padding:0 0 0.3rem;font-size:0.7rem;color:#888;text-transform:uppercase;letter-spacing:.05em;font-weight:600">
+        <span>Tipo</span><span>N° cuenta / descripción</span><span style="text-align:right">%&nbsp;Inq.</span><span style="text-align:right">%&nbsp;Prop.</span><span>Rinde a</span><span></span>
+      </div>
+    </div>
     <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarSuministro()">+ Agregar suministro</button>
 
     <div class="section-title" style="margin:1.2rem 0 0.75rem">Propietario/s</div>
@@ -4507,8 +4507,6 @@ function _abrirFormularioContrato(c, esNuevo) {
       suministros.forEach(s => agregarSuministroExistente(s));
     }, 50);
   }
-  // Validate pct on load
-  setTimeout(() => ['epe','agua','tgiu','seguro','internet','expensas'].forEach(s => actualizarTotalPct(s)), 100);
 }
 
 function abrirNuevaPersonaInline(rol) {
@@ -7021,12 +7019,15 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes) {
   const servRinde = (c?.servicios_rendir_propietario||'').toLowerCase();
   ['epe','agua','tgiu','seguro','internet','expensas'].forEach(srv => {
     const monto = p['monto_'+srv] || 0;
-    const pctProp = c?.['pct_prop_'+srv] ?? 0;
-    const pctInq = c?.['pct_'+srv] ?? 100;
-    if (servRinde.includes(srv) && monto > 0) {
+    // Prefer contrato_suministros, fallback to old fields
+    const sum = DB_SUMINISTROS.find(s => s.contrato_id === c?.id && s.tipo === srv);
+    const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv] ?? 0);
+    const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
+    const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv);
+    if (seRinde && monto > 0) {
       totalRendir += monto;
       itemsHtml += `<tr style="background:#f5f0e8"><td style="padding:5px 10px">${srv.charAt(0).toUpperCase()+srv.slice(1)} (a rendir)</td><td style="padding:5px 10px;text-align:right;color:#2d7a4f">+ ${formatMoney(monto)}</td></tr>`;
-    } else if (!servRinde.includes(srv) && pctProp > 0 && monto > 0) {
+    } else if (!seRinde && pctProp > 0 && monto > 0) {
       const totalBill = pctInq > 0 ? Math.round(monto * 100 / pctInq) : monto;
       const montoProp = Math.round(totalBill * pctProp / 100);
       if (montoProp > 0) { totalRendir -= montoProp; itemsHtml += `<tr><td style="padding:5px 10px">${srv.charAt(0).toUpperCase()+srv.slice(1)} (prop. ${pctProp}%)</td><td style="padding:5px 10px;text-align:right;color:#c8483a">− ${formatMoney(montoProp)}</td></tr>`; }
@@ -7208,11 +7209,16 @@ function renderNumeracionServicios() {
   if (!cont) return;
 
   const esEntero = ['epe','agua'].includes(srv);
-  const campo = 'nro_' + srv;
+
+  // Get nro for a contract - prefer contrato_suministros, fallback to old field
+  const getNroContrato = (c) => {
+    const sum = DB_SUMINISTROS.find(s => s.contrato_id === c.id && s.tipo === srv);
+    return sum?.nro_cuenta || c['nro_'+srv] || '';
+  };
 
   let contratos = DB.contratos.filter(c => getEstado(c) === 'vigente' || getEstado(c) === 'indefinido');
-  if (filtro === 'sin-nro') contratos = contratos.filter(c => !c[campo]);
-  else if (filtro === 'con-nro') contratos = contratos.filter(c => c[campo]);
+  if (filtro === 'sin-nro') contratos = contratos.filter(c => !getNroContrato(c));
+  else if (filtro === 'con-nro') contratos = contratos.filter(c => !!getNroContrato(c));
   if (buscar) contratos = contratos.filter(c =>
     (c.titulo||'').toLowerCase().includes(buscar) ||
     (c.locatario||'').toLowerCase().includes(buscar) ||
@@ -7230,7 +7236,7 @@ function renderNumeracionServicios() {
       ${contratos.map(c => {
         const inm = DB_INMUEBLES.find(x => x.id === c.inmueble_id);
         const dir = inm ? formatDireccion(inm, true) : (c.titulo||c.hoja);
-        const nroActual = c[campo] || '';
+        const nroActual = getNroContrato(c);
         return `<div style="display:flex;align-items:center;gap:0.75rem;background:#faf7f2;border-radius:8px;padding:0.6rem 1rem;border:1px solid var(--border)">
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:0.88rem;cursor:pointer;color:var(--accent);text-decoration:underline" onclick="abrirContratoDesdeNumeracion(${c.id})">${c.titulo||c.hoja}</div>
@@ -7255,21 +7261,21 @@ async function guardarNroServicio(contratoId, srv) {
   const input = document.getElementById('nsrv-input-' + contratoId);
   if (!input) return;
   const nro = input.value.trim();
-  const campo = 'nro_' + srv;
   const c = DB.contratos.find(x => x.id === contratoId);
   if (!c) return;
 
-  // Validate pct sum for all vigente contracts sharing this nro
+  // Validate pct sum for vigente contracts sharing this nro
   if (nro) {
     const compartidos = DB.contratos.filter(x =>
       x.id !== contratoId &&
-      String(x[campo]).trim() === String(nro).trim() &&
+      String(DB_SUMINISTROS.find(s => s.contrato_id === x.id && s.tipo === srv)?.nro_cuenta || x['nro_'+srv] || '').trim() === nro &&
       getEstado(x) === 'vigente'
     );
     const todos = [c, ...compartidos];
     const totalPct = todos.reduce((s, x) => {
-      const pctInq = x['pct_'+srv] != null ? Number(x['pct_'+srv]) : 100;
-      const pctProp = x['pct_prop_'+srv] != null ? Number(x['pct_prop_'+srv]) : 0;
+      const sum = DB_SUMINISTROS.find(d => d.contrato_id === x.id && d.tipo === srv);
+      const pctInq = sum ? (sum.pct_inquilino ?? 100) : (x['pct_'+srv] != null ? Number(x['pct_'+srv]) : 100);
+      const pctProp = sum ? (sum.pct_propietario ?? 0) : (x['pct_prop_'+srv] != null ? Number(x['pct_prop_'+srv]) : 0);
       return s + pctInq + pctProp;
     }, 0);
     if (Math.abs(totalPct - 100) > 1) {
@@ -7279,15 +7285,31 @@ async function guardarNroServicio(contratoId, srv) {
   }
 
   try {
-    const body = { [campo]: nro || null };
-    await sbPatch('contratos', contratoId, body);
+    // Save to contrato_suministros
+    const sumExist = DB_SUMINISTROS.find(s => s.contrato_id === contratoId && s.tipo === srv);
+    if (sumExist) {
+      await sbPatch('contrato_suministros', sumExist.id, { nro_cuenta: nro || null });
+      sumExist.nro_cuenta = nro || null;
+    } else if (nro) {
+      // Create new suministro entry
+      const r = await sbPost('contrato_suministros', {
+        contrato_id: contratoId, tipo: srv, nombre: srv,
+        nro_cuenta: nro, pct_inquilino: 100, pct_propietario: 0, orden: 0
+      });
+      const row = Array.isArray(r) ? r[0] : r;
+      if (row?.id) DB_SUMINISTROS.push(row);
+    }
+    // Also save to old campo for backward compat
+    const campo = 'nro_' + srv;
+    await sbPatch('contratos', contratoId, { [campo]: nro || null });
     c[campo] = nro || null;
+    // Propagate to inmueble
     if (c.inmueble_id) {
-      await sbPatch('inmuebles', c.inmueble_id, body);
+      await sbPatch('inmuebles', c.inmueble_id, { [campo]: nro || null });
       const inm = DB_INMUEBLES.find(x => x.id === c.inmueble_id);
       if (inm) inm[campo] = nro || null;
       const otros = DB.contratos.filter(x => x.inmueble_id === c.inmueble_id && x.id !== contratoId && getEstado(x) === 'vigente');
-      if (otros.length) await Promise.all(otros.map(x => sbPatch('contratos', x.id, body)));
+      if (otros.length) await Promise.all(otros.map(x => sbPatch('contratos', x.id, { [campo]: nro || null })));
       otros.forEach(x => x[campo] = nro || null);
     }
     toast('N° ' + srv.toUpperCase() + ' guardado ✓');
@@ -7372,10 +7394,6 @@ function agregarSuministro() {
 function agregarSuministroExistente(s) {
   const lista = document.getElementById('lista-suministros');
   lista.appendChild(_renderSuministroRow(s));
-}
-
-function onChangeTipoSuministro(sel) {
-  // Could add special behavior per type in future
 }
 
 function leerSuministros() {
@@ -7897,15 +7915,11 @@ function limpiarInmueble() {
   if (btn) btn.style.display = 'none';
   const sug = document.getElementById('sug-inmueble');
   if (sug) sug.style.display = 'none';
-  // Clear autocompleted service fields (green hint ones)
-  ['epe','agua','tgiu','seguro','internet','expensas'].forEach(srv => {
-    const el = document.getElementById('f-nro-' + srv);
-    if (el && el.style.background === 'rgb(240, 250, 240)') {
-      el.value = '';
-      el.style.background = '';
-      el.title = '';
-    }
-  });
+  // Clear suministros that were auto-loaded from inmueble (those without db id)
+  const lista = document.getElementById('lista-suministros');
+  if (lista) {
+    lista.querySelectorAll('[data-suministro-id]:not([data-suministro-db-id])').forEach(el => el.remove());
+  }
 }
 
 function buscarInmuebleEnLinea(input) {
@@ -7935,20 +7949,38 @@ function seleccionarInmueble(id) {
   if (!inm) return;
   document.getElementById('f-inmueble-id').value = id;
   document.getElementById('f-inmueble-input').value = formatDireccion(inm);
+  document.getElementById('f-inmueble-input').style.color = 'var(--green)';
+  document.getElementById('f-inmueble-input').style.fontWeight = '600';
+  document.getElementById('f-inmueble-input').readOnly = true;
   const sug = document.getElementById('sug-inmueble');
   if (sug) sug.style.display = 'none';
   const btn = document.getElementById('btn-limpiar-inmueble');
   if (btn) btn.style.display = 'block';
-  // Autocomplete service numbers from inmueble (always overwrite)
-  const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
-  servicios.forEach(srv => {
-    const el = document.getElementById('f-nro-' + srv);
-    if (el && inm['nro_' + srv]) {
-      el.value = inm['nro_' + srv];
-      el.style.background = '#f0faf0';
-      el.title = 'Completado desde el inmueble';
+  // Show edit button
+  const editBtn = document.querySelector(`button[onclick="editarInmuebleDesdeContrato(${id})"]`);
+  if (!editBtn) {
+    const wrapper = document.getElementById('f-inmueble-input')?.parentElement;
+    if (wrapper) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.onclick = () => editarInmuebleDesdeContrato(id);
+      b.style.cssText = 'background:#e8f4fd;border:1px solid #b8d9f0;color:var(--accent);border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer;white-space:nowrap';
+      b.textContent = '✏️ Editar';
+      wrapper.insertBefore(b, wrapper.querySelector('button'));
     }
-  });
+  }
+  // Pre-load suministros from inmueble if lista-suministros is empty
+  const lista = document.getElementById('lista-suministros');
+  const yaHay = lista?.querySelectorAll('[data-suministro-id]').length > 0;
+  if (!yaHay) {
+    const srvs = ['epe','agua','tgiu','seguro','internet','expensas'];
+    srvs.forEach(srv => {
+      const nro = inm['nro_'+srv];
+      if (nro) {
+        agregarSuministroExistente({ tipo: srv, nro_cuenta: nro, pct_inquilino: 100, pct_propietario: 0 });
+      }
+    });
+  }
 }
 
 function abrirReciboRapido() {
