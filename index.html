@@ -947,7 +947,7 @@ function buscarContratoHeader(q) {
       .filter(Boolean);
     if (personas.some(p => `${p.apellido||''} ${p.nombre||''} ${p.dni||''}`.toLowerCase().includes(ql))) return true;
     return false;
-  }).slice(0, 20);
+  }).slice(0, 8);
   if (!matches.length) {
     res.innerHTML = '<div class="hsr-empty">Sin resultados</div>';
   } else {
