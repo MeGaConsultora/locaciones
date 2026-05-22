@@ -8089,13 +8089,7 @@ async function guardarInmueble(id) {
   if (!body.calle) { toast('Ingresá al menos la calle', 'error'); return; }
   try {
     await sbPatch('inmuebles', id, body);
-    // Propagate nro_* to all active contracts with this inmueble_id
-    const nros = { nro_epe: body.nro_epe, nro_agua: body.nro_agua, nro_tgiu: body.nro_tgiu,
-                   nro_seguro: body.nro_seguro, nro_internet: body.nro_internet, nro_expensas: body.nro_expensas };
-    const contratos = DB.contratos.filter(c => c.inmueble_id === id && getEstado(c) === 'vigente');
-    await Promise.all(contratos.map(c => sbPatch('contratos', c.id, nros)));
-    if (contratos.length > 0) toast(`Inmueble actualizado ✓ — N° de cuenta propagados a ${contratos.length} contrato/s vigente/s`);
-    else toast('Inmueble actualizado ✓');
+    toast('Inmueble actualizado ✓');
     await loadAll();
     if (window._volverAContrato && window._contratoIdEditar) {
       window._volverAContrato = false;
@@ -8171,7 +8165,7 @@ function buscarInmuebleEnLinea(input) {
   sug.innerHTML = matches.map(inm =>
     '<div onclick="seleccionarInmueble(' + inm.id + ')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0ece4;font-size:0.85rem" onmouseover="this.style.background=\'var(--cream)\'" onmouseout="this.style.background=\'\'">' +
     '<strong>' + formatDireccion(inm, true) + '</strong><span style="color:#888;font-size:0.78rem"> — ' + (inm.localidad||'') + ' · ' + (inm.tipo||'') + '</span></div>'
-  ).join('') + '<div onclick="abrirNuevoInmuebleDesdeContrato()" style="padding:8px 12px;cursor:pointer;color:var(--accent);font-size:0.85rem;font-weight:600">+ Nuevo inmueble</div>';
+  ).join('');
 }
 
 function seleccionarInmueble(id) {
