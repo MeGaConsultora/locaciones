@@ -1524,9 +1524,14 @@ function renderGrilla(c) {
 
   const rows = pagosOrdenados.map(p => {
     const extras = extrasActuales[p.id] || [];
-    const totalExtras = extras.reduce((s,e) => s + (e.a_cargo_de === 'propietario' ? 0 : (parseFloat(e.importe)||0)), 0);
+    const extrasGral = extras.filter(e => e.suministro_id && e.a_cargo_de !== 'propietario');
+    const extrasMes = extras.filter(e => !e.suministro_id && e.a_cargo_de !== 'propietario');
+    const totalExtrasGral = extrasGral.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
+    const totalExtrasMes = extrasMes.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
+    const totalExtras = totalExtrasGral + totalExtrasMes;
+    const extrasGralLabel = extrasGral.length > 0 ? extrasGral.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
+    const extrasMesLabel = extrasMes.length > 0 ? extrasMes.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
     const rowClass = getRowClass(p);
-    const extrasLabel = extras.length > 0 ? extras.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
 
     return `<tr class="${rowClass}" id="row-${p.id}" 
       onclick="editarMes('${c.hoja}',${c.id},'${p.mes?.substring(0,7)}')" 
@@ -1543,9 +1548,9 @@ function renderGrilla(c) {
       ${serviciosInquilino.internet?`<td class="num">${p.monto_internet>0?formatMoney(p.monto_internet):'—'}</td>`:''}
       ${serviciosInquilino.expensas?`<td class="num">${p.monto_expensas>0?formatMoney(p.monto_expensas):'—'}</td>`:''}
 
-      <td style="font-size:0.78rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasLabel}">${extrasLabel}</td>
-      <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>
-      <td class="num" id="abonado-${p.id}">${(() => { const ab = (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
+      <td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasGralLabel}">${totalExtrasGral > 0 ? formatMoney(totalExtrasGral) : '—'}</td>
+      <td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasMesLabel}">${totalExtrasMes > 0 ? formatMoney(totalExtrasMes) : '—'}</td>
+      <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>      <td class="num" id="abonado-${p.id}">${(() => { const ab = (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
       <td class="num" id="saldo-${p.id}">${p.saldo>0?`<span class="saldo-pendiente">${formatMoney(p.saldo)}</span>`:'<span class="saldo-ok">✓</span>'}</td>
       <td id="estado-${p.id}">${getEstadoLabel(p)}</td>
       <td onclick="event.stopPropagation()">
@@ -1572,7 +1577,8 @@ function renderGrilla(c) {
           ${serviciosInquilino.internet?'<th class="r">Internet</th>':''}
           ${serviciosInquilino.expensas?'<th class="r">Expensas</th>':''}
 
-          <th>Extras</th>
+          <th>Extras Gral</th>
+          <th>Extras Mes</th>
           <th class="r">Total</th>
           <th class="r">Abonado</th>
           <th class="r">Saldo</th>
@@ -2965,24 +2971,6 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
   let extrasDelMes = [];
   if (p) {
     try { extrasDelMes = await sbGet('pagos_extras', `pago_id=eq.${p.id}&order=id.asc`); } catch(e) {}
-    // Auto-add monto_fijo suministros as extras if not already present
-    const suministrosFijos = DB_SUMINISTROS.filter(s =>
-      parseInt(s.contrato_id) === contratoId &&
-      s.tipo === 'otro' &&
-      s.monto_fijo > 0
-    );
-    for (const sf of suministrosFijos) {
-      const concepto = sf.nombre || sf.nro_cuenta || 'Otros';
-      const yaExiste = extrasDelMes.some(e => e.concepto === concepto && Math.abs((e.importe||0) - sf.monto_fijo) < 0.01);
-      if (!yaExiste) {
-        try {
-          const body = { pago_id: p.id, concepto, importe: sf.monto_fijo, a_cargo_de: sf.propietario_persona_id ? 'propietario' : 'inquilino' };
-          const r = await sbPost('pagos_extras', body);
-          const row = Array.isArray(r) ? r[0] : r;
-          if (row?.id) extrasDelMes.push(row);
-        } catch(e) {}
-      }
-    }
   }
 
   const extrasInq = extrasDelMes.filter(e => e.a_cargo_de !== 'propietario');
