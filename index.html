@@ -1524,7 +1524,11 @@ function renderGrilla(c) {
 
   const rows = pagosOrdenados.map(p => {
     const extras = extrasActuales[p.id] || [];
-    const extrasGral = extras.filter(e => e.suministro_id && e.a_cargo_de !== 'propietario');
+    const extrasGral = extras.filter(e => {
+      if (!e.suministro_id || e.a_cargo_de === 'propietario') return false;
+      const sum = DB_SUMINISTROS.find(s => s.id === parseInt(e.suministro_id));
+      return sum?.tipo === 'otro';
+    });
     const extrasMes = extras.filter(e => !e.suministro_id && e.a_cargo_de !== 'propietario');
     const totalExtrasGral = extrasGral.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
     const totalExtrasMes = extrasMes.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
