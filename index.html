@@ -2603,7 +2603,7 @@ async function cargarExtrasGral(mes, filtro) {
 
   // Load existing extras for this month for these contracts
   const hojas = contratosConOtro.map(c => c.hoja);
-  const mes01 = mes + '-01';
+  const mes01 = mes.length === 7 ? mes + '-01' : mes;
   let extrasDelMes = [];
   try {
     // Fetch pagos for this month for relevant contracts
@@ -2651,7 +2651,10 @@ async function cargarExtrasGral(mes, filtro) {
             </div>
             <input type="text" id="eg-input-${s.id}" data-suministro-id="${s.id}" data-contrato-id="${c.id}" data-concepto="${concepto}"
               value="${s.monto_fijo > 0 ? s.monto_fijo : ''}" placeholder="$ importe"
-              style="width:150px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem;text-align:right">
+              style="width:130px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem;text-align:right"
+              onkeydown="if(event.key==='Enter') guardarExtraGralItem('eg-input-${s.id}')">
+            <button onclick="guardarExtraGralItem('eg-input-${s.id}')"
+              style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem">✓</button>
           </div>`).join('')}
       </div>` : ''}
     ${yaCargados.length ? `
@@ -2664,10 +2667,47 @@ async function cargarExtrasGral(mes, filtro) {
               <span style="color:#888;font-size:0.75rem;margin-left:6px">${concepto}</span>
             </div>
             <input type="text" id="eg-input-${s.id}" data-suministro-id="${s.id}" data-contrato-id="${c.id}" data-concepto="${concepto}" data-extra-id="${extra.id}"
-              value="${extra.importe}" style="width:150px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem;text-align:right">
+              value="${extra.importe}" style="width:130px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem;text-align:right"
+              onkeydown="if(event.key==='Enter') guardarExtraGralItem('eg-input-${s.id}')">
+            <button onclick="guardarExtraGralItem('eg-input-${s.id}')"
+              style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem">✓</button>
           </div>`).join('')}
       </div>` : ''}
   `;
+}
+
+async function guardarExtraGralItem(inputId) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const importe = parseMonto(input.value);
+  if (!importe) { toast('Ingresá un importe', 'error'); return; }
+  const mesKey = document.getElementById('srv-mes')?.value;
+  if (!mesKey) return;
+  const mes01 = mesKey + '-01';
+  const suministroId = parseInt(input.dataset.suministroId);
+  const contratoId = parseInt(input.dataset.contratoId);
+  const concepto = input.dataset.concepto;
+  const extraId = input.dataset.extraId ? parseInt(input.dataset.extraId) : null;
+  try {
+    const c = DB.contratos.find(x => x.id === contratoId);
+    if (!c) return;
+    const enc = encodeURIComponent(c.hoja);
+    const pagos = await sbGet('pagos', `hoja=eq.${enc}&mes=eq.${mes01}&limit=1&select=id`);
+    if (!pagos.length) { toast(`Sin mes cargado para ${c.titulo||c.hoja}`, 'error'); return; }
+    const pagoId = pagos[0].id;
+    if (extraId) {
+      await sbPatch('pagos_extras', extraId, { importe });
+    } else {
+      const r = await sbPost('pagos_extras', { pago_id: pagoId, concepto, importe, suministro_id: suministroId, a_cargo_de: 'inquilino' });
+      const row = Array.isArray(r) ? r[0] : r;
+      if (row?.id) input.dataset.extraId = row.id;
+    }
+    // Visual feedback - turn green
+    input.style.borderColor = 'var(--green)';
+    input.closest('div[style*="background"]').style.background = '#f0fff4';
+    input.closest('div[style*="background"]').style.borderColor = 'var(--green)';
+    toast(`${concepto} guardado ✓`);
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
 async function guardarExtrasGral() {
