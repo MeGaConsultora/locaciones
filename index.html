@@ -1533,9 +1533,13 @@ function renderGrilla(c) {
     const totalExtrasGral = extrasGral.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
     const totalExtrasMes = extrasMes.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
     const totalExtras = totalExtrasGral + totalExtrasMes;
+    // Real saldo includes unpaid extras
+    const extrasNoPagadas = extras.filter(e => e.a_cargo_de !== 'propietario' && !(e.pagado > 0));
+    const totalExtrasNoPagadas = extrasNoPagadas.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
+    const saldoReal = (p.saldo||0) + totalExtrasNoPagadas;
     const extrasGralLabel = extrasGral.length > 0 ? extrasGral.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
     const extrasMesLabel = extrasMes.length > 0 ? extrasMes.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
-    const rowClass = getRowClass(p);
+    const rowClass = saldoReal > 0 ? (p.saldo > 0 ? getRowClass(p) : 'row-parcial') : getRowClass(p);
 
     return `<tr class="${rowClass}" id="row-${p.id}" 
       onclick="editarMes('${c.hoja}',${c.id},'${p.mes?.substring(0,7)}')" 
@@ -1555,11 +1559,11 @@ function renderGrilla(c) {
       <td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasGralLabel}">${totalExtrasGral > 0 ? formatMoney(totalExtrasGral) : '—'}</td>
       <td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasMesLabel}">${totalExtrasMes > 0 ? formatMoney(totalExtrasMes) : '—'}</td>
       <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>      <td class="num" id="abonado-${p.id}">${(() => { const ab = (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
-      <td class="num" id="saldo-${p.id}">${p.saldo>0?`<span class="saldo-pendiente">${formatMoney(p.saldo)}</span>`:'<span class="saldo-ok">✓</span>'}</td>
+      <td class="num" id="saldo-${p.id}">${saldoReal>0?`<span class="saldo-pendiente">${formatMoney(saldoReal)}</span>`:'<span class="saldo-ok">✓</span>'}</td>
       <td id="estado-${p.id}">${getEstadoLabel(p)}</td>
       <td onclick="event.stopPropagation()">
         <div class="grid-actions">
-          ${(!p.saldo||p.saldo===0)?'':`<button class="grid-btn grid-btn-green" onclick="editarMesConSolapa('${c.hoja}',${c.id},'${p.mes?.substring(0,7)}','s2')">✓ Cobrar</button>`}
+          ${(!saldoReal||saldoReal===0)?'':`<button class="grid-btn grid-btn-green" onclick="editarMesConSolapa('${c.hoja}',${c.id},'${p.mes?.substring(0,7)}','s2')">✓ Cobrar</button>`}
           ${window._pagosPdf?.[+p.id]?.length ? `<button class="grid-btn" style="background:var(--ink2);color:white" onclick="verBoleta(${p.id})" title="Ver boleta PDF">📄</button>` : ''}
           <button class="grid-btn grid-btn-red" onclick="eliminarMes(${p.id},'${c.hoja}')" title="Eliminar mes">🗑</button>
         </div>
@@ -2621,7 +2625,7 @@ async function cargarExtrasGral(mes, filtro) {
     for (const s of suministros) {
       const concepto = s.nombre || s.nro_cuenta || 'Otro';
       const extrasContrato = extrasDelMes.filter(e => e._contrato_id === c.id);
-      const yaExiste = extrasContrato.find(e => e.suministro_id === s.id);
+      const yaExiste = extrasContrato.find(e => parseInt(e.suministro_id) === parseInt(s.id));
       if (yaExiste) {
         yaCargados.push({ c, s, concepto, extra: yaExiste });
       } else {
