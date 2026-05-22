@@ -5724,6 +5724,11 @@ function closeModal(e) {
       volverAServiciosModal();
       return;
     }
+    // If came from contract form (inmueble edit), return to contract
+    if (window._volverAContrato) {
+      cancelarFormularioInmueble();
+      return;
+    }
     const overlay = document.getElementById('modal-overlay');
     const contratoId = overlay.dataset.contratoId;
     overlay.classList.remove('open');
@@ -8030,7 +8035,7 @@ function _abrirFormularioInmueble(inm) {
     <div class="form-group" style="margin-bottom:1rem"><label>Descripción (opcional)</label>
       <textarea id="inm-descripcion" rows="2" placeholder="Ej: Local en esquina..." style="margin-top:4px;width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;resize:vertical">${inm?.descripcion||''}</textarea></div>
     <div class="form-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-secondary" onclick="cancelarFormularioInmueble()">Cancelar</button>
       ${!esNuevo ? `<button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="confirmarEliminarInmueble(${inm.id})">🗑 Eliminar</button>` : ''}
       <button class="btn btn-primary" onclick="${esNuevo?'guardarNuevoInmueble()':'guardarInmueble('+inm.id+')'}">💾 Guardar</button>
     </div>`;
@@ -8377,6 +8382,25 @@ function imprimirReciboRapido() {
   ventana.document.close();
 }
 
+
+function cancelarFormularioInmueble() {
+  if (window._volverAContrato && window._contratoIdEditar) {
+    const cid = window._contratoIdEditar;
+    window._volverAContrato = false;
+    window._contratoIdEditar = null;
+    closeModal();
+    setTimeout(() => openEditContrato(cid), 100);
+  } else if (window._volverAContrato && window._contratoFormularioGuardado) {
+    window._volverAContrato = false;
+    const saved = window._contratoFormularioGuardado;
+    window._contratoFormularioGuardado = null;
+    document.getElementById('modal-title').textContent = saved.titulo;
+    document.getElementById('modal-body').innerHTML = saved.body;
+    document.getElementById('modal-overlay').classList.add('open');
+  } else {
+    closeModal();
+  }
+}
 
 function editarInmuebleDesdeContrato(inmuebleId) {
   window._volverAContrato = true;
