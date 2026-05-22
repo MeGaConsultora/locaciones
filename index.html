@@ -2978,9 +2978,29 @@ function mostrarSolapa(id, btn) {
 function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
 
-  // Use per-item pagado if available
-  const tieneItemsPagados = ['alquiler','epe','agua','tgiu','seguro','internet','expensas']
+  // Use per-item pagado if available, or reconstruct from total for legacy paid records
+  let tieneItemsPagados = ['alquiler','epe','agua','tgiu','seguro','internet','expensas']
     .some(k => p[`pagado_${k}`] > 0);
+
+  // Legacy: pago fully paid but pagado_ fields are null — reconstruct from montos
+  if (!tieneItemsPagados && (p.pagado === 'SI' || p.saldo === 0)) {
+    const totalPagado = (p.total||0) - (p.saldo||0);
+    if (totalPagado > 0) {
+      // Fill pagado_ fields in memory from montos (don't write to DB)
+      const orden = ['alquiler','epe','agua','tgiu','expensas','seguro','internet'];
+      let restante = totalPagado;
+      for (const k of orden) {
+        if (restante <= 0) break;
+        const monto = k === 'alquiler' ? (p.importe_alquiler||0) : (p[`monto_${k}`]||0);
+        if (monto > 0) {
+          const pagar = Math.min(restante, monto);
+          p[`pagado_${k}`] = pagar;
+          restante -= pagar;
+        }
+      }
+      tieneItemsPagados = true;
+    }
+  }
   
   let items;
   if (tieneItemsPagados) {
