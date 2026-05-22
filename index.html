@@ -2457,7 +2457,7 @@ async function cargarListaServicios(filtro='') {
       });
       return Object.values(grupos).map(g => {
         const todosConNro = g.nro
-          ? DB.contratos.filter(c => getNroC(c) === g.nro && getEstado(c) === 'vigente' && DB_SUMINISTROS.some(s => s.contrato_id === c.id && s.tipo === srv && (s.pct_inquilino||0) > 0) || (c.servicios_inquilino||'').toLowerCase().includes(srv))
+          ? DB.contratos.filter(c => getNroC(c) === g.nro && getEstado(c) === 'vigente')
           : g.contratos;
         const totalPct = todosConNro.reduce((s,c) => s + getPctInq(c) + getPctProp(c), 0);
         const pctOk = Math.abs(totalPct - 100) < 1;
@@ -4486,8 +4486,13 @@ function _abrirFormularioContrato(c, esNuevo) {
     <div class="section-title" style="margin:1.2rem 0 0.5rem">Suministros</div>
     <p style="font-size:0.78rem;color:#888;margin-bottom:0.5rem">Servicios e impuestos asociados a este contrato. Podés agregar varios del mismo tipo con distintas cuentas.</p>
     <div id="lista-suministros" style="margin-bottom:0.5rem">
-      <div style="display:grid;grid-template-columns:130px 1fr 75px 75px 80px 1fr auto;gap:0.4rem;padding:0 0.75rem 0.3rem;font-size:0.68rem;color:#888;text-transform:uppercase;letter-spacing:.04em;font-weight:600">
-        <span>Tipo</span><span>N° cuenta / descripción</span><span style="text-align:center">%&nbsp;Inq.</span><span style="text-align:center">%&nbsp;Prop.</span><span style="text-align:right">Imp. fijo</span><span>Rinde a</span><span></span>
+      <div style="display:flex;gap:0.4rem;padding:0 0.75rem 0.4rem;font-size:0.68rem;color:#888;text-transform:uppercase;letter-spacing:.04em;font-weight:600">
+        <span style="width:130px;flex-shrink:0">Tipo</span>
+        <span style="flex:1">N° cuenta / descripción</span>
+        <span style="width:75px;flex-shrink:0;text-align:center">%&nbsp;Inq.</span>
+        <span style="width:75px;flex-shrink:0;text-align:center">%&nbsp;Prop.</span>
+        <span style="flex:1">Rinde a</span>
+        <span style="width:24px;flex-shrink:0"></span>
       </div>
     </div>
     <button class="btn btn-secondary" style="font-size:0.82rem;margin-bottom:1rem" onclick="agregarSuministro()">+ Agregar suministro</button>
@@ -7377,29 +7382,29 @@ function _renderSuministroRow(s) {
   const div = document.createElement('div');
   div.dataset.suministroId = id;
   if (s.id) div.dataset.suministroDbId = s.id;
-  div.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.4rem;display:grid;grid-template-columns:130px 1fr 75px 75px 80px 1fr auto;gap:0.4rem;align-items:center;font-size:0.82rem';
+  div.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.4rem;display:flex;gap:0.4rem;align-items:center;font-size:0.82rem';
   div.innerHTML = `
-    <select style="padding:5px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="onChangeTipoSuministro(this)">
+    <select style="width:130px;flex-shrink:0;padding:5px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="onChangeTipoSuministro(this)">
       ${TIPOS_SUMINISTRO.map(t => `<option value="${t.toLowerCase()}" ${s.tipo === t.toLowerCase() || s.tipo === t ? 'selected' : ''}>${t}</option>`).join('')}
     </select>
     <input type="text" placeholder="N° cuenta / descripción" value="${s.nro_cuenta||s.nombre||''}"
-      style="padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem">
+      style="flex:1;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem">
     <input type="number" value="${s.pct_inquilino ?? 100}" min="0" max="100" step="0.01"
       placeholder="%" title="% Inquilino"
-      style="padding:5px 4px;border:1.5px solid var(--green);border-radius:6px;font-size:0.82rem;text-align:center">
+      style="width:75px;flex-shrink:0;padding:5px 4px;border:1.5px solid var(--green);border-radius:6px;font-size:0.82rem;text-align:center">
     <input type="number" value="${s.pct_propietario ?? 0}" min="0" max="100" step="0.01"
       placeholder="%" title="% Propietario"
-      style="padding:5px 4px;border:1.5px solid #f0c040;border-radius:6px;font-size:0.82rem;text-align:center">
+      style="width:75px;flex-shrink:0;padding:5px 4px;border:1.5px solid #f0c040;border-radius:6px;font-size:0.82rem;text-align:center">
     <input type="text" value="${s.monto_fijo != null ? s.monto_fijo : ''}"
       placeholder="$ fijo" title="Importe fijo mensual"
-      style="padding:5px 4px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem;text-align:right;display:${(s.tipo==='otro'||s.tipo==='Otro')?'block':'none'}"
+      style="width:80px;flex-shrink:0;padding:5px 4px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem;text-align:right;display:${(s.tipo==='otro'||s.tipo==='Otro')?'block':'none'}"
       class="srv-monto-fijo">
-    <select style="padding:5px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem" title="Rendir a propietario">
+    <select style="flex:1;padding:5px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem" title="Rendir a propietario">
       <option value="">— No rinde —</option>
       ${propOptions}
     </select>
     <button onclick="this.closest('[data-suministro-id]').remove()"
-      style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:0.75rem">✕</button>
+      style="width:24px;flex-shrink:0;background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:4px;cursor:pointer;font-size:0.75rem">✕</button>
   `;
   return div;
 }
