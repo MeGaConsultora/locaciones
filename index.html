@@ -2364,9 +2364,9 @@ async function cargarListaServicios(filtro='') {
     // Get ALL vigente contracts that have this service with pct_inquilino > 0
     const todosConServicio = DB.contratos.filter(c => {
       if (getEstado(c) !== 'vigente') return false;
-      const tieneSum = DB_SUMINISTROS.some(s => s.contrato_id === c.id && s.tipo === srv && (s.pct_inquilino||0) > 0);
+      const tieneSum = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv && (s.pct_inquilino||0) > 0);
       // fallback to old field if no suministros row
-      const hasSuministros = DB_SUMINISTROS.some(s => s.contrato_id === c.id);
+      const hasSuministros = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === parseInt(c.id));
       const tieneViejo = !hasSuministros && (c.servicios_inquilino||'').toLowerCase().includes(srv);
       if (!tieneSum && !tieneViejo) return false;
       if (filtro && !(c.titulo||c.hoja||'').toLowerCase().includes(filtro)) return false;
@@ -2384,7 +2384,7 @@ async function cargarListaServicios(filtro='') {
 
     // Split by nro group: if ANY contract in a nro group has importe, whole group is "cargado"
     const getNro = (c) => {
-      const sum = DB_SUMINISTROS.find(s => s.contrato_id === c.id && s.tipo === srv);
+      const sum = DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv);
       return sum?.nro_cuenta || c[`nro_${srv}`] || null;
     };
     const nrosConImporte = new Set();
@@ -2415,9 +2415,9 @@ async function cargarListaServicios(filtro='') {
     })();
 
     // Helper: get pct for a contract/service from DB_SUMINISTROS or fallback
-    const getPctInq = (c) => { const s = DB_SUMINISTROS.find(x => x.contrato_id === c.id && x.tipo === srv); return s ? (s.pct_inquilino ?? 100) : (c['pct_'+srv] ?? 100); };
-    const getPctProp = (c) => { const s = DB_SUMINISTROS.find(x => x.contrato_id === c.id && x.tipo === srv); return s ? (s.pct_propietario ?? 0) : (c['pct_prop_'+srv] ?? 0); };
-    const getNroC = (c) => { const s = DB_SUMINISTROS.find(x => x.contrato_id === c.id && x.tipo === srv); return s?.nro_cuenta || c['nro_'+srv] || ''; };
+    const getPctInq = (c) => { const s = DB_SUMINISTROS.find(x => parseInt(x.contrato_id) === c.id && x.tipo === srv); return s ? (s.pct_inquilino ?? 100) : (c['pct_'+srv] ?? 100); };
+    const getPctProp = (c) => { const s = DB_SUMINISTROS.find(x => parseInt(x.contrato_id) === c.id && x.tipo === srv); return s ? (s.pct_propietario ?? 0) : (c['pct_prop_'+srv] ?? 0); };
+    const getNroC = (c) => { const s = DB_SUMINISTROS.find(x => parseInt(x.contrato_id) === c.id && x.tipo === srv); return s?.nro_cuenta || c['nro_'+srv] || ''; };
 
     // Check pct sum - use only VIGENTE contracts with same nro
     const pctWarnings = [];
@@ -2611,7 +2611,7 @@ async function guardarServicios() {
 
       const applyPct = (val, srv) => {
         // Check contrato_suministros first
-        const sum = DB_SUMINISTROS.find(s => s.contrato_id === cPago?.id && s.tipo === srv);
+        const sum = DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(cPago?.id) && s.tipo === srv);
         const pct = sum ? (sum.pct_inquilino ?? 100) : (pctData?.['pct_'+srv] ?? 100);
         return Math.round(val * pct / 100 * 100) / 100;
       };
@@ -3141,7 +3141,7 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
       ];
       let html = '';
       for (const srv of srvList) {
-        const sum = DB_SUMINISTROS.find(s => s.contrato_id === c?.id && s.tipo === srv.key);
+        const sum = DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === srv.key);
         const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv.key] ?? 100);
         const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv.key] ?? 0);
         const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv.key);
@@ -3153,7 +3153,7 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
           const mesKey = p.mes?.substring(0,7) || '';
           let totalRendidoInq = srv.monto;
           if (nro) {
-            const otrosContratos = DB.contratos.filter(x => x.id !== c?.id && (DB_SUMINISTROS.find(s => s.contrato_id === x.id && s.tipo === srv.key)?.nro_cuenta || x['nro_'+srv.key]) === nro && getEstado(x) === 'vigente');
+            const otrosContratos = DB.contratos.filter(x => x.id !== c?.id && (DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(x.id) && s.tipo === srv.key)?.nro_cuenta || x['nro_'+srv.key]) === nro && getEstado(x) === 'vigente');
             for (const oc of otrosContratos) {
               // Find pago for this other contract in the same month
               const ocPago = DB.pagos.find(pg => pg.hoja === oc.hoja && pg.mes && pg.mes.startsWith(mesKey));
@@ -4528,7 +4528,7 @@ function _abrirFormularioContrato(c, esNuevo) {
         if (p) mostrarPersonaEnLista('garante', p);
       });
       // Populate suministros
-      const suministros = DB_SUMINISTROS.filter(x => x.contrato_id === c.id);
+      const suministros = DB_SUMINISTROS.filter(x => parseInt(x.contrato_id) === parseInt(c.id));
       suministros.forEach(s => agregarSuministroExistente(s));
     }, 50);
   }
@@ -7045,7 +7045,7 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes) {
   ['epe','agua','tgiu','seguro','internet','expensas'].forEach(srv => {
     const monto = p['monto_'+srv] || 0;
     // Prefer contrato_suministros, fallback to old fields
-    const sum = DB_SUMINISTROS.find(s => s.contrato_id === c?.id && s.tipo === srv);
+    const sum = DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === srv);
     const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv] ?? 0);
     const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
     const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv);
@@ -7237,7 +7237,7 @@ function renderNumeracionServicios() {
 
   // Get nro for a contract - prefer contrato_suministros, fallback to old field
   const getNroContrato = (c) => {
-    const sum = DB_SUMINISTROS.find(s => s.contrato_id === c.id && s.tipo === srv);
+    const sum = DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv);
     return sum?.nro_cuenta || c['nro_'+srv] || '';
   };
 
@@ -7293,12 +7293,12 @@ async function guardarNroServicio(contratoId, srv) {
   if (nro) {
     const compartidos = DB.contratos.filter(x =>
       x.id !== contratoId &&
-      String(DB_SUMINISTROS.find(s => s.contrato_id === x.id && s.tipo === srv)?.nro_cuenta || x['nro_'+srv] || '').trim() === nro &&
+      String(DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(x.id) && s.tipo === srv)?.nro_cuenta || x['nro_'+srv] || '').trim() === nro &&
       getEstado(x) === 'vigente'
     );
     const todos = [c, ...compartidos];
     const totalPct = todos.reduce((s, x) => {
-      const sum = DB_SUMINISTROS.find(d => d.contrato_id === x.id && d.tipo === srv);
+      const sum = DB_SUMINISTROS.find(d => parseInt(d.contrato_id) === parseInt(x.id) && d.tipo === srv);
       const pctInq = sum ? (sum.pct_inquilino ?? 100) : (x['pct_'+srv] != null ? Number(x['pct_'+srv]) : 100);
       const pctProp = sum ? (sum.pct_propietario ?? 0) : (x['pct_prop_'+srv] != null ? Number(x['pct_prop_'+srv]) : 0);
       return s + pctInq + pctProp;
@@ -7311,7 +7311,7 @@ async function guardarNroServicio(contratoId, srv) {
 
   try {
     // Save to contrato_suministros
-    const sumExist = DB_SUMINISTROS.find(s => s.contrato_id === contratoId && s.tipo === srv);
+    const sumExist = DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(contratoId) && s.tipo === srv);
     if (sumExist) {
       await sbPatch('contrato_suministros', sumExist.id, { nro_cuenta: nro || null });
       sumExist.nro_cuenta = nro || null;
@@ -7457,7 +7457,7 @@ function leerSuministros() {
 
 async function guardarSuministros(contratoId) {
   const nuevos = leerSuministros();
-  const existentes = DB_SUMINISTROS.filter(x => x.contrato_id === contratoId);
+  const existentes = DB_SUMINISTROS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId));
 
   // Delete removed ones
   const nuevoIds = nuevos.filter(x => x.id).map(x => x.id);
