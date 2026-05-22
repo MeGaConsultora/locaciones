@@ -2331,6 +2331,7 @@ async function abrirCargarServicios() {
       <button class="solapa-btn" onclick="mostrarSolapa('srv-seguro',this)">🔒 Seguro</button>
       <button class="solapa-btn" onclick="mostrarSolapa('srv-internet',this)">🌐 Internet</button>
       <button class="solapa-btn" onclick="mostrarSolapa('srv-expensas',this)">🏢 Expensas</button>
+      <button class="solapa-btn" onclick="mostrarSolapa('srv-extras-gral',this)">📋 Extras Gral</button>
     </div>
     <div id="srv-epe" class="solapa-panel active"><div class="loading">Seleccioná un mes para cargar</div></div>
     <div id="srv-agua" class="solapa-panel"><div class="loading">Seleccioná un mes para cargar</div></div>
@@ -2338,9 +2339,11 @@ async function abrirCargarServicios() {
     <div id="srv-seguro" class="solapa-panel"><div class="loading">Seleccioná un mes para cargar</div></div>
     <div id="srv-internet" class="solapa-panel"><div class="loading">Seleccioná un mes para cargar</div></div>
     <div id="srv-expensas" class="solapa-panel"><div class="loading">Seleccioná un mes para cargar</div></div>
+    <div id="srv-extras-gral" class="solapa-panel"><div class="loading">Seleccioná un mes para cargar</div></div>
     <div class="form-actions" style="margin-top:1rem">
       <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
-      <button class="btn btn-primary" onclick="guardarServicios()">💾 Guardar servicios</button>
+      <button class="btn btn-primary" id="btn-guardar-extras-gral" onclick="guardarExtrasGral()" style="display:none">💾 Guardar Extras Gral</button>
+      <button class="btn btn-primary" id="btn-guardar-servicios" onclick="guardarServicios()">💾 Guardar servicios</button>
     </div>
   `;
   document.getElementById('modal-overlay').classList.add('open');
@@ -2562,6 +2565,129 @@ async function cargarListaServicios(filtro='') {
       ${agruparSinCargar(contratos)}
     `;
   }
+  // Load Extras Gral tab
+  await cargarExtrasGral(mes, filtro);
+}
+
+async function cargarExtrasGral(mes, filtro) {
+  const panel = document.getElementById('srv-extras-gral');
+  if (!panel) return;
+
+  // Get all vigente contracts with 'otro' suministros
+  const contratosConOtro = DB.contratos.filter(c => {
+    if (getEstado(c) !== 'vigente') return false;
+    const tieneOtro = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === c.id && s.tipo === 'otro');
+    if (!tieneOtro) return false;
+    if (filtro && !(c.titulo||c.hoja||'').toLowerCase().includes(filtro)) return false;
+    return true;
+  });
+
+  if (!contratosConOtro.length) {
+    panel.innerHTML = '<div class="empty-state" style="padding:1.5rem;text-align:center;color:#aaa">No hay contratos con extras generales</div>';
+    return;
+  }
+
+  // Load existing extras for this month for these contracts
+  const hojas = contratosConOtro.map(c => c.hoja);
+  const mes01 = mes + '-01';
+  let extrasDelMes = [];
+  try {
+    // Fetch pagos for this month for relevant contracts
+    for (const c of contratosConOtro) {
+      const enc = encodeURIComponent(c.hoja);
+      const pagos = await sbGet('pagos', `hoja=eq.${enc}&mes=eq.${mes01}&limit=1&select=id`);
+      if (pagos.length) {
+        const extras = await sbGet('pagos_extras', `pago_id=eq.${pagos[0].id}&order=id.asc`);
+        extras.forEach(e => extrasDelMes.push({ ...e, _hoja: c.hoja, _pago_id: pagos[0].id, _contrato_id: c.id }));
+      }
+    }
+  } catch(e) {}
+
+  const sinCargar = [];
+  const yaCargados = [];
+
+  for (const c of contratosConOtro) {
+    const suministros = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id && s.tipo === 'otro');
+    for (const s of suministros) {
+      const concepto = s.nombre || s.nro_cuenta || 'Otro';
+      const extrasContrato = extrasDelMes.filter(e => e._contrato_id === c.id);
+      const yaExiste = extrasContrato.find(e => e.suministro_id === s.id);
+      if (yaExiste) {
+        yaCargados.push({ c, s, concepto, extra: yaExiste });
+      } else {
+        sinCargar.push({ c, s, concepto });
+      }
+    }
+  }
+
+  const totalSin = sinCargar.length;
+  const totalYa = yaCargados.length;
+
+  panel.innerHTML = `
+    <div style="margin-bottom:0.75rem;font-size:0.82rem;color:#888">
+      ${totalSin + totalYa} ítem/s · <strong>${totalSin}</strong> sin cargar · ${totalYa} ya cargados
+    </div>
+    ${sinCargar.length ? `
+      <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1rem">
+        ${sinCargar.map(({c, s, concepto}) => `
+          <div style="background:white;border:1.5px solid var(--border);border-radius:8px;padding:0.75rem 1rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+            <div style="flex:1;min-width:0">
+              <span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-weight:600;font-size:0.88rem">${c.titulo||c.hoja}</span>
+              <div style="font-size:0.75rem;color:#888;margin-top:2px">${concepto}</div>
+            </div>
+            <input type="text" id="eg-input-${s.id}" data-suministro-id="${s.id}" data-contrato-id="${c.id}" data-concepto="${concepto}"
+              value="${s.monto_fijo > 0 ? s.monto_fijo : ''}" placeholder="$ importe"
+              style="width:150px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem;text-align:right">
+          </div>`).join('')}
+      </div>` : ''}
+    ${yaCargados.length ? `
+      <div style="margin-top:0.5rem">
+        <div style="font-size:0.78rem;color:#888;margin-bottom:0.5rem;font-weight:600">YA CARGADOS</div>
+        ${yaCargados.map(({c, s, concepto, extra}) => `
+          <div style="background:#f0fff4;border:1.5px solid var(--green);border-radius:8px;padding:0.6rem 1rem;display:flex;align-items:center;gap:0.75rem;margin-bottom:0.4rem">
+            <div style="flex:1;font-size:0.85rem">
+              <span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-weight:600">${c.titulo||c.hoja}</span>
+              <span style="color:#888;font-size:0.75rem;margin-left:6px">${concepto}</span>
+            </div>
+            <input type="text" id="eg-input-${s.id}" data-suministro-id="${s.id}" data-contrato-id="${c.id}" data-concepto="${concepto}" data-extra-id="${extra.id}"
+              value="${extra.importe}" style="width:150px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem;text-align:right">
+          </div>`).join('')}
+      </div>` : ''}
+  `;
+}
+
+async function guardarExtrasGral() {
+  const mesKey = document.getElementById('srv-mes')?.value;
+  if (!mesKey) return;
+  const mes01 = mesKey + '-01';
+  const inputs = document.querySelectorAll('[id^="eg-input-"]');
+  let guardados = 0;
+  for (const input of inputs) {
+    const importe = parseMonto(input.value);
+    if (!importe) continue;
+    const suministroId = parseInt(input.dataset.suministroId);
+    const contratoId = parseInt(input.dataset.contratoId);
+    const concepto = input.dataset.concepto;
+    const extraId = input.dataset.extraId ? parseInt(input.dataset.extraId) : null;
+    try {
+      // Get pago for this contract/month
+      const c = DB.contratos.find(x => x.id === contratoId);
+      if (!c) continue;
+      const enc = encodeURIComponent(c.hoja);
+      const pagos = await sbGet('pagos', `hoja=eq.${enc}&mes=eq.${mes01}&limit=1&select=id`);
+      if (!pagos.length) { toast(`Sin mes cargado para ${c.titulo||c.hoja}`, 'error'); continue; }
+      const pagoId = pagos[0].id;
+      const body = { pago_id: pagoId, concepto, importe, suministro_id: suministroId, a_cargo_de: 'inquilino' };
+      if (extraId) {
+        await sbPatch('pagos_extras', extraId, { importe });
+      } else {
+        await sbPost('pagos_extras', body);
+      }
+      guardados++;
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+  if (guardados) toast(`${guardados} extra/s guardado/s ✓`);
+  await cargarExtrasGral(mes01.substring(0,7), '');
 }
 
 async function guardarServicios() {
@@ -2839,6 +2965,24 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
   let extrasDelMes = [];
   if (p) {
     try { extrasDelMes = await sbGet('pagos_extras', `pago_id=eq.${p.id}&order=id.asc`); } catch(e) {}
+    // Auto-add monto_fijo suministros as extras if not already present
+    const suministrosFijos = DB_SUMINISTROS.filter(s =>
+      parseInt(s.contrato_id) === contratoId &&
+      s.tipo === 'otro' &&
+      s.monto_fijo > 0
+    );
+    for (const sf of suministrosFijos) {
+      const concepto = sf.nombre || sf.nro_cuenta || 'Otros';
+      const yaExiste = extrasDelMes.some(e => e.concepto === concepto && Math.abs((e.importe||0) - sf.monto_fijo) < 0.01);
+      if (!yaExiste) {
+        try {
+          const body = { pago_id: p.id, concepto, importe: sf.monto_fijo, a_cargo_de: sf.propietario_persona_id ? 'propietario' : 'inquilino' };
+          const r = await sbPost('pagos_extras', body);
+          const row = Array.isArray(r) ? r[0] : r;
+          if (row?.id) extrasDelMes.push(row);
+        } catch(e) {}
+      }
+    }
   }
 
   const extrasInq = extrasDelMes.filter(e => e.a_cargo_de !== 'propietario');
@@ -2989,8 +3133,14 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
 function mostrarSolapa(id, btn) {
   document.querySelectorAll('.solapa-btn').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.solapa-panel').forEach(p=>p.classList.remove('active'));
-  btn.classList.add('active');
+  if (btn) btn.classList.add('active');
   document.getElementById(id)?.classList.add('active');
+  // Toggle save buttons for cargar servicios
+  const isExtrasGral = id === 'srv-extras-gral';
+  const btnEG = document.getElementById('btn-guardar-extras-gral');
+  const btnSrv = document.getElementById('btn-guardar-servicios');
+  if (btnEG) btnEG.style.display = isExtrasGral ? '' : 'none';
+  if (btnSrv) btnSrv.style.display = isExtrasGral ? 'none' : '';
 }
 
 function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
