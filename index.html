@@ -920,14 +920,12 @@ function volverAServiciosModal() {
   const state = window._volverAServiciosModal;
   window._volverAServiciosModal = null;
   if (typeof state.restore === 'function') {
-    // Numeracion servicios: re-render the panel
     document.getElementById('modal-overlay').classList.remove('open');
     state.restore();
   } else {
-    // Cargar servicios: restore saved HTML
-    document.getElementById('modal-title').textContent = state.titulo;
-    document.getElementById('modal-body').innerHTML = state.body;
-    document.getElementById('modal-overlay').classList.add('open');
+    // Cargar servicios: reload fresh instead of restoring stale HTML
+    document.getElementById('modal-overlay').classList.remove('open');
+    loadAll().then(() => abrirCargarServicios());
   }
 }
 
@@ -3147,6 +3145,7 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
         const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv.key] ?? 100);
         const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv.key] ?? 0);
         const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv.key);
+        const seDescuenta = sum ? !!sum.descuenta_persona_id : (!sum && pctProp > 0 && !seRinde);
         if (!srv.monto && !pctProp) continue;
 
         if (seRinde) {
@@ -3168,7 +3167,7 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
             </label>
             <span style="font-size:0.85rem;color:var(--green)">+ ${formatMoney(totalRendidoInq)}</span>
           </div>`;
-        } else if (pctProp > 0) {
+        } else if (seDescuenta && pctProp > 0) {
           // Propietario pays his % — deduct from liquidation
           const totalBill = pctInq > 0 ? Math.round(srv.monto * 100 / pctInq) : srv.monto;
           const montoProp = Math.round(totalBill * pctProp / 100);
@@ -4491,7 +4490,8 @@ function _abrirFormularioContrato(c, esNuevo) {
         <span style="flex:1">N° cuenta / descripción</span>
         <span style="width:75px;flex-shrink:0;text-align:center">%&nbsp;Inq.</span>
         <span style="width:75px;flex-shrink:0;text-align:center">%&nbsp;Prop.</span>
-        <span style="flex:1">Rinde a</span>
+        <span style="flex:1;color:#f0a000">Descuenta&nbsp;a</span>
+        <span style="flex:1">Rinde&nbsp;a</span>
         <span style="width:24px;flex-shrink:0"></span>
       </div>
     </div>
@@ -7378,6 +7378,11 @@ function _renderSuministroRow(s) {
     const p = DB_PERSONAS.find(x => x.id === pid);
     return p ? `<option value="${pid}" ${s.propietario_persona_id == pid ? 'selected' : ''}>${formatNombrePersona(p)}</option>` : '';
   }).join('');
+  const descuentaOptions = propChips.map(chip => {
+    const pid = parseInt(chip.dataset.personaId);
+    const p = DB_PERSONAS.find(x => x.id === pid);
+    return p ? `<option value="${pid}" ${s.descuenta_persona_id == pid ? 'selected' : ''}>${formatNombrePersona(p)}</option>` : '';
+  }).join('');
 
   const div = document.createElement('div');
   div.dataset.suministroId = id;
@@ -7395,6 +7400,10 @@ function _renderSuministroRow(s) {
     <input type="number" value="${s.pct_propietario ?? 0}" min="0" max="100" step="0.01"
       placeholder="%" title="% Propietario"
       style="width:75px;flex-shrink:0;padding:5px 4px;border:1.5px solid #f0c040;border-radius:6px;font-size:0.82rem;text-align:center">
+    <select style="flex:1;padding:5px 6px;border:1.5px solid #f0c040;border-radius:6px;font-size:0.82rem" title="Descuenta a propietario">
+      <option value="">— No descuenta —</option>
+      ${descuentaOptions}
+    </select>
     <input type="text" value="${s.monto_fijo != null ? s.monto_fijo : ''}"
       placeholder="$ fijo" title="Importe fijo mensual"
       style="width:80px;flex-shrink:0;padding:5px 4px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem;text-align:right;display:${(s.tipo==='otro'||s.tipo==='Otro')?'block':'none'}"
@@ -7439,8 +7448,9 @@ function leerSuministros() {
       nombre: inputs[1]?.value.trim() || null,
       pct_inquilino: parseFloat(inputs[2]?.value) ?? 100,
       pct_propietario: parseFloat(inputs[3]?.value) ?? 0,
-      monto_fijo: parseMonto(inputs[4]?.value) || null,
-      propietario_persona_id: parseInt(inputs[5]?.value) || null,
+      descuenta_persona_id: parseInt(inputs[4]?.value) || null,
+      monto_fijo: parseMonto(inputs[5]?.value) || null,
+      propietario_persona_id: parseInt(inputs[6]?.value) || null,
     };
   });
 }
@@ -7468,6 +7478,7 @@ async function guardarSuministros(contratoId) {
       pct_propietario: s.pct_propietario,
       monto_fijo: s.monto_fijo || null,
       propietario_persona_id: s.propietario_persona_id,
+      descuenta_persona_id: s.descuenta_persona_id || null,
       orden: i
     };
     try {
