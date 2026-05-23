@@ -3063,6 +3063,8 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
 
 async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, solapaInicial='s1') {
   window._gpMesKey = mesKey; // keep in sync when month changes
+  window._gpHoja = hoja;
+  window._gpContratoId = contratoId;
   if (!mesKey) { document.getElementById('gp-contenido').innerHTML=''; return; }
   const c = DB.contratos.find(x=>x.id===contratoId);
 
@@ -3137,6 +3139,16 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
               <option value="inquilino" ${e.a_cargo_de!=='propietario'?'selected':''}>Inquilino</option>
               <option value="propietario" ${e.a_cargo_de==='propietario'?'selected':''}>Propietario</option>
             </select>
+            ${(() => {
+              const propsCp = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === contratoId && x.rol === 'propietario');
+              if (propsCp.length < 2) return '';
+              return '<select id="gpe-prop-'+e.id+'" style="padding:4px 8px;border:1px solid #f0c040;border-radius:6px;font-size:0.82rem;display:'+(e.a_cargo_de==='propietario'?'block':'none')+'" onchange="guardarExtraGP('+e.id+')" title="Propietario al que corresponde">' +
+                '<option value="">— Todos —</option>' +
+                propsCp.map(cp => {
+                  const per = DB_PERSONAS.find(x=>x.id===parseInt(cp.persona_id));
+                  return '<option value="'+cp.persona_id+'" '+(parseInt(e.propietario_persona_id)===parseInt(cp.persona_id)?'selected':'')+'>'+formatNombrePersona(per)+'</option>';
+                }).join('') + '</select>';
+            })()}
             <select id="gpe-tipo-${e.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="guardarExtraGP(${e.id})">
               <option value="debito" ${e.tipo!=='credito'?'selected':''}>${e.a_cargo_de==='propietario'?'Debitar':'Cargo extra'}</option>
               <option value="credito" ${e.tipo==='credito'?'selected':''}>${e.a_cargo_de==='propietario'?'Acreditar':'Descuento'}</option>
@@ -3209,7 +3221,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
         const _sH = Math.max(0, _cH.reduce((s,g)=>s+(g.monto_inquilino||0),0) - _cH.reduce((s,g)=>s+(parseFloat(g.pagado_inquilino)||0),0));
         return (!p || !p.total) && !_sH;
       })() ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
-      <div id="gp-prop-items">${generarItemsPropietario(p, extrasProp, comisionPct, c)}</div>
+      <div id="gp-prop-items">${generarItemsPropietario(p, extrasProp, comisionPct, c, window._gpPropietarioId||null)}</div>
       <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem;font-size:1rem">
         <span>Total a rendir:</span>
         <span id="gp-total-prop" style="color:var(--green)">—</span>
@@ -3370,26 +3382,72 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
 }
 
 
-function generarItemsPropietario(p, extrasProp, comisionPct, c) {
+function cambiarPropietarioGP(personaId) {
+  window._gpPropietarioId = personaId;
+  const p = pagosActuales.find(x => x.mes && x.mes.startsWith(window._gpMesKey));
+  const hoja = window._gpHoja;
+  const contratoId = window._gpContratoId;
+  const comisionPct = window._gpComision || 8;
+  const c = DB.contratos.find(x => x.id === contratoId);
+  const extrasProp = (extrasActuales[p?.id]||[]).filter(e => e.a_cargo_de === 'propietario');
+  document.getElementById('gp-prop-items').innerHTML = generarItemsPropietario(p, extrasProp, comisionPct, c, personaId);
+  recalcProp();
+}
+
+function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
-  const alq = p.importe_alquiler||0;
-  const comision = alq * (comisionPct/100);
+  // Get propietarios for this contract
+  const propsCp = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(c?.id) && x.rol === 'propietario');
+  // If multiple propietarios and no specific one selected, show first
+  const activeCp = propPersonaId
+    ? propsCp.find(x => parseInt(x.persona_id) === parseInt(propPersonaId))
+    : propsCp[0];
+  const pctAlq = activeCp?.pct_alquiler ?? 100;
+  const alqTotal = p.importe_alquiler||0;
+  const alq = Math.round(alqTotal * pctAlq / 100 * 100) / 100;
+  const comision = Math.round(alq * (comisionPct/100) * 100) / 100;
+  const propNombre = activeCp ? (DB_PERSONAS.find(x=>x.id===parseInt(activeCp.persona_id)) ? formatNombrePersona(DB_PERSONAS.find(x=>x.id===parseInt(activeCp.persona_id))) : '') : '';
+  const pctLabel = pctAlq < 100 ? ` (${pctAlq}%)` : '';
+  const propSelectorHtml = propsCp.length > 1 ? '<div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap">' +
+    propsCp.map(cp => {
+      const per = DB_PERSONAS.find(x=>x.id===parseInt(cp.persona_id));
+      const activo = (propPersonaId ? parseInt(propPersonaId) === parseInt(cp.persona_id) : cp === propsCp[0]);
+      const borderColor = activo ? 'var(--ink2)' : 'var(--border)';
+      const bg = activo ? 'var(--ink2)' : 'white';
+      const color = activo ? 'white' : '#666';
+      return '<button onclick="cambiarPropietarioGP('+cp.persona_id+')" style="padding:4px 12px;border-radius:20px;border:1.5px solid '+borderColor+';background:'+bg+';color:'+color+';font-size:0.82rem;cursor:pointer">'+
+        formatNombrePersona(per)+' ('+(cp.pct_alquiler??100)+'%)</button>';
+    }).join('') + '</div>' : '';
   return `
+    ${propSelectorHtml}
     <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
         <input type="checkbox" id="prop-chk-alquiler" value="${alq}" checked onchange="recalcProp()" style="width:15px;height:15px">
-        Alquiler
+        Alquiler${pctLabel}
       </label>
       <span style="font-size:0.85rem;color:#666">${formatMoney(alq)}</span>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
         <input type="checkbox" id="prop-chk-comision" value="${comision}" data-signo="-1" checked onchange="recalcProp()" style="width:15px;height:15px">
-        Comisión ${comisionPct}%
+        Comisión ${comisionPct}%${pctLabel}
       </label>
       <span style="font-size:0.85rem;color:var(--accent)">− ${formatMoney(comision)}</span>
     </div>
-    ${extrasProp.map(e => {
+    ${(() => {
+      // Filter extras for this propietario (or unassigned)
+      const activePropIdStr = activeCp ? String(parseInt(activeCp.persona_id)) : null;
+      const hayMultiplesProp = propsCp.length > 1;
+      const extrasFiltered = extrasProp.filter(e => {
+        if (!e.propietario_persona_id) return !hayMultiplesProp; // unassigned: only show if single propietario
+        return String(parseInt(e.propietario_persona_id)) === activePropIdStr;
+      });
+      const extrasNoAsignados = hayMultiplesProp ? extrasProp.filter(e => !e.propietario_persona_id) : [];
+      const warningHtml = extrasNoAsignados.length ? `
+        <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:6px 10px;margin-bottom:6px;font-size:0.8rem;color:#856404">
+          ⚠ ${extrasNoAsignados.length} extra/s sin propietario asignado: <strong>${extrasNoAsignados.map(e=>e.concepto||'Sin concepto').join(', ')}</strong> — asignalos en la solapa Cargar / Modificar para evitar duplicar el pago.
+        </div>` : '';
+      return warningHtml + extrasFiltered.map(e => {
       const signo = e.tipo==='credito' ? 1 : -1;
       const color = e.tipo==='credito' ? 'var(--green)' : 'var(--accent)';
       const signoLabel = e.tipo==='credito' ? '+' : '−';
@@ -3400,10 +3458,11 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
         </label>
         <span style="font-size:0.85rem;color:${color}">${signoLabel} ${formatMoney(Math.abs(e.importe||0))}</span>
       </div>`;
-    }).join('')}
+      }).join('');
+    })()}
     ${(() => {
-      // Services rendered to propietario (paid by inquilino)
       const servRinde = (c?.servicios_rendir_propietario||'').toLowerCase();
+      const hayMultiplesProp = propsCp.length > 1;
       const srvList = [
         {key:'epe', label:'EPE', monto: p.monto_epe||0},
         {key:'agua', label:'Agua', monto: p.monto_agua||0},
@@ -3417,9 +3476,27 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c) {
         const sum = DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === srv.key);
         const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv.key] ?? 100);
         const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv.key] ?? 0);
+        // Check if this service belongs to the active propietario
+        const srPropId = sum?.propietario_persona_id ? parseInt(sum.propietario_persona_id) : null;
+        const sdPropId = sum?.descuenta_persona_id ? parseInt(sum.descuenta_persona_id) : null;
+        const activePropId = activeCp ? parseInt(activeCp.persona_id) : null;
         const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv.key);
         const seDescuenta = sum ? !!sum.descuenta_persona_id : (!sum && pctProp > 0 && !seRinde);
+        if (!seRinde && !seDescuenta) continue;
         if (!srv.monto && !pctProp) continue;
+
+        // If multiple propietarios and service has no specific assignment, warn instead of showing
+        if (hayMultiplesProp && seRinde && !srPropId) {
+          html += `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:5px 10px;margin:3px 0;font-size:0.8rem;color:#856404">⚠ ${srv.label} (a rendir) — sin propietario asignado, editá el suministro en el contrato.</div>`;
+          continue;
+        }
+        if (hayMultiplesProp && seDescuenta && !sdPropId) {
+          html += `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:5px 10px;margin:3px 0;font-size:0.8rem;color:#856404">⚠ ${srv.label} (descuenta) — sin propietario asignado, editá el suministro en el contrato.</div>`;
+          continue;
+        }
+        // If assigned to specific propietario, only show for that one
+        if (srPropId && activePropId && srPropId !== activePropId) continue;
+        if (sdPropId && activePropId && sdPropId !== activePropId) continue;
 
         if (seRinde) {
           const nro = sum?.nro_cuenta || c?.['nro_'+srv.key];
@@ -3567,9 +3644,13 @@ async function guardarExtraGP(extraId) {
     const importe = parseMonto(document.getElementById(`gpe-importe-${extraId}`)?.value);
     const cargo = document.getElementById(`gpe-cargo-${extraId}`)?.value||'inquilino';
     const tipo = document.getElementById(`gpe-tipo-${extraId}`)?.value||'debito';
+    const propSel = document.getElementById(`gpe-prop-${extraId}`);
+    // Show/hide propietario selector
+    if (propSel) propSel.style.display = cargo === 'propietario' ? 'block' : 'none';
+    const propietarioPId = cargo === 'propietario' ? (parseInt(propSel?.value)||null) : null;
     await fetch(`${SB_URL}/rest/v1/pagos_extras?id=eq.${extraId}`, {
       method:'PATCH', headers:HEADERS,
-      body:JSON.stringify({concepto, importe, a_cargo_de:cargo, tipo})
+      body:JSON.stringify({concepto, importe, a_cargo_de:cargo, tipo, propietario_persona_id: propietarioPId})
     });
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
@@ -4816,7 +4897,7 @@ function _abrirFormularioContrato(c, esNuevo) {
       const garantes = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'garante');
       propietarios.forEach(cp => {
         const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
-        if (p) mostrarPersonaEnLista('propietario', p);
+        if (p) mostrarPersonaEnLista('propietario', p, cp.pct_alquiler ?? 100);
       });
       inquilinos.forEach(cp => {
         const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
@@ -4906,7 +4987,7 @@ function rolToLista(rol) {
   return rol + 's';
 }
 
-function mostrarPersonaEnLista(rol, persona) {
+function mostrarPersonaEnLista(rol, persona, pctAlquiler) {
   const contenedor = document.getElementById(`lista-${rolToLista(rol)}`);
   if (!contenedor) return;
   const idx = _personaIdxCounter++;
@@ -4915,9 +4996,15 @@ function mostrarPersonaEnLista(rol, persona) {
   div.dataset.rol = rol;
   div.dataset.personaId = persona.id;
   div.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem;position:relative';
+  const pctField = rol === 'propietario' ? `
+    <input type="number" class="pct-alquiler" value="${pctAlquiler ?? 100}" min="0" max="100" step="0.01"
+      title="% del alquiler que corresponde a este propietario"
+      style="width:60px;padding:4px 6px;border:1.5px solid #f0c040;border-radius:6px;font-size:0.82rem;text-align:center">
+    <span style="font-size:0.7rem;color:#888">%</span>` : '';
   div.innerHTML = `
     <input type="text" value="${nombre}" style="flex:1;padding:6px 10px;border:1.5px solid var(--green);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem;color:var(--green);font-weight:600" oninput="buscarPersonaEnLinea(this,'${rol}',${idx})">
     <div id="sug-${rol}-${idx}" style="position:absolute;background:white;border:1px solid var(--border);border-radius:8px;margin-top:4px;display:none;max-height:150px;overflow-y:auto;z-index:300;min-width:300px"></div>
+    ${pctField}
     <button onclick="editarPersonaDesdeFormulario(${persona.id})" style="background:#e8f4fd;border:none;color:var(--accent);border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem" title="Editar datos">✏️</button>
     <button onclick="this.closest('[data-rol]').remove()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
   `;
@@ -5113,11 +5200,16 @@ async function guardarContrato() {
   const inqItems = document.querySelectorAll('[data-rol="inquilino"]');
   
   const propIds = [];
+  const propPcts = [];
   const inqIds = [];
   
   for (const item of propItems) {
     const pid = item.dataset.personaId;
-    if (pid) propIds.push(parseInt(pid));
+    if (pid) {
+      propIds.push(parseInt(pid));
+      const pct = parseFloat(item.querySelector('.pct-alquiler')?.value) || 100;
+      propPcts.push(pct);
+    }
   }
   for (const item of inqItems) {
     const pid = item.dataset.personaId;
@@ -5176,7 +5268,7 @@ async function guardarContrato() {
     // Save contrato_personas relationships
     if (nuevoContrato && (propIds.length > 0 || inqIds.length > 0)) {
       for (let i=0; i<propIds.length; i++) {
-        await sbPost('contrato_personas', {contrato_id: nuevoContrato.id, persona_id: propIds[i], rol: 'propietario', orden: i+1});
+        await sbPost('contrato_personas', {contrato_id: nuevoContrato.id, persona_id: propIds[i], rol: 'propietario', orden: i+1, pct_alquiler: propPcts[i] ?? 100});
       }
       for (let i=0; i<inqIds.length; i++) {
         await sbPost('contrato_personas', {contrato_id: nuevoContrato.id, persona_id: inqIds[i], rol: 'inquilino', orden: i+1});
@@ -5386,7 +5478,7 @@ async function actualizarContrato(id) {
     // Update contrato_personas - delete old and insert new
     await sbDeleteWhere('contrato_personas', `contrato_id=eq.${id}`);
     for (let i=0; i<propIds.length; i++) {
-      await sbPost('contrato_personas', {contrato_id:id, persona_id:propIds[i], rol:'propietario', orden:i+1});
+      await sbPost('contrato_personas', {contrato_id:id, persona_id:propIds[i], rol:'propietario', orden:i+1, pct_alquiler: propPcts[i] ?? 100});
     }
     for (let i=0; i<inqIds.length; i++) {
       await sbPost('contrato_personas', {contrato_id:id, persona_id:inqIds[i], rol:'inquilino', orden:i+1});
