@@ -3157,7 +3157,11 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
 
     <!-- SOLAPA 2: INGRESAR PAGO -->
     <div id="s2" class="solapa-panel">
-      ${!p || !p.total ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
+      ${(() => {
+        const _cH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
+        const _sH = Math.max(0, _cH.reduce((s,g)=>s+(g.monto_inquilino||0),0) - _cH.reduce((s,g)=>s+(parseFloat(g.pagado_inquilino)||0),0));
+        return (!p || !p.total) && !_sH;
+      })() ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
       ${p.saldo > 0 && p.saldo < p.total ? `
       <div style="background:#fff3cd;border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.75rem;display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:0.85rem;color:#856404">💰 Saldo pendiente del mes:</span>
@@ -3200,7 +3204,11 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
 
     <!-- SOLAPA 3: RECIBO PROPIETARIO -->
     <div id="s3" class="solapa-panel">
-      ${!p || !p.total ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
+      ${(() => {
+        const _cH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
+        const _sH = Math.max(0, _cH.reduce((s,g)=>s+(g.monto_inquilino||0),0) - _cH.reduce((s,g)=>s+(parseFloat(g.pagado_inquilino)||0),0));
+        return (!p || !p.total) && !_sH;
+      })() ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
       <div id="gp-prop-items">${generarItemsPropietario(p, extrasProp, comisionPct, c)}</div>
       <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem;font-size:1rem">
         <span>Total a rendir:</span>
@@ -3768,6 +3776,13 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
   if (!existing.length) { toast('No se encontró el registro','error'); return; }
   const p = existing[0];
   try {
+    // Revert honorarios: read movement first
+    let honPagado = 0;
+    try {
+      const movs = await sbGet('movimientos_pagos', `pago_id=eq.${p.id}&concepto=eq.Honorarios`);
+      honPagado = movs.reduce((s,m) => s + (parseFloat(m.monto)||0), 0);
+    } catch(e) {}
+
     await sbPatch('pagos', p.id, {
       saldo: p.total,
       pagado: '0',
@@ -3781,6 +3796,25 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
       pagado_expensas: 0
     });
     try { await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${p.id}`); } catch(e) {}
+
+    // Revert honorarios from gastos_inicio_cuotas
+    if (honPagado > 0) {
+      const cuotasH = DB_GASTOS_CUOTAS
+        .filter(g => parseInt(g.contrato_id) === contratoId)
+        .sort((a,b) => a.mes > b.mes ? -1 : 1); // reverse: undo last-paid first
+      let restante = honPagado;
+      for (const gc of cuotasH) {
+        if (restante <= 0) break;
+        const pagado = parseFloat(gc.pagado_inquilino) || 0;
+        if (pagado <= 0) continue;
+        const revertir = Math.min(restante, pagado);
+        const nuevoPagado = Math.max(0, pagado - revertir);
+        await sbPatch('gastos_inicio_cuotas', gc.id, { pagado_inquilino: nuevoPagado });
+        gc.pagado_inquilino = nuevoPagado;
+        restante -= revertir;
+      }
+    }
+
     toast('Cobro revertido ✓');
     const c = DB.contratos.find(x=>x.id===contratoId);
     if (c) {
