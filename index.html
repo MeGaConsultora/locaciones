@@ -5066,9 +5066,11 @@ async function guardarPersonaInline(rol) {
       divP.innerHTML = `
         <input type="text" value="${nuevaPersona.apellido}${nuevaPersona.nombre?', '+nuevaPersona.nombre:''}" style="flex:1;padding:6px 10px;border:1.5px solid var(--green);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem;color:var(--green);font-weight:600" readonly>
         <span style="font-size:0.85rem;color:var(--green);font-weight:600">✓ Nueva</span>
-        <button onclick="this.closest('[data-rol]').remove()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
+        ${rol === 'propietario' ? `<input type="number" class="pct-alquiler" value="100" min="0" max="100" step="0.01" title="% del alquiler" style="width:60px;padding:4px 6px;border:1.5px solid #f0c040;border-radius:6px;font-size:0.82rem;text-align:center"><span style="font-size:0.7rem;color:#888">%</span>` : ''}
+        <button onclick="this.closest('[data-rol]').remove();refrescarSelectoresSuministros()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
       `;
       contenedor.appendChild(divP);
+      refrescarSelectoresSuministros();
     }
     const formDiv = document.getElementById(`inline-persona-form-${rol}`) || document.getElementById('inline-persona-form');
     if (formDiv) formDiv.innerHTML = '';
@@ -5174,11 +5176,17 @@ function agregarPersonaRol(rol) {
   div.dataset.rol = rol;
   div.dataset.personaId = '';
   div.style.cssText = 'background:var(--cream);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem;position:relative';
+  const pctField = rol === 'propietario' ? `
+    <input type="number" class="pct-alquiler" value="100" min="0" max="100" step="0.01"
+      title="% del alquiler que corresponde a este propietario"
+      style="width:60px;padding:4px 6px;border:1.5px solid #f0c040;border-radius:6px;font-size:0.82rem;text-align:center">
+    <span style="font-size:0.7rem;color:#888">%</span>` : '';
   div.innerHTML = `
     <input type="text" placeholder="Buscar apellido o DNI..." style="flex:1;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem" oninput="buscarPersonaEnLinea(this,'${rol}',${idx})">
     <div id="sug-${rol}-${idx}" style="position:absolute;background:white;border:1px solid var(--border);border-radius:8px;margin-top:4px;display:none;max-height:150px;overflow-y:auto;z-index:300;min-width:300px"></div>
     <span id="sel-${rol}-${idx}" style="font-size:0.85rem;color:var(--green);font-weight:600"></span>
-    <button onclick="this.closest('[data-rol]').remove()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
+    ${pctField}
+    <button onclick="this.closest('[data-rol]').remove();refrescarSelectoresSuministros()" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.75rem">✕</button>
   `;
   contenedor.appendChild(div);
 }
@@ -5208,6 +5216,29 @@ async function buscarPersonaEnLinea(input, rol, idx) {
   `).join('');
 }
 
+function refrescarSelectoresSuministros() {
+  // Rebuild "Rinde a" and "Descuenta a" selectors in all suministro rows
+  const propChips = [...document.querySelectorAll('#lista-propietarios [data-persona-id]')];
+  const propOptions = propChips.map(chip => {
+    const pid = parseInt(chip.dataset.personaId);
+    const p = DB_PERSONAS.find(x => x.id === pid);
+    return p ? { pid, label: formatNombrePersona(p) } : null;
+  }).filter(Boolean);
+
+  document.querySelectorAll('[data-suministro-id]').forEach(row => {
+    const inputs = row.querySelectorAll('input,select');
+    // inputs[4] = descuenta_persona_id select, inputs[5] = monto_fijo, inputs[6] = propietario_persona_id select
+    const descSel = inputs[4];
+    const rendSel = inputs[6];
+    [descSel, rendSel].forEach((sel, si) => {
+      if (!sel || sel.tagName !== 'SELECT') return;
+      const curVal = sel.value;
+      sel.innerHTML = `<option value="">${si===0?'— No descuenta —':'— No rinde —'}</option>` +
+        propOptions.map(o => `<option value="${o.pid}" ${String(curVal)===String(o.pid)?'selected':''}>${o.label}</option>`).join('');
+    });
+  });
+}
+
 function selPersonaEnLinea2(rol, idx, pidx) {
   const res = window[`_sugData_${rol}_${idx}`];
   if (!res) return;
@@ -5228,6 +5259,7 @@ function selPersonaEnLinea2(rol, idx, pidx) {
   }
   if (sugDiv) sugDiv.style.display = 'none';
   delete window[`_sugData_${rol}_${idx}`];
+  if (rol === 'propietario') refrescarSelectoresSuministros();
 }
 
 function selPersonaEnLinea(el, rol, idx, personaId, apellido, nombre) {
@@ -5462,6 +5494,7 @@ async function actualizarContrato(id) {
   const propItems = document.querySelectorAll('[data-rol="propietario"]');
   const inqItems = document.querySelectorAll('[data-rol="inquilino"]');
   const propIds = [...propItems].map(x => parseInt(x.dataset.personaId)).filter(Boolean);
+  const propPcts = [...propItems].map(x => parseFloat(x.querySelector('.pct-alquiler')?.value) || 100);
   const inqIds = [...inqItems].map(x => parseInt(x.dataset.personaId)).filter(Boolean);
 
   const propPersonas = propIds.map(pid => DB_PERSONAS.find(p=>p.id===pid)).filter(Boolean);
