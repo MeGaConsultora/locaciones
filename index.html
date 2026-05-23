@@ -2196,7 +2196,7 @@ function filtrarContratosActualizar() {
         <div style="font-size:0.72rem;color:#888">Nuevo</div>
         <div id="nuevo-${c.id}" style="font-weight:700;color:var(--green)">${pct>0?formatMoney(nuevo):'—'}</div>
       </div>
-      <input type="number" id="importe-${c.id}" data-hoja="${c.hoja}" data-original="${alqActual}" 
+      <input type="text" id="importe-${c.id}" data-hoja="${c.hoja}" data-original="${alqActual}" 
         value="${nuevo}" style="width:110px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem">
     </div>`;
   }).join('');
@@ -2261,7 +2261,7 @@ async function confirmarActualizacion() {
   let actualizados = 0;
   for (const c of contratos) {
     const input = document.getElementById(`importe-${c.id}`);
-    const nuevoImporte = parseFloat(input?.value)||0;
+    const nuevoImporte = parseMonto(input?.value)||0;
     if (!nuevoImporte) continue;
     const mesesPeriodo = {
       'Mensual': 1, 'Bimestral': 2, 'Trimestral': 3,
@@ -2312,7 +2312,7 @@ async function abrirProyectarContrato(contratoId, hoja) {
 
 async function confirmarProyeccionContrato(contratoId, hoja) {
   const desde = document.getElementById('proy-desde')?.value;
-  const importe = parseFloat(document.getElementById('proy-importe')?.value)||0;
+  const importe = parseMonto(document.getElementById('proy-importe')?.value);
   if (!desde || !importe) { toast('Completá todos los campos','error'); return; }
   const c = DB.contratos.find(x => x.id === contratoId);
   const n = await proyectarPeriodo(hoja, desde, importe, c?.periodicidad_actualizacion, c?.dia_vencimiento||10, c?.modalidad_pago||'ADELANTADO');
@@ -2542,7 +2542,7 @@ async function cargarListaServicios(filtro='') {
         const monto = p?.[campo] || 0;
         const pct = getPctInq(c);
         if (monto > 0 && pct > 0) {
-          totalBoleta = Math.round(monto * 100 / pct);
+          totalBoleta = Math.round(monto * 100 / pct * 100) / 100;
           break;
         }
       }
@@ -3037,7 +3037,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
     <div id="s1" class="solapa-panel active">
       <div class="form-grid">
         <div class="form-group"><label>Fecha vencimiento</label><input id="gp-vence" type="date" value="${p?.fecha_pago_hasta?.substring(0,10) || calcularFechaVencimiento(mesKey, c)}"></div>
-        <div class="form-group"><label>Alquiler</label><input id="gp-alquiler" type="number" value="${p?.importe_alquiler||''}" placeholder="0" oninput="recalcGP(${comisionPct})"></div>
+        <div class="form-group"><label>Alquiler</label><input id="gp-alquiler" type="text" value="${p?.importe_alquiler||''}" placeholder="0" oninput="recalcGP(${comisionPct})"></div>
         ${(() => {
           const mkSrvField = (id, label, val, srv) => {
             const pct = c?.['pct_'+srv] ?? 100;
@@ -3073,7 +3073,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
         ${extrasDelMes.map(e => `
           <div class="extra-item" id="gp-extra-${e.id}" style="flex-wrap:wrap;gap:6px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #f0ece4">
             <input type="text" id="gpe-concepto-${e.id}" value="${e.concepto||''}" placeholder="Concepto" style="flex:2;min-width:120px" onchange="guardarExtraGP(${e.id})">
-            <input type="number" id="gpe-importe-${e.id}" value="${e.importe||''}" placeholder="$" style="width:90px" onchange="guardarExtraGP(${e.id})">
+            <input type="text" id="gpe-importe-${e.id}" value="${e.importe||''}" placeholder="$" style="width:90px" onchange="guardarExtraGP(${e.id})">
             <select id="gpe-cargo-${e.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="actualizarLabelsTipoExtra(${e.id}); guardarExtraGP(${e.id})">
               <option value="inquilino" ${e.a_cargo_de!=='propietario'?'selected':''}>Inquilino</option>
               <option value="propietario" ${e.a_cargo_de==='propietario'?'selected':''}>Propietario</option>
@@ -3415,7 +3415,7 @@ function recalcIntereses() {
   const fechaPago = document.getElementById('gp-fecha-pago')?.value;
   const vence = document.getElementById('gp-vence')?.value;
   const c = window._gpContratoActual;
-  const alquiler = parseFloat(document.getElementById('gp-alquiler')?.value)||0;
+  const alquiler = parseMonto(document.getElementById('gp-alquiler')?.value);
   if (!c || !fechaPago || !vence || !alquiler) return;
   
   const interes = calcularIntereses(alquiler, vence, fechaPago, c.interes_punitorio||0);
@@ -3436,7 +3436,7 @@ function recalcIntereses() {
 }
 
 function recalcGP(comisionPct) {
-  const alq = parseFloat(document.getElementById('gp-alquiler')?.value)||0;
+  const alq = parseMonto(document.getElementById('gp-alquiler')?.value);
   const comision = alq * (comisionPct/100);
   const el = document.getElementById('gp-comision');
   if (el) el.value = comision.toFixed(2);
@@ -3497,7 +3497,7 @@ function recalcProp() {
 async function guardarExtraGP(extraId) {
   try {
     const concepto = document.getElementById(`gpe-concepto-${extraId}`)?.value||'';
-    const importe = parseFloat(document.getElementById(`gpe-importe-${extraId}`)?.value)||0;
+    const importe = parseMonto(document.getElementById(`gpe-importe-${extraId}`)?.value);
     const cargo = document.getElementById(`gpe-cargo-${extraId}`)?.value||'inquilino';
     const tipo = document.getElementById(`gpe-tipo-${extraId}`)?.value||'debito';
     await fetch(`${SB_URL}/rest/v1/pagos_extras?id=eq.${extraId}`, {
@@ -3523,7 +3523,7 @@ async function agregarExtraGP(hoja, contratoId, mesKey, pagoId, comisionPct) {
       el.style.cssText = 'flex-wrap:wrap;gap:6px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #f0ece4';
       el.innerHTML = `
         <input type="text" id="gpe-concepto-${extra.id}" value="" placeholder="Concepto" style="flex:2;min-width:120px" onchange="guardarExtraGP(${extra.id})">
-        <input type="number" id="gpe-importe-${extra.id}" value="" placeholder="$" style="width:90px" onchange="guardarExtraGP(${extra.id})">
+        <input type="text" id="gpe-importe-${extra.id}" value="" placeholder="$" style="width:90px" onchange="guardarExtraGP(${extra.id})">
         <select id="gpe-cargo-${extra.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="actualizarLabelsTipoExtra(${extra.id}); guardarExtraGP(${extra.id})">
           <option value="inquilino" selected>Inquilino</option>
           <option value="propietario">Propietario</option>
@@ -3559,7 +3559,7 @@ async function eliminarExtraGP(extraId, hoja, contratoId, mesKey, comisionPct) {
 
 async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
   const mes = mesKey+'-01';
-  const alq = parseFloat(document.getElementById('gp-alquiler')?.value)||0;
+  const alq = parseMonto(document.getElementById('gp-alquiler')?.value);
   const applyFieldPct = (id) => {
     const el = document.getElementById(id);
     if (!el) return 0;
@@ -4633,7 +4633,7 @@ function _abrirFormularioContrato(c, esNuevo) {
         </select>
       </div>
 
-      <div class="form-group"><label>Importe inicial alquiler</label><input id="f-importe-inicial" type="number" value="${c.importe_inicial||''}" placeholder="0" style="border-color:var(--green)"></div>
+      <div class="form-group"><label>Importe inicial alquiler</label><input id="f-importe-inicial" type="text" value="${c.importe_inicial||''}" placeholder="0" style="border-color:var(--green)"></div>
       <div class="form-group"><label>Día vencimiento (del mes)</label><input id="f-dia-venc" type="number" min="1" max="31" value="10" placeholder="10"></div>
       <div class="form-group"><label>Interés punitorio diario (%)</label><input id="f-interes" type="number" min="0" step="0.001" value="${c.interes_punitorio||0}" placeholder="0"></div>
     </div>
@@ -5064,7 +5064,7 @@ async function guardarContrato() {
     comision_porcentaje: comisionPct,
     dia_vencimiento: parseInt(document.getElementById('f-dia-venc')?.value)||10,
     interes_punitorio: parseFloat(document.getElementById('f-interes')?.value)||0,
-    importe_inicial: parseFloat(document.getElementById('f-importe-inicial')?.value)||0,
+    importe_inicial: parseMonto(document.getElementById('f-importe-inicial')?.value),
     servicios_propietario: null,
     notas: document.getElementById('f-notas')?.value.trim()||null,
     gastos_inicio: parseFloat(document.getElementById('f-gastos-inicio')?.value)||0,
@@ -5097,7 +5097,7 @@ async function guardarContrato() {
 
     // Auto-generate all months in vigencia as pagos
     const reimportarChk = document.getElementById('f-reimportar')?.checked;
-    const importeInicial = parseFloat(document.getElementById('f-importe-inicial')?.value)||0;
+    const importeInicial = parseMonto(document.getElementById('f-importe-inicial')?.value);
     if (vigDesde && vigHasta && nuevoContrato) {
       const mesesGenerados = [];
       let [gsy, gsm] = vigDesde.substring(0,7).split('-').map(Number);
@@ -5198,7 +5198,7 @@ async function actualizarContrato(id) {
     servicios_rendir_propietario: leerSuministros().filter(s=>s.propietario_persona_id).map(s=>s.nombre||s.tipo).join(', ')||null,
     dia_vencimiento: parseInt(document.getElementById('f-dia-venc')?.value)||10,
     interes_punitorio: parseFloat(document.getElementById('f-interes')?.value)||0,
-    importe_inicial: parseFloat(document.getElementById('f-importe-inicial')?.value)||0,
+    importe_inicial: parseMonto(document.getElementById('f-importe-inicial')?.value),
     servicios_propietario: null,
     propietario_id: propIds[0]||null,
     inquilino_id: inqIds[0]||null,
@@ -5328,7 +5328,7 @@ async function actualizarContrato(id) {
 
     // Re-project if checkbox is checked
     const reimportar = document.getElementById('f-reimportar')?.checked;
-    const nuevoImporte = parseFloat(document.getElementById('f-importe-inicial')?.value)||0;
+    const nuevoImporte = parseMonto(document.getElementById('f-importe-inicial')?.value);
     if (reimportar && nuevoImporte > 0) {
       const cActualizado = { ...DB.contratos.find(x=>x.id===id), ...body };
       // Start from vigencia_desde, not TODAY
