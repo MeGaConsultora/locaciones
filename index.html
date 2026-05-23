@@ -2624,19 +2624,36 @@ async function cargarExtrasGral(mes, filtro) {
     }
   } catch(e) {}
 
-  const sinCargar = [];
-  const yaCargados = [];
+  const sinCargar = [];   // { c, grupo: [{s, concepto, extra}], conceptoKey }
+  const yaCargados = []; // same
 
+  // Group suministros by contrato + concepto
   for (const c of contratosConOtro) {
     const suministros = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id && s.tipo === 'otro');
+    const extrasContrato = extrasDelMes.filter(e => e._contrato_id === c.id);
+
+    // Group by concepto (nombre or nro_cuenta)
+    const grupos = {};
     for (const s of suministros) {
-      const concepto = s.nombre || s.nro_cuenta || 'Otro';
-      const extrasContrato = extrasDelMes.filter(e => e._contrato_id === c.id);
+      const conceptoKey = (s.nombre || s.nro_cuenta || 'Otro').trim().toLowerCase();
+      if (!grupos[conceptoKey]) grupos[conceptoKey] = { conceptoKey, concepto: s.nombre || s.nro_cuenta || 'Otro', filas: [] };
       const yaExiste = extrasContrato.find(e => parseInt(e.suministro_id) === parseInt(s.id));
-      if (yaExiste) {
-        yaCargados.push({ c, s, concepto, extra: yaExiste });
+      grupos[conceptoKey].filas.push({ s, extra: yaExiste || null });
+    }
+
+    for (const g of Object.values(grupos)) {
+      const todasCargadas = g.filas.every(f => f.extra);
+      const algunaCargada = g.filas.some(f => f.extra);
+      // Calculate total from existing extras
+      const totalCargado = g.filas.reduce((t, f) => t + Math.abs(parseFloat(f.extra?.importe)||0), 0);
+      // Pct distribution info
+      const pctInqTotal = g.filas.reduce((t, f) => t + (f.s.pct_inquilino ?? 0), 0);
+      const pctPropTotal = g.filas.reduce((t, f) => t + (f.s.pct_propietario ?? 0), 0);
+      const pctOk = Math.abs(pctInqTotal + pctPropTotal - 100) < 0.5;
+      if (todasCargadas) {
+        yaCargados.push({ c, g, totalCargado, pctOk });
       } else {
-        sinCargar.push({ c, s, concepto });
+        sinCargar.push({ c, g, pctOk });
       }
     }
   }
@@ -2644,39 +2661,59 @@ async function cargarExtrasGral(mes, filtro) {
   const totalSin = sinCargar.length;
   const totalYa = yaCargados.length;
 
+  // Build pct breakdown string
+  const buildPctInfo = (g) => {
+    return g.filas.map(f => {
+      const per = f.s.propietario_persona_id
+        ? DB_PERSONAS.find(x => x.id === parseInt(f.s.propietario_persona_id))
+        : f.s.descuenta_persona_id
+          ? DB_PERSONAS.find(x => x.id === parseInt(f.s.descuenta_persona_id))
+          : null;
+      const quien = per ? formatNombrePersona(per) : (f.s.pct_inquilino > 0 ? 'Inquilino' : 'Propietario');
+      const pct = (f.s.pct_inquilino ?? 0) + (f.s.pct_propietario ?? 0);
+      return `${quien} ${pct}%`;
+    }).join(' · ');
+  };
+
   panel.innerHTML = `
     <div style="margin-bottom:0.75rem;font-size:0.82rem;color:#888">
       ${totalSin + totalYa} ítem/s · <strong>${totalSin}</strong> sin cargar · ${totalYa} ya cargados
     </div>
     ${sinCargar.length ? `
       <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1rem">
-        ${sinCargar.map(({c, s, concepto}) => `
-          <div style="background:white;border:1.5px solid var(--border);border-radius:8px;padding:0.75rem 1rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+        ${sinCargar.map(({c, g, pctOk}) => `
+          <div style="background:white;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:8px;padding:0.75rem 1rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
             <div style="flex:1;min-width:0">
               <span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-weight:600;font-size:0.88rem">${c.titulo||c.hoja}</span>
-              <div style="font-size:0.75rem;color:#888;margin-top:2px">${concepto}</div>
+              <div style="font-size:0.75rem;color:#888;margin-top:2px">${g.concepto}</div>
+              <div style="font-size:0.72rem;color:#aaa;margin-top:1px">${buildPctInfo(g)}${!pctOk?' <span style="color:var(--accent)">⚠ % no suma 100%</span>':''}</div>
             </div>
-            <input type="text" id="eg-input-${s.id}" data-suministro-id="${s.id}" data-contrato-id="${c.id}" data-concepto="${concepto}"
-              value="${s.monto_fijo > 0 ? s.monto_fijo : ''}" placeholder="$ importe"
-              style="width:130px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem;text-align:right"
-              onkeydown="if(event.key==='Enter') guardarExtraGralItem('eg-input-${s.id}')">
-            <button onclick="guardarExtraGralItem('eg-input-${s.id}')"
-              style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem">✓</button>
+            <input type="text" id="eg-input-${g.conceptoKey}-${c.id}"
+              data-grupo-key="${g.conceptoKey}" data-contrato-id="${c.id}"
+              value="" placeholder="$ importe total"
+              style="width:140px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem;text-align:right"
+              ${!pctOk ? 'disabled title="Corregí los % en el contrato primero"' : ''}
+              onkeydown="if(event.key==='Enter') guardarExtraGralItem('eg-input-${g.conceptoKey}-${c.id}')">
+            ${pctOk ? `<button onclick="guardarExtraGralItem('eg-input-${g.conceptoKey}-${c.id}')"
+              style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem">✓</button>` : ''}
           </div>`).join('')}
       </div>` : ''}
     ${yaCargados.length ? `
       <div style="margin-top:0.5rem">
         <div style="font-size:0.78rem;color:#888;margin-bottom:0.5rem;font-weight:600">YA CARGADOS</div>
-        ${yaCargados.map(({c, s, concepto, extra}) => `
-          <div style="background:#f0fff4;border:1.5px solid var(--green);border-radius:8px;padding:0.6rem 1rem;display:flex;align-items:center;gap:0.75rem;margin-bottom:0.4rem">
+        ${yaCargados.map(({c, g, totalCargado, pctOk}) => `
+          <div style="background:#f0fff4;border:1.5px solid var(--green);border-radius:8px;padding:0.6rem 1rem;display:flex;align-items:center;gap:0.75rem;margin-bottom:0.4rem;flex-wrap:wrap">
             <div style="flex:1;font-size:0.85rem">
               <span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-weight:600">${c.titulo||c.hoja}</span>
-              <span style="color:#888;font-size:0.75rem;margin-left:6px">${concepto}</span>
+              <span style="color:#888;font-size:0.75rem;margin-left:6px">${g.concepto}</span>
+              <div style="font-size:0.72rem;color:#aaa;margin-top:1px">${buildPctInfo(g)}</div>
             </div>
-            <input type="text" id="eg-input-${s.id}" data-suministro-id="${s.id}" data-contrato-id="${c.id}" data-concepto="${concepto}" data-extra-id="${extra.id}"
-              value="${extra.importe}" style="width:130px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem;text-align:right"
-              onkeydown="if(event.key==='Enter') guardarExtraGralItem('eg-input-${s.id}')">
-            <button onclick="guardarExtraGralItem('eg-input-${s.id}')"
+            <input type="text" id="eg-input-${g.conceptoKey}-${c.id}"
+              data-grupo-key="${g.conceptoKey}" data-contrato-id="${c.id}" data-ya-cargado="1"
+              value="${totalCargado}"
+              style="width:140px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem;text-align:right"
+              onkeydown="if(event.key==='Enter') guardarExtraGralItem('eg-input-${g.conceptoKey}-${c.id}')">
+            <button onclick="guardarExtraGralItem('eg-input-${g.conceptoKey}-${c.id}')"
               style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem">✓</button>
           </div>`).join('')}
       </div>` : ''}
@@ -2686,15 +2723,14 @@ async function cargarExtrasGral(mes, filtro) {
 async function guardarExtraGralItem(inputId) {
   const input = document.getElementById(inputId);
   if (!input) return;
-  const importe = parseMonto(input.value);
-  if (!importe) { toast('Ingresá un importe', 'error'); return; }
+  const importeTotal = parseMonto(input.value);
+  if (!importeTotal) { toast('Ingresá un importe total', 'error'); return; }
   const mesKey = document.getElementById('srv-mes')?.value;
   if (!mesKey) return;
-  const mes01 = mesKey + '-01';
-  const suministroId = parseInt(input.dataset.suministroId);
+  const mes01 = mesKey.length === 7 ? mesKey + '-01' : mesKey;
+  const grupoKey = input.dataset.grupoKey;
   const contratoId = parseInt(input.dataset.contratoId);
-  const concepto = input.dataset.concepto;
-  const extraId = input.dataset.extraId ? parseInt(input.dataset.extraId) : null;
+
   try {
     const c = DB.contratos.find(x => x.id === contratoId);
     if (!c) return;
@@ -2702,18 +2738,50 @@ async function guardarExtraGralItem(inputId) {
     const pagos = await sbGet('pagos', `hoja=eq.${enc}&mes=eq.${mes01}&limit=1&select=id`);
     if (!pagos.length) { toast(`Sin mes cargado para ${c.titulo||c.hoja}`, 'error'); return; }
     const pagoId = pagos[0].id;
-    if (extraId) {
-      await sbPatch('pagos_extras', extraId, { importe });
-    } else {
-      const r = await sbPost('pagos_extras', { pago_id: pagoId, concepto, importe, suministro_id: suministroId, a_cargo_de: 'inquilino' });
-      const row = Array.isArray(r) ? r[0] : r;
-      if (row?.id) input.dataset.extraId = row.id;
+
+    // Get all suministros in this group
+    const suministros = DB_SUMINISTROS.filter(s =>
+      parseInt(s.contrato_id) === contratoId &&
+      s.tipo === 'otro' &&
+      (s.nombre || s.nro_cuenta || 'Otro').trim().toLowerCase() === grupoKey
+    );
+
+    // Get existing extras for this pago
+    const extrasExistentes = await sbGet('pagos_extras', `pago_id=eq.${pagoId}&order=id.asc`);
+
+    let guardados = 0;
+    for (const s of suministros) {
+      const concepto = s.nombre || s.nro_cuenta || 'Otro';
+      const pct = (s.pct_inquilino ?? 0) + (s.pct_propietario ?? 0);
+      const importe = Math.round(importeTotal * pct / 100 * 100) / 100;
+      const aCargoDe = (s.pct_propietario ?? 0) > 0 ? 'propietario' : 'inquilino';
+      const propPerId = s.descuenta_persona_id || s.propietario_persona_id || null;
+      const yaExiste = extrasExistentes.find(e => parseInt(e.suministro_id) === parseInt(s.id));
+
+      if (yaExiste) {
+        await sbPatch('pagos_extras', yaExiste.id, { importe, concepto, a_cargo_de: aCargoDe, propietario_persona_id: propPerId });
+      } else {
+        await sbPost('pagos_extras', {
+          pago_id: pagoId, concepto, importe,
+          suministro_id: s.id, a_cargo_de: aCargoDe,
+          propietario_persona_id: propPerId
+        });
+      }
+      guardados++;
     }
-    // Visual feedback - turn green
+
+    // Visual feedback
     input.style.borderColor = 'var(--green)';
-    input.closest('div[style*="background"]').style.background = '#f0fff4';
-    input.closest('div[style*="background"]').style.borderColor = 'var(--green)';
-    toast(`${concepto} guardado ✓`);
+    const card = input.closest('div[style*="background"]');
+    if (card) { card.style.background = '#f0fff4'; card.style.borderColor = 'var(--green)'; }
+    // Show breakdown
+    const breakdown = suministros.map(s => {
+      const pct = (s.pct_inquilino??0)+(s.pct_propietario??0);
+      const imp = Math.round(importeTotal * pct / 100 * 100) / 100;
+      return `${pct}% = $${imp.toLocaleString('es-AR',{minimumFractionDigits:2})}`;
+    }).join(' · ');
+    toast(`Guardado ✓ — ${breakdown}`);
+    await cargarExtrasGral(mesKey, '');
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
@@ -3435,29 +3503,59 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
       <span style="font-size:0.85rem;color:var(--accent)">− ${formatMoney(comision)}</span>
     </div>
     ${(() => {
-      // Filter extras for this propietario (or unassigned)
       const activePropIdStr = activeCp ? String(parseInt(activeCp.persona_id)) : null;
       const hayMultiplesProp = propsCp.length > 1;
+
+      // Group all propietario extras by concepto to validate pct sums
+      const gruposConcepto = {};
+      extrasProp.forEach(e => {
+        const key = (e.concepto||'').trim().toLowerCase();
+        if (!gruposConcepto[key]) gruposConcepto[key] = [];
+        gruposConcepto[key].push(e);
+      });
+
+      // Extras assigned or unassigned
       const extrasFiltered = extrasProp.filter(e => {
-        if (!e.propietario_persona_id) return !hayMultiplesProp; // unassigned: only show if single propietario
+        if (!e.propietario_persona_id) return !hayMultiplesProp;
         return String(parseInt(e.propietario_persona_id)) === activePropIdStr;
       });
       const extrasNoAsignados = hayMultiplesProp ? extrasProp.filter(e => !e.propietario_persona_id) : [];
+
+      // Build grouping notifications
+      let gruposHtml = '';
+      const conceptosAgrupados = new Set();
+      if (hayMultiplesProp) {
+        Object.entries(gruposConcepto).forEach(([key, filas]) => {
+          if (filas.length < 2) return;
+          conceptosAgrupados.add(key);
+          const suma = filas.reduce((s,e) => s + Math.abs(parseFloat(e.importe)||0), 0);
+          const nombres = filas.map(e => {
+            const per = e.propietario_persona_id ? DB_PERSONAS.find(x=>x.id===parseInt(e.propietario_persona_id)) : null;
+            return (per ? formatNombrePersona(per) : 'Sin asignar') + ': ' + formatMoney(Math.abs(e.importe||0)).replace(/<[^>]+>/g,'');
+          }).join(' | ');
+          gruposHtml += `<div style="background:#e8f4fd;border:1px solid #b8d9f0;border-radius:6px;padding:5px 10px;margin-bottom:4px;font-size:0.78rem;color:#1a5276">
+            📎 Agrupado: <strong>${filas[0].concepto||'Sin concepto'}</strong> — ${nombres} — Total: ${formatMoney(suma).replace(/<[^>]+>/g,'')}
+          </div>`;
+        });
+      }
+
       const warningHtml = extrasNoAsignados.length ? `
         <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:6px 10px;margin-bottom:6px;font-size:0.8rem;color:#856404">
           ⚠ ${extrasNoAsignados.length} extra/s sin propietario asignado: <strong>${extrasNoAsignados.map(e=>e.concepto||'Sin concepto').join(', ')}</strong> — asignalos en la solapa Cargar / Modificar para evitar duplicar el pago.
         </div>` : '';
-      return warningHtml + extrasFiltered.map(e => {
-      const signo = e.tipo==='credito' ? 1 : -1;
-      const color = e.tipo==='credito' ? 'var(--green)' : 'var(--accent)';
-      const signoLabel = e.tipo==='credito' ? '+' : '−';
-      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
-          <input type="checkbox" id="prop-chk-extra-${e.id}" value="${Math.abs(e.importe||0)}" data-signo="${signo}" checked onchange="recalcProp()" style="width:15px;height:15px">
-          ${e.concepto||'Extra'} <span style="font-size:0.72rem;color:${color}">(${e.tipo==='credito'?'crédito':'débito'})</span>
-        </label>
-        <span style="font-size:0.85rem;color:${color}">${signoLabel} ${formatMoney(Math.abs(e.importe||0))}</span>
-      </div>`;
+
+      return warningHtml + gruposHtml + extrasFiltered.map(e => {
+        const signo = e.tipo==='credito' ? 1 : -1;
+        const color = e.tipo==='credito' ? 'var(--green)' : 'var(--accent)';
+        const signoLabel = e.tipo==='credito' ? '+' : '−';
+        const estaAgrupado = conceptosAgrupados.has((e.concepto||'').trim().toLowerCase());
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
+            <input type="checkbox" id="prop-chk-extra-${e.id}" value="${Math.abs(e.importe||0)}" data-signo="${signo}" checked onchange="recalcProp()" style="width:15px;height:15px">
+            ${e.concepto||'Extra'}${estaAgrupado ? ' <span style="font-size:0.68rem;color:#2980b9;background:#e8f4fd;padding:1px 5px;border-radius:3px">parte</span>' : ''} <span style="font-size:0.72rem;color:${color}">(${e.tipo==='credito'?'crédito':'débito'})</span>
+          </label>
+          <span style="font-size:0.85rem;color:${color}">${signoLabel} ${formatMoney(Math.abs(e.importe||0))}</span>
+        </div>`;
       }).join('');
     })()}
     ${(() => {
@@ -4868,9 +4966,9 @@ function _abrirFormularioContrato(c, esNuevo) {
       <div style="display:flex;gap:0.4rem;padding:0 0.75rem 0.4rem;font-size:0.68rem;color:#888;text-transform:uppercase;letter-spacing:.04em;font-weight:600">
         <span style="width:130px;flex-shrink:0">Tipo</span>
         <span style="flex:1">N° cuenta / descripción</span>
-        <span style="width:75px;flex-shrink:0;text-align:center">%&nbsp;Inq.</span>
-        <span style="width:75px;flex-shrink:0;text-align:center">%&nbsp;Prop.</span>
-        <span style="flex:1;color:#f0a000">Descuenta&nbsp;a</span>
+        <span style="width:75px;flex-shrink:0;text-align:center" title="% del total de la boleta que paga el inquilino">%&nbsp;Inq.<br><span style="font-size:0.6rem;text-transform:none;font-weight:400;color:#aaa">del total</span></span>
+        <span style="width:75px;flex-shrink:0;text-align:center" title="% del total de la boleta que paga este propietario">%&nbsp;Prop.<br><span style="font-size:0.6rem;text-transform:none;font-weight:400;color:#aaa">del total</span></span>
+        <span style="flex:1">Descuenta&nbsp;a</span>
         <span style="flex:1">Rinde&nbsp;a</span>
         <span style="width:24px;flex-shrink:0"></span>
       </div>
@@ -7791,11 +7889,13 @@ function _renderSuministroRow(s) {
     <input type="text" placeholder="N° cuenta / descripción" value="${s.nro_cuenta||s.nombre||''}"
       style="flex:1;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.82rem">
     <input type="number" value="${s.pct_inquilino ?? 100}" min="0" max="100" step="0.01"
-      placeholder="%" title="% Inquilino"
-      style="width:75px;flex-shrink:0;padding:5px 4px;border:1.5px solid var(--green);border-radius:6px;font-size:0.82rem;text-align:center">
+      placeholder="%" title="% del total de la boleta que paga el inquilino"
+      style="width:75px;flex-shrink:0;padding:5px 4px;border:1.5px solid var(--green);border-radius:6px;font-size:0.82rem;text-align:center"
+      oninput="validarPctSuministros()">
     <input type="number" value="${s.pct_propietario ?? 0}" min="0" max="100" step="0.01"
-      placeholder="%" title="% Propietario"
-      style="width:75px;flex-shrink:0;padding:5px 4px;border:1.5px solid #f0c040;border-radius:6px;font-size:0.82rem;text-align:center">
+      placeholder="%" title="% del total de la boleta que paga este propietario"
+      style="width:75px;flex-shrink:0;padding:5px 4px;border:1.5px solid #f0c040;border-radius:6px;font-size:0.82rem;text-align:center"
+      oninput="validarPctSuministros()">
     <select style="flex:1;padding:5px 6px;border:1.5px solid #f0c040;border-radius:6px;font-size:0.82rem" title="Descuenta a propietario">
       <option value="">— No descuenta —</option>
       ${descuentaOptions}
@@ -7812,6 +7912,35 @@ function _renderSuministroRow(s) {
       style="width:24px;flex-shrink:0;background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:4px;cursor:pointer;font-size:0.75rem">✕</button>
   `;
   return div;
+}
+
+function validarPctSuministros() {
+  const suministros = leerSuministros();
+  // Group by nro_cuenta+tipo to validate shared services
+  const grupos = {};
+  for (const s of suministros) {
+    const key = (s.nro_cuenta || s.nombre || '') + '|' + (s.tipo||'');
+    if (!grupos[key]) grupos[key] = { label: s.nombre || s.nro_cuenta || s.tipo, filas: [] };
+    grupos[key].filas.push(s);
+  }
+  const problemas = [];
+  for (const [k, g] of Object.entries(grupos)) {
+    const suma = g.filas.reduce((s, f) => s + (parseFloat(f.pct_inquilino)||0) + (parseFloat(f.pct_propietario)||0), 0);
+    if (Math.abs(suma - 100) > 0.5) problemas.push(`${g.label}: ${Math.round(suma)}%`);
+  }
+  let warn = document.getElementById('suministros-pct-warn');
+  if (!warn) {
+    warn = document.createElement('div');
+    warn.id = 'suministros-pct-warn';
+    warn.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:6px 10px;font-size:0.8rem;color:#856404;margin-bottom:0.5rem';
+    document.getElementById('lista-suministros')?.after(warn);
+  }
+  if (problemas.length) {
+    warn.style.display = 'block';
+    warn.textContent = '⚠ Los % no suman 100% en: ' + problemas.join(', ') + ' — Recordá: cada % es sobre el total de la boleta.';
+  } else {
+    warn.style.display = 'none';
+  }
 }
 
 function onChangeTipoSuministro(sel) {
@@ -7853,6 +7982,24 @@ function leerSuministros() {
 
 async function guardarSuministros(contratoId) {
   const nuevos = leerSuministros();
+
+  // Validate pct sums per nro_cuenta group
+  const grupos = {};
+  for (const s of nuevos) {
+    const key = (s.nro_cuenta || s.nombre || s.tipo) + '_' + (s.tipo||'');
+    if (!grupos[key]) grupos[key] = { label: s.nombre || s.nro_cuenta || s.tipo, filas: [] };
+    grupos[key].filas.push(s);
+  }
+  const problemas = [];
+  for (const [k, g] of Object.entries(grupos)) {
+    const suma = g.filas.reduce((s, f) => s + (f.pct_inquilino||0) + (f.pct_propietario||0), 0);
+    if (Math.abs(suma - 100) > 0.5) {
+      problemas.push(`${g.label}: suma ${Math.round(suma)}% (debe ser 100%)`);
+    }
+  }
+  if (problemas.length) {
+    if (!confirm('⚠ Los porcentajes no suman 100% en:\n\n' + problemas.join('\n') + '\n\n¿Guardar igual?')) return;
+  }
   const existentes = DB_SUMINISTROS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId));
 
   // Delete removed ones
