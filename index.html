@@ -5197,29 +5197,37 @@ async function buscarPersonaEnLinea(input, rol, idx) {
   div.style.left = '0';
   div.style.width = input.offsetWidth + 'px';
   input.parentElement.style.position = 'relative';
-  div.innerHTML = res.map(p => `
+  // Store results for click handler to avoid string escaping issues
+  window[`_sugData_${rol}_${idx}`] = res;
+  div.innerHTML = res.map((p, i) => `
     <div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0ece4;font-size:0.85rem"
       onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background='white'"
-      onclick="selPersonaEnLinea(this,'${rol}',${idx},${p.id},'${(p.apellido||'').replace(/'/g,"\'")}','${(p.nombre||'').replace(/'/g,"\'")}')">
+      onclick="selPersonaEnLinea2('${rol}',${idx},${i})">
       <strong>${p.apellido||''}, ${p.nombre||''}</strong> ${p.dni?'— DNI: '+p.dni:''}
     </div>
   `).join('');
 }
 
-function selPersonaEnLineaIdx(rol, idx, pidx) {
-  const p = window[`_sug_${rol}_${idx}`]?.[pidx];
+function selPersonaEnLinea2(rol, idx, pidx) {
+  const res = window[`_sugData_${rol}_${idx}`];
+  if (!res) return;
+  const p = res[pidx];
   if (!p) return;
-  const nombre = formatNombrePersona(p);
-  const parent = document.getElementById(`lista-${rolToLista(rol)}`)?.children[idx];
+  const sugDiv = document.getElementById(`sug-${rol}-${idx}`);
+  const nomDisplay = formatNombrePersona(p);
+  // Find parent chip
+  let parent = sugDiv?.closest('[data-rol]');
+  if (!parent) {
+    const lista = document.getElementById(`lista-${rolToLista(rol)}`);
+    parent = lista ? [...lista.children].find(c => c.dataset.rol === rol && !c.dataset.personaId) || lista.children[idx] : null;
+  }
   if (parent) {
     parent.dataset.personaId = p.id;
-    const sp = document.getElementById(`sel-${rol}-${idx}`);
-    if (sp) sp.textContent = `✓ ${nombre}`;
     const inp = parent.querySelector('input[type="text"]');
-    if (inp) inp.value = nombre;
-    const sugDiv = document.getElementById(`sug-${rol}-${idx}`);
-    if (sugDiv) sugDiv.style.display='none';
+    if (inp) { inp.value = nomDisplay; inp.style.color = 'var(--green)'; }
   }
+  if (sugDiv) sugDiv.style.display = 'none';
+  delete window[`_sugData_${rol}_${idx}`];
 }
 
 function selPersonaEnLinea(el, rol, idx, personaId, apellido, nombre) {
