@@ -2517,7 +2517,14 @@ async function cargarListaServicios(filtro='') {
               <div style="font-size:0.75rem;color:#666;margin-top:2px">${detalle}</div>
               ${!pctOk ? `<div style="font-size:0.72rem;color:var(--accent);margin-top:2px">⚠ Los % suman ${totalPct}% — deben ser 100%</div>` : ''}
             </div>
-            <div><input type="text" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}" placeholder="$ importe cuota" style="width:150px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem" ${!pctOk ? 'disabled title="Corregí los porcentajes primero"' : ''}></div>
+            <div style="display:flex;gap:0.4rem;align-items:center">
+              <input type="text" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}" placeholder="$ importe cuota"
+                style="width:140px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem"
+                ${!pctOk ? 'disabled title="Corregí los porcentajes primero"' : ''}
+                onkeydown="if(event.key==='Enter') guardarServicioItem('srv-${srv}-g-${ids}')">
+              ${pctOk ? `<button onclick="guardarServicioItem('srv-${srv}-g-${ids}')"
+                style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem;white-space:nowrap">✓</button>` : ''}
+            </div>
           </div>
           ${epeExtra}
         </div>`;
@@ -2742,6 +2749,53 @@ async function guardarExtrasGral() {
   }
   if (guardados) toast(`${guardados} extra/s guardado/s ✓`);
   await cargarExtrasGral(mes01.substring(0,7), '');
+}
+
+async function guardarServicioItem(inputId) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const importe = parseMonto(input.value);
+  if (!importe) { toast('Ingresá un importe', 'error'); return; }
+  const srv = input.dataset.srv;
+  const mesKey = document.getElementById('srv-mes')?.value;
+  if (!mesKey) return;
+  const mes = mesKey + '-01';
+  const hojas = input.dataset.hojas
+    ? input.dataset.hojas.split('|').filter(Boolean)
+    : input.dataset.hoja ? [input.dataset.hoja] : [];
+
+  let guardados = 0;
+  for (const hoja of hojas) {
+    try {
+      const hojaEncoded = encodeURIComponent(hoja);
+      const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
+      if (!pagos.length) continue;
+      const pago = pagos[0];
+      // Get pct from contrato_suministros or fallback
+      const c = DB.contratos.find(x => x.hoja === hoja);
+      const sum = c ? DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : null;
+      const pct = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
+      const montoInq = Math.round(importe * pct / 100 * 100) / 100;
+      const newTotal = (pago.importe_alquiler||0) + montoInq +
+        (['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0));
+      const yaAbonado = (pago.total||0) - (pago.saldo||0);
+      await sbPatch('pagos', pago.id, {
+        ['monto_'+srv]: montoInq,
+        total: newTotal,
+        saldo: Math.max(0, newTotal - yaAbonado)
+      });
+      guardados++;
+    } catch(e) { toast('Error: ' + e.message, 'error'); return; }
+  }
+  if (guardados) {
+    // Visual feedback then refresh tab
+    input.style.borderColor = 'var(--green)';
+    toast(`${srv.toUpperCase()} guardado ✓`);
+    // Refresh only current tab
+    const mesKey2 = document.getElementById('srv-mes')?.value;
+    const filtro = (document.getElementById('srv-buscar')?.value||'').toLowerCase();
+    if (mesKey2) await cargarListaServicios();
+  }
 }
 
 async function guardarServicios() {
