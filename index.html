@@ -2764,37 +2764,42 @@ async function guardarServicioItem(inputId) {
     ? input.dataset.hojas.split('|').filter(Boolean)
     : input.dataset.hoja ? [input.dataset.hoja] : [];
 
-  let guardados = 0;
-  for (const hoja of hojas) {
-    try {
-      const hojaEncoded = encodeURIComponent(hoja);
-      const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
-      if (!pagos.length) continue;
-      const pago = pagos[0];
-      // Get pct from contrato_suministros or fallback
-      const c = DB.contratos.find(x => x.hoja === hoja);
-      const sum = c ? DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : null;
-      const pct = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
-      const montoInq = Math.round(importe * pct / 100 * 100) / 100;
-      const newTotal = (pago.importe_alquiler||0) + montoInq +
-        (['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0));
-      const yaAbonado = (pago.total||0) - (pago.saldo||0);
-      await sbPatch('pagos', pago.id, {
-        ['monto_'+srv]: montoInq,
-        total: newTotal,
-        saldo: Math.max(0, newTotal - yaAbonado)
-      });
-      guardados++;
-    } catch(e) { toast('Error: ' + e.message, 'error'); return; }
-  }
-  if (guardados) {
-    // Visual feedback then refresh tab
+  // Check EPE cuota2 checkbox
+  const ids = inputId.replace(`srv-${srv}-g-`, '');
+  const cuota2chk = document.getElementById(`srv-epe-cuota2-${ids.split(',')[0]}`);
+  const mesNext = cuota2chk?.checked ? cuota2chk.dataset.next + '-01' : null;
+
+  const _guardarEnMes = async (mesTarget) => {
+    for (const hoja of hojas) {
+      try {
+        const hojaEncoded = encodeURIComponent(hoja);
+        const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesTarget}&limit=1`);
+        if (!pagos.length) continue;
+        const pago = pagos[0];
+        const c = DB.contratos.find(x => x.hoja === hoja);
+        const sum = c ? DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : null;
+        const pct = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
+        const montoInq = Math.round(importe * pct / 100 * 100) / 100;
+        const newTotal = (pago.importe_alquiler||0) + montoInq +
+          ['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0);
+        const yaAbonado = (pago.total||0) - (pago.saldo||0);
+        await sbPatch('pagos', pago.id, {
+          ['monto_'+srv]: montoInq,
+          total: newTotal,
+          saldo: Math.max(0, newTotal - yaAbonado)
+        });
+      } catch(e) { toast('Error: ' + e.message, 'error'); return false; }
+    }
+    return true;
+  };
+
+  const ok1 = await _guardarEnMes(mes);
+  if (ok1 && mesNext) await _guardarEnMes(mesNext);
+
+  if (ok1) {
     input.style.borderColor = 'var(--green)';
-    toast(`${srv.toUpperCase()} guardado ✓`);
-    // Refresh only current tab
-    const mesKey2 = document.getElementById('srv-mes')?.value;
-    const filtro = (document.getElementById('srv-buscar')?.value||'').toLowerCase();
-    if (mesKey2) await cargarListaServicios();
+    toast(`${srv.toUpperCase()} guardado ✓${mesNext ? ' (2 cuotas)' : ''}`);
+    await cargarListaServicios();
   }
 }
 
