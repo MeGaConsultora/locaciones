@@ -814,6 +814,20 @@ let vencFiltro = '30';
 // LOAD DATA
 // ============================================================
 async function loadAll() {
+  // Verify user is still approved on every loadAll
+  if (currentUser?.email && currentUsuario) {
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(currentUser.email)}&select=aprobado`, {
+        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${currentUser.token}` }
+      });
+      const us = await r.json();
+      if (!us?.length || !us[0].aprobado) {
+        localStorage.removeItem('sb_token'); localStorage.removeItem('sb_uid'); localStorage.removeItem('sb_email');
+        showLoginMsg('login', 'Tu cuenta ha sido dada de baja.', 'error');
+        showLoginScreen(); return;
+      }
+    } catch(e) {}
+  }
   document.getElementById('sync-status').textContent = 'Actualizando...';
   try {
     // Refresh token if needed before loading
