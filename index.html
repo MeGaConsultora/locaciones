@@ -6941,11 +6941,50 @@ async function guardarVinculacion(usuarioId) {
   const rol = document.getElementById('vinc-rol').value;
   if (!personaId && rol !== 'admin') { toast('Seleccioná un inquilino','error'); return; }
   try {
+    // Get current user to find old persona_id
+    const usuariosActual = await sbGet('usuarios', `id=eq.${usuarioId}&select=persona_id`);
+    const oldPersonaId = usuariosActual[0]?.persona_id;
+
+    // Desvincular cualquier otro usuario que tenga este persona_id
+    if (personaId) {
+      const otrosConPersona = await sbGet('usuarios', `persona_id=eq.${personaId}&id=neq.${usuarioId}`);
+      for (const u of otrosConPersona) {
+        await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${u.id}`, {
+          method:'PATCH',
+          headers:{ 'apikey':SB_KEY, 'Authorization':`Bearer ${currentUser.token}`, 'Content-Type':'application/json' },
+          body: JSON.stringify({ persona_id: null })
+        });
+      }
+    }
+
+    // Update usuario
     await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${usuarioId}`, {
       method:'PATCH',
       headers:{ 'apikey':SB_KEY, 'Authorization':`Bearer ${currentUser.token}`, 'Content-Type':'application/json' },
       body: JSON.stringify({ persona_id: personaId||null, rol, admin: rol==='admin' })
     });
+
+    // If persona changed, update contratos.inquilino_id
+    if (oldPersonaId && personaId && String(oldPersonaId) !== String(personaId)) {
+      // Remove old persona from contratos
+      await fetch(`${SB_URL}/rest/v1/contratos?inquilino_id=eq.${oldPersonaId}`, {
+        method:'PATCH',
+        headers:{ 'apikey':SB_KEY, 'Authorization':`Bearer ${currentUser.token}`, 'Content-Type':'application/json' },
+        body: JSON.stringify({ inquilino_id: null })
+      });
+    }
+    if (personaId) {
+      // Find contratos from contrato_personas for this new persona and set inquilino_id
+      const cpRows = await sbGet('contrato_personas', `persona_id=eq.${personaId}&rol=eq.inquilino`);
+      for (const cp of cpRows) {
+        await fetch(`${SB_URL}/rest/v1/contratos?id=eq.${cp.contrato_id}`, {
+          method:'PATCH',
+          headers:{ 'apikey':SB_KEY, 'Authorization':`Bearer ${currentUser.token}`, 'Content-Type':'application/json' },
+          body: JSON.stringify({ inquilino_id: personaId })
+        });
+      }
+    }
+
     toast('Vinculación guardada ✓');
     await loadUsuarios();
     closeModal();
