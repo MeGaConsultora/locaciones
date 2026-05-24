@@ -1958,11 +1958,11 @@ async function abrirCrearAcceso(contratoId, hoja) {
     <div class="form-grid">
       <div class="form-group">
         <label>Email</label>
-        <input id="acc-email" type="email" value="${usuarioExistente.email}" style="margin-top:4px">
+        <input id="acc-email" type="email" value="${usuarioExistente.email}" autocomplete="new-password" style="margin-top:4px">
       </div>
       <div class="form-group">
         <label>Nombre (para el portal)</label>
-        <input id="acc-nombre" type="text" value="${nombrePortal}" style="margin-top:4px" placeholder="Primer nombre">
+        <input id="acc-nombre" type="text" value="${nombrePortal}" autocomplete="new-password" style="margin-top:4px" placeholder="Primer nombre">
       </div>
     </div>
     <div id="acc-resultado" style="display:none;margin-top:1rem"></div>
@@ -1977,11 +1977,11 @@ async function abrirCrearAcceso(contratoId, hoja) {
     <div class="form-grid">
       <div class="form-group">
         <label>Email del inquilino *</label>
-        <input id="acc-email" type="email" placeholder="email@ejemplo.com" value="" style="margin-top:4px">
+        <input id="acc-email" type="email" value="" placeholder="email@ejemplo.com" autocomplete="new-password" style="margin-top:4px">
       </div>
       <div class="form-group">
         <label>Nombre (para el mensaje)</label>
-        <input id="acc-nombre" type="text" value="${nombrePortal}" placeholder="Primer nombre" style="margin-top:4px">
+        <input id="acc-nombre" type="text" value="${nombrePortal}" placeholder="Primer nombre" autocomplete="new-password" style="margin-top:4px">
       </div>
     </div>
     <div id="acc-resultado" style="display:none;margin-top:1rem"></div>
