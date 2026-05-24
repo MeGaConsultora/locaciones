@@ -6972,18 +6972,22 @@ async function darDeBaja(id, email) {
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
-// Check approval status every 2 minutes for active sessions
+// Check approval status every 30 seconds for active sessions
 setInterval(async () => {
-  if (!currentUser?.email || !currentUsuario) return;
+  if (!currentUser?.email || !currentUser?.token) return;
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(currentUser.email)}&select=aprobado`, {
+    const r = await fetch(`${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(currentUser.email)}&select=aprobado,id`, {
       headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${currentUser.token}` }
     });
+    if (!r.ok) return;
     const us = await r.json();
-    if (!us?.length || !us[0].aprobado) {
-      localStorage.removeItem('sb_token'); localStorage.removeItem('sb_uid'); localStorage.removeItem('sb_email');
-      currentUser = null; currentUsuario = null;
-      showLoginMsg('login', 'Tu cuenta ha sido dada de baja.', 'error');
+    if (Array.isArray(us) && (us.length === 0 || !us[0].aprobado)) {
+      localStorage.removeItem('sb_token');
+      localStorage.removeItem('sb_uid');
+      localStorage.removeItem('sb_email');
+      currentUser = null;
+      currentUsuario = null;
+      showLoginMsg('login', 'Tu acceso ha sido revocado.', 'error');
       showLoginScreen();
     }
   } catch(e) {}
