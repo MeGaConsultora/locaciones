@@ -1931,7 +1931,16 @@ async function abrirCrearAcceso(contratoId, hoja) {
     } catch(e) {}
   }
   const nombreInq = primerInquilino ? formatNombrePersona(primerInquilino) : '';
-  const nombrePortal = primerInquilino?.nombre?.split(' ')[0] || nombreInq.split(',')[1]?.trim().split(' ')[0] || nombreInq;
+  // Extract first name reliably
+  const nombrePortal = (() => {
+    const n = primerInquilino?.nombre || '';
+    const a = primerInquilino?.apellido || '';
+    if (n && !n.includes(',') && n.toLowerCase() !== a.toLowerCase()) return n.split(' ')[0];
+    // fallback: use formatted name, take part after comma
+    const full = nombreInq;
+    if (full.includes(',')) return full.split(',')[1]?.trim().split(' ')[0] || full;
+    return full.split(' ')[0] || full;
+  })();
   const emailInq = primerInquilino?.email || '';
 
   document.getElementById('modal-title').textContent = 'Acceso al portal';
@@ -1963,12 +1972,6 @@ async function abrirCrearAcceso(contratoId, hoja) {
       <div class="form-group">
         <label>Nombre (para el portal)</label>
         <input id="acc-nombre" type="text" value="${nombrePortal}" autocomplete="new-password" style="margin-top:4px" placeholder="Primer nombre">
-      </div>
-    </div>
-    <div id="acc-resultado" style="display:none;margin-top:1rem"></div>
-    <div class="form-actions" style="margin-top:1rem">
-      <button class="btn btn-secondary" onclick="openContrato(${contratoId})">← Volver</button>
-      <button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="modificarAccesoInquilino(${contratoId},'${hoja}')">✏️ Modificar acceso</button>
     </div>
   ` : `
     <p style="font-size:0.85rem;color:#666;margin-bottom:1.2rem">
