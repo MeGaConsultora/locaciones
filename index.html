@@ -2083,7 +2083,8 @@ async function crearAccesoInquilino(contratoId, hoja) {
         admin: false,
         rol: 'inquilino',
         persona_id: personaId || null,
-        user_id: authUserId
+        user_id: authUserId,
+        temp_password: tempPass
       });
     } else {
       // Update existing
@@ -2091,7 +2092,8 @@ async function crearAccesoInquilino(contratoId, hoja) {
         aprobado: true,
         rol: 'inquilino',
         persona_id: existing[0].persona_id || personaId || null,
-        user_id: existing[0].user_id || authUserId
+        user_id: existing[0].user_id || authUserId,
+        temp_password: tempPass
       });
     }
 
@@ -2107,9 +2109,9 @@ Ya podés acceder a tu portal de inquilino en MeGa Consultora.
 
 🌐 https://megaconsultora.github.io/inquilinos
 📧 Email: ${email}
-🔑 Contraseña: ${tempPass}
+🔑 Contraseña temporal: ${tempPass}
 
-Si querés cambiar tu contraseña, usá la opción *"¿Olvidaste / querés cambiar tu contraseña?"* en el portal.
+Por seguridad, al ingresar por primera vez el sistema te va a pedir que cambies tu contraseña.
 
 Ante cualquier duda, comunicate con nosotros.`;
     const msgEncoded = encodeURIComponent(mensaje);
@@ -6848,6 +6850,7 @@ async function loadUsuarios() {
           ${!u.aprobado ? `<button class="btn btn-green" style="padding:4px 10px;font-size:0.75rem" onclick="aprobarUsuario('${u.id}')">✓ Aprobar</button>` : ''}
           ${u.aprobado && u.rol!=='admin' ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="toggleAdmin('${u.id}',true)">↑ Admin</button>` : ''}
           ${u.rol==='admin' && u.email !== currentUsuario?.email ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="toggleAdmin('${u.id}',false)">↓ Quitar admin</button>` : ''}
+          ${u.aprobado && u.rol==='inquilino' && u.temp_password ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;color:var(--green);border-color:var(--green)" onclick="reenviarAcceso('${u.email}','${u.nombre||''}','${u.temp_password}')">📤 Reenviar acceso</button>` : ''}
           ${u.email !== currentUsuario?.email && u.rol!=='admin' ? `<button class="btn" style="padding:4px 10px;font-size:0.75rem;background:#f8d7da;color:#721c24" onclick="darDeBaja('${u.id}','${u.email}')">✕ Baja</button>` : u.email === currentUsuario?.email ? '<span style="font-size:0.75rem;color:#aaa">(vos)</span>' : '<span style="font-size:0.75rem;color:#aaa">Admin</span>'}
         </td>
       </tr>`;
@@ -6989,6 +6992,40 @@ async function guardarVinculacion(usuarioId) {
     await loadUsuarios();
     closeModal();
   } catch(e) { toast('Error: '+e.message,'error'); }
+}
+
+function reenviarAcceso(email, nombre, tempPass) {
+  const nombreMostrar = (() => {
+    if (!nombre) return '';
+    if (nombre.includes(',')) return nombre.split(',')[1]?.trim().split(' ')[0] || nombre;
+    return nombre.split(' ')[0] || nombre;
+  })();
+  const mensaje = `Hola, ${nombreMostrar}!
+
+Tus datos de acceso al portal de inquilino en MeGa Consultora:
+
+🌐 https://megaconsultora.github.io/inquilinos
+📧 Email: ${email}
+🔑 Contraseña: ${tempPass}
+
+Si querés cambiar tu contraseña, usá la opción *"¿Olvidaste / querés cambiar tu contraseña?"* en el portal.
+
+Ante cualquier duda, comunicate con nosotros.`;
+  const msgEncoded = encodeURIComponent(mensaje);
+  document.getElementById('modal-title').textContent = 'Reenviar acceso';
+  document.getElementById('modal-subtitle').textContent = email;
+  document.getElementById('modal-body').innerHTML = `
+    <div style="background:#f0fff4;border:1px solid var(--green);border-radius:10px;padding:1rem;margin-bottom:1rem">
+      <div style="font-weight:600;color:#155724;margin-bottom:0.5rem">Datos de acceso guardados</div>
+      <div style="background:white;border-radius:8px;padding:0.75rem;font-size:0.82rem;color:#333;margin-bottom:0.75rem;border:1px solid #c3e6cb;white-space:pre-wrap">${mensaje}</div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+        <button class="btn btn-green" style="font-size:0.82rem" onclick="navigator.clipboard.writeText(${JSON.stringify(mensaje)});toast('Copiado ✓')">📋 Copiar mensaje</button>
+        <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none">💬 Enviar por WhatsApp</a>
+      </div>
+    </div>
+    <div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Cerrar</button></div>
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
 }
 
 async function aprobarUsuario(id) {
