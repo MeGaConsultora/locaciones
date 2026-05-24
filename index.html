@@ -1942,11 +1942,11 @@ async function abrirCrearAcceso(contratoId, hoja) {
   try {
     if (personaId) {
       const byPersona = await sbGet('usuarios', `persona_id=eq.${personaId}&limit=1`);
-      if (byPersona.length > 0) usuarioExistente = byPersona[0];
+      if (byPersona.length > 0 && byPersona[0].aprobado !== false) usuarioExistente = byPersona[0];
     }
     if (!usuarioExistente && emailInq) {
       const byEmail = await sbGet('usuarios', `email=eq.${encodeURIComponent(emailInq)}&limit=1`);
-      if (byEmail.length > 0) usuarioExistente = byEmail[0];
+      if (byEmail.length > 0 && byEmail[0].aprobado !== false) usuarioExistente = byEmail[0];
     }
   } catch(e) {}
 
