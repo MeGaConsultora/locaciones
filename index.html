@@ -6868,7 +6868,7 @@ function abrirVincularPersona(usuarioId, rolActual) {
     <p style="font-size:0.85rem;color:#666;margin-bottom:1rem">Buscá al inquilino para vincularlo con este usuario. Una vez vinculado, podrá ver sus contratos y saldos en el portal.</p>
     <div class="form-group" style="margin-bottom:1rem">
       <label>Buscar inquilino</label>
-      <input id="vinc-busca" type="text" class="search-input" placeholder="Apellido o DNI..." oninput="buscarPersonaVinc(this.value)" style="margin-top:4px">
+      <input id="vinc-busca" type="text" class="search-input" placeholder="Apellido o DNI..." oninput="buscarPersonaVinc(this.value)" autocomplete="new-password" style="margin-top:4px">
       <div id="vinc-sugerencias" style="background:white;border:1.5px solid var(--border);border-radius:8px;margin-top:4px;display:none;max-height:200px;overflow-y:auto"></div>
     </div>
     <div id="vinc-seleccionado" style="display:none;background:var(--cream);padding:0.75rem 1rem;border-radius:8px;margin-bottom:1rem">
