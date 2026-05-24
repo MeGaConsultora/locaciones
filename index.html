@@ -1931,6 +1931,7 @@ async function abrirCrearAcceso(contratoId, hoja) {
     } catch(e) {}
   }
   const nombreInq = primerInquilino ? formatNombrePersona(primerInquilino) : '';
+  const nombrePortal = primerInquilino?.nombre?.split(' ')[0] || nombreInq.split(',')[1]?.trim().split(' ')[0] || nombreInq;
   const emailInq = primerInquilino?.email || '';
 
   document.getElementById('modal-title').textContent = 'Acceso al portal';
@@ -1960,8 +1961,8 @@ async function abrirCrearAcceso(contratoId, hoja) {
         <input id="acc-email" type="email" value="${usuarioExistente.email}" style="margin-top:4px">
       </div>
       <div class="form-group">
-        <label>Nombre (para el mensaje)</label>
-        <input id="acc-nombre" type="text" value="${nombreInq}" style="margin-top:4px">
+        <label>Nombre (para el portal)</label>
+        <input id="acc-nombre" type="text" value="${nombrePortal}" style="margin-top:4px" placeholder="Primer nombre">
       </div>
     </div>
     <div id="acc-resultado" style="display:none;margin-top:1rem"></div>
@@ -1980,7 +1981,7 @@ async function abrirCrearAcceso(contratoId, hoja) {
       </div>
       <div class="form-group">
         <label>Nombre (para el mensaje)</label>
-        <input id="acc-nombre" type="text" value="${nombreInq}" style="margin-top:4px">
+        <input id="acc-nombre" type="text" value="${nombrePortal}" placeholder="Primer nombre" style="margin-top:4px">
       </div>
     </div>
     <div id="acc-resultado" style="display:none;margin-top:1rem"></div>
@@ -1994,8 +1995,8 @@ async function abrirCrearAcceso(contratoId, hoja) {
 }
 
 async function modificarAccesoInquilino(contratoId, hoja) {
-  const email = document.getElementById('mod-email').value.trim();
-  const nombre = document.getElementById('mod-nombre').value.trim();
+  const email = document.getElementById('acc-email').value.trim();
+  const nombre = document.getElementById('acc-nombre').value.trim();
   if (!email) { toast('Ingresá el email','error'); return; }
 
   try {
@@ -2010,12 +2011,18 @@ async function modificarAccesoInquilino(contratoId, hoja) {
       persona_id: personaId || existing[0].persona_id
     });
 
-    const mensaje = `Hola ${nombre||''}! Recordá que podés acceder a tu portal de inquilino en MeGa Consultora. Entrá a https://megaconsultora.github.io/inquilinos con tu email *${email}* y usá "¿Olvidaste tu contraseña?" si no recordás tu clave.`;
+    const mensaje = `Hola ${nombre||''}! Recordá que podés acceder a tu portal de alquiler en MeGa Consultora.
+
+1️⃣ Revisá tu email *${email}* (también la carpeta de spam, por si acaso)
+2️⃣ Ingresá al portal: https://megaconsultora.github.io/inquilinos
+3️⃣ Si no recordás tu clave, usá *"¿Olvidaste tu contraseña?"* para crear una nueva
+
+Ante cualquier duda, comunicate con nosotros.`;
     const msgEncoded = encodeURIComponent(mensaje);
     window._mensajeAcceso = mensaje;
 
-    document.getElementById('mod-resultado').style.display = 'block';
-    document.getElementById('mod-resultado').innerHTML = `
+    document.getElementById('acc-resultado').style.display = 'block';
+    document.getElementById('acc-resultado').innerHTML = `
       <div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:10px;padding:1rem">
         <div style="font-weight:600;color:#155724;margin-bottom:0.5rem">✓ Acceso actualizado</div>
         <div style="background:white;border-radius:8px;padding:0.75rem;font-size:0.82rem;color:#333;margin-bottom:0.75rem;border:1px solid #c3e6cb">${mensaje}</div>
@@ -2090,11 +2097,13 @@ async function crearAccesoInquilino(contratoId, hoja) {
     // 4. Show success with WhatsApp message
     const mensaje = `Hola ${nombre||''}! Te damos acceso a tu portal de inquilino en MeGa Consultora.
 
-🌐 Portal: https://megaconsultora.github.io/inquilinos
-📧 Email: ${email}
-🔑 Contraseña temporal: ${tempPass}
+Para ingresar, seguí estos pasos:
 
-Para cambiar tu contraseña, usá la opción "¿Olvidaste tu contraseña?" al ingresar. El email puede llegar a la carpeta de spam — revisala si no lo encontrás.`;
+1️⃣ Revisá tu email *${email}* y confirmá tu cuenta haciendo clic en el link que te enviamos (revisá también la carpeta de spam si no lo encontrás)
+2️⃣ Ingresá al portal: https://megaconsultora.github.io/inquilinos
+3️⃣ Usá la opción *"¿Olvidaste tu contraseña?"* para crear tu propia clave
+
+Ante cualquier duda, comunicate con nosotros.`;
     const msgEncoded = encodeURIComponent(mensaje);
 
     window._mensajeAcceso = mensaje;
@@ -6976,12 +6985,12 @@ async function darDeBaja(id, email) {
 setInterval(async () => {
   if (!currentUser?.email || !currentUser?.token) return;
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(currentUser.email)}&select=aprobado,id`, {
+    const r = await fetch(`${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(currentUser.email)}&select=aprobado`, {
       headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${currentUser.token}` }
     });
-    if (!r.ok) return;
     const us = await r.json();
-    if (Array.isArray(us) && (us.length === 0 || !us[0].aprobado)) {
+    // Only kick out when we have a definitive aprobado: false — ignore errors/network issues
+    if (r.ok && Array.isArray(us) && us.length > 0 && us[0].aprobado === false) {
       localStorage.removeItem('sb_token');
       localStorage.removeItem('sb_uid');
       localStorage.removeItem('sb_email');
