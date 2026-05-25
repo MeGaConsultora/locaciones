@@ -665,7 +665,7 @@
   <div class="modal">
     <div class="modal-header">
       <div><div class="modal-title" id="modal-title"></div><div class="modal-subtitle" id="modal-subtitle"></div></div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
+      <button class="modal-close" onclick="if(window._volverAServiciosModal){volverAServiciosModal();}else{closeModal()}">✕</button>
     </div>
     <div class="modal-body" id="modal-body"></div>
   </div>
@@ -2647,16 +2647,12 @@ async function cargarExtrasGral(mes, filtro) {
     return;
   }
 
-  // Load existing extras for this month AND previous month (for suggested value)
+  // Load existing extras for this month
   const hojas = contratosConOtro.map(c => c.hoja);
   const mes01 = mes.length === 7 ? mes + '-01' : mes;
   const mesKey = mes01.substring(0,7);
-  const prevMes = (() => {
-    const [y,m] = mesKey.split('-').map(Number);
-    return m === 1 ? `${y-1}-12-01` : `${y}-${String(m-1).padStart(2,'0')}-01`;
-  })();
   let extrasDelMes = [];
-  let extrasDelMesAnterior = [];
+  const extrasDelMesAnterior = [];
   try {
     for (const c of contratosConOtro) {
       const enc = encodeURIComponent(c.hoja);
@@ -2664,12 +2660,6 @@ async function cargarExtrasGral(mes, filtro) {
       if (pagos.length) {
         const extras = await sbGet('pagos_extras', `pago_id=eq.${pagos[0].id}&order=id.asc`);
         extras.forEach(e => extrasDelMes.push({ ...e, _hoja: c.hoja, _pago_id: pagos[0].id, _contrato_id: c.id }));
-      }
-      // Fetch prev month extras for suggestion
-      const pagosPrev = await sbGet('pagos', `hoja=eq.${enc}&mes=eq.${prevMes}&limit=1&select=id`);
-      if (pagosPrev.length) {
-        const extrasPrev = await sbGet('pagos_extras', `pago_id=eq.${pagosPrev[0].id}&order=id.asc`);
-        extrasPrev.forEach(e => extrasDelMesAnterior.push({ ...e, _contrato_id: c.id }));
       }
     }
   } catch(e) {}
@@ -2700,14 +2690,9 @@ async function cargarExtrasGral(mes, filtro) {
       const pctInqTotal = g.filas.reduce((t, f) => t + (f.s.pct_inquilino ?? 0), 0);
       const pctPropTotal = g.filas.reduce((t, f) => t + (f.s.pct_propietario ?? 0), 0);
       const pctOk = Math.abs(pctInqTotal + pctPropTotal - 100) < 0.5;
-      // Get suggested value: prev month total for this group, or monto_fijo from suministros
-      const extrasPrevGrupo = extrasDelMesAnterior.filter(e =>
-        e._contrato_id === c.id &&
-        g.filas.some(f => parseInt(e.suministro_id) === parseInt(f.s.id))
-      );
-      const totalPrev = extrasPrevGrupo.reduce((t,e) => t + Math.abs(parseFloat(e.importe)||0), 0);
+      // Get suggested value from monto_fijo
       const montoFijoTotal = g.filas.reduce((t,f) => t + (f.s.monto_fijo||0), 0);
-      const sugerido = totalPrev > 0 ? totalPrev : (montoFijoTotal > 0 ? montoFijoTotal : '');
+      const sugerido = montoFijoTotal > 0 ? montoFijoTotal : '';
       if (todasCargadas) {
         yaCargados.push({ c, g, totalCargado, pctOk, sugerido });
       } else {
@@ -2752,7 +2737,7 @@ async function cargarExtrasGral(mes, filtro) {
               style="width:140px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem;text-align:right"
               ${!pctOk ? 'disabled title="Corregí los % en el contrato primero"' : ''}
               onkeydown="if(event.key==='Enter') guardarExtraGralItem('eg-input-${g.conceptoKey}-${c.id}')">
-            ${sugerido && pctOk ? `<span style="font-size:0.68rem;color:#aaa" title="${totalPrev>0?'Mes anterior':'Monto fijo del contrato'}">${totalPrev>0?'↑':'📌'}</span>` : ''}
+            ${sugerido && pctOk ? `<span style="font-size:0.68rem;color:#aaa" title="Monto fijo del contrato">📌</span>` : ''}
             ${pctOk ? `<button onclick="guardarExtraGralItem('eg-input-${g.conceptoKey}-${c.id}')"
               style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem">✓</button>` : ''}
           </div>`).join('')}
@@ -6101,12 +6086,12 @@ function renderPagination(containerId, total, current, cb) {
 // MODAL
 // ============================================================
 function closeModal(e) {
-  // Always check volverAServiciosModal first regardless of how modal was closed
-  if (window._volverAServiciosModal) {
-    volverAServiciosModal();
-    return;
-  }
   if (!e || e.target===document.getElementById('modal-overlay')) {
+    // If came from cargar servicios, go back instead of closing
+    if (window._volverAServiciosModal) {
+      volverAServiciosModal();
+      return;
+    }
     // If came from contract form (inmueble edit), return to contract
     if (window._volverAContrato) {
       cancelarFormularioInmueble();
