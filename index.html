@@ -2386,7 +2386,7 @@ async function abrirCargarServicios() {
       <button class="solapa-btn" onclick="mostrarSolapa('srv-seguro',this)">🔒 Seguro</button>
       <button class="solapa-btn" onclick="mostrarSolapa('srv-internet',this)">🌐 Internet</button>
       <button class="solapa-btn" onclick="mostrarSolapa('srv-expensas',this)">🏢 Expensas</button>
-      <button class="solapa-btn" onclick="mostrarSolapa('srv-extras-gral',this)">📋 Extras Gral</button>
+      <button class="solapa-btn" onclick="mostrarSolapa('srv-extras-gral',this);const _m=document.getElementById('srv-mes')?.value;if(_m)cargarExtrasGral(_m,'')">📋 Extras Gral</button>
     </div>
     <div id="srv-epe" class="solapa-panel active"><div class="loading">Seleccioná un mes para cargar</div></div>
     <div id="srv-agua" class="solapa-panel"><div class="loading">Seleccioná un mes para cargar</div></div>
