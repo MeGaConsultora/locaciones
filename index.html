@@ -665,7 +665,7 @@
   <div class="modal">
     <div class="modal-header">
       <div><div class="modal-title" id="modal-title"></div><div class="modal-subtitle" id="modal-subtitle"></div></div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
+      <button class="modal-close" onclick="if(window._volverAServiciosModal){volverAServiciosModal();}else{closeModal()}">✕</button>
     </div>
     <div class="modal-body" id="modal-body"></div>
   </div>
@@ -2372,8 +2372,7 @@ async function abrirCargarServicios() {
     <div style="display:flex;gap:0.75rem;align-items:flex-end;margin-bottom:1.2rem;flex-wrap:wrap">
       <div class="form-group" style="margin:0;min-width:160px">
         <label>Mes</label>
-        <input id="srv-mes" type="month" value="${TODAY.substring(0,7)}" style="margin-top:4px" onchange="cargarListaServicios()">
-      </div>
+        <input id="srv-mes" type="month" value="${TODAY.substring(0,7)}" style="margin-top:4px" onchange="cargarListaServicios()">      </div>
       <div class="form-group" style="margin:0;flex:1;min-width:200px">
         <label>Buscar contrato</label>
         <input id="srv-buscar" type="text" placeholder="Nombre del contrato..." style="margin-top:4px" oninput="filtrarServiciosBusqueda()">
@@ -2386,7 +2385,7 @@ async function abrirCargarServicios() {
       <button class="solapa-btn" onclick="mostrarSolapa('srv-seguro',this)">🔒 Seguro</button>
       <button class="solapa-btn" onclick="mostrarSolapa('srv-internet',this)">🌐 Internet</button>
       <button class="solapa-btn" onclick="mostrarSolapa('srv-expensas',this)">🏢 Expensas</button>
-      <button class="solapa-btn" onclick="mostrarSolapa('srv-extras-gral',this)">📋 Extras Gral</button>
+      <button class="solapa-btn" onclick="mostrarSolapa('srv-extras-gral',this);const _m=document.getElementById('srv-mes')?.value;if(_m)cargarExtrasGral(_m,'')">📋 Extras Gral</button>
     </div>
     <div id="srv-epe" class="solapa-panel active"><div class="loading">Seleccioná un mes para cargar</div></div>
     <div id="srv-agua" class="solapa-panel"><div class="loading">Seleccioná un mes para cargar</div></div>
@@ -2424,7 +2423,6 @@ async function cargarListaServicios(filtro='') {
     return;
   }
   const mes = mesKey + '-01';
-  const hojaEncoded = mesKey;
 
   // Fetch pagos for this month
   let pagosMes = [];
@@ -2627,8 +2625,8 @@ async function cargarListaServicios(filtro='') {
       ${agruparSinCargar(contratos)}
     `;
   }
-  // Load Extras Gral tab
-  await cargarExtrasGral(mes, filtro);
+  // Load Extras Gral tab - always run regardless of errors above
+  try { await cargarExtrasGral(mes, filtro); } catch(e) { console.error('cargarExtrasGral error:', e); }
 }
 
 async function cargarExtrasGral(mes, filtro) {
@@ -2649,12 +2647,13 @@ async function cargarExtrasGral(mes, filtro) {
     return;
   }
 
-  // Load existing extras for this month for these contracts
+  // Load existing extras for this month
   const hojas = contratosConOtro.map(c => c.hoja);
   const mes01 = mes.length === 7 ? mes + '-01' : mes;
+  const mesKey = mes01.substring(0,7);
   let extrasDelMes = [];
+  const extrasDelMesAnterior = [];
   try {
-    // Fetch pagos for this month for relevant contracts
     for (const c of contratosConOtro) {
       const enc = encodeURIComponent(c.hoja);
       const pagos = await sbGet('pagos', `hoja=eq.${enc}&mes=eq.${mes01}&limit=1&select=id`);
@@ -2691,10 +2690,13 @@ async function cargarExtrasGral(mes, filtro) {
       const pctInqTotal = g.filas.reduce((t, f) => t + (f.s.pct_inquilino ?? 0), 0);
       const pctPropTotal = g.filas.reduce((t, f) => t + (f.s.pct_propietario ?? 0), 0);
       const pctOk = Math.abs(pctInqTotal + pctPropTotal - 100) < 0.5;
+      // Get suggested value from monto_fijo
+      const montoFijoTotal = g.filas.reduce((t,f) => t + (f.s.monto_fijo||0), 0);
+      const sugerido = montoFijoTotal > 0 ? montoFijoTotal : '';
       if (todasCargadas) {
-        yaCargados.push({ c, g, totalCargado, pctOk });
+        yaCargados.push({ c, g, totalCargado, pctOk, sugerido });
       } else {
-        sinCargar.push({ c, g, pctOk });
+        sinCargar.push({ c, g, pctOk, sugerido });
       }
     }
   }
@@ -2731,10 +2733,11 @@ async function cargarExtrasGral(mes, filtro) {
             </div>
             <input type="text" id="eg-input-${g.conceptoKey}-${c.id}"
               data-grupo-key="${g.conceptoKey}" data-contrato-id="${c.id}"
-              value="" placeholder="$ importe total"
+              value="${sugerido}" placeholder="$ importe total"
               style="width:140px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem;text-align:right"
               ${!pctOk ? 'disabled title="Corregí los % en el contrato primero"' : ''}
               onkeydown="if(event.key==='Enter') guardarExtraGralItem('eg-input-${g.conceptoKey}-${c.id}')">
+            ${sugerido && pctOk ? `<span style="font-size:0.68rem;color:#aaa" title="Monto fijo del contrato">📌</span>` : ''}
             ${pctOk ? `<button onclick="guardarExtraGralItem('eg-input-${g.conceptoKey}-${c.id}')"
               style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem">✓</button>` : ''}
           </div>`).join('')}
