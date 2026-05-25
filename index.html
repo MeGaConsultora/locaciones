@@ -665,7 +665,7 @@
   <div class="modal">
     <div class="modal-header">
       <div><div class="modal-title" id="modal-title"></div><div class="modal-subtitle" id="modal-subtitle"></div></div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
+      <button class="modal-close" onclick="if(window._volverAServiciosModal){volverAServiciosModal();}else{closeModal()}">✕</button>
     </div>
     <div class="modal-body" id="modal-body"></div>
   </div>
@@ -2691,10 +2691,12 @@ async function cargarExtrasGral(mes, filtro) {
       const pctInqTotal = g.filas.reduce((t, f) => t + (f.s.pct_inquilino ?? 0), 0);
       const pctPropTotal = g.filas.reduce((t, f) => t + (f.s.pct_propietario ?? 0), 0);
       const pctOk = Math.abs(pctInqTotal + pctPropTotal - 100) < 0.5;
+      const montoFijoTotal = g.filas.reduce((t,f) => t + (parseFloat(f.s.monto_fijo)||0), 0);
+      const sugerido = montoFijoTotal > 0 ? montoFijoTotal : '';
       if (todasCargadas) {
-        yaCargados.push({ c, g, totalCargado, pctOk });
+        yaCargados.push({ c, g, totalCargado, pctOk, sugerido });
       } else {
-        sinCargar.push({ c, g, pctOk });
+        sinCargar.push({ c, g, pctOk, sugerido });
       }
     }
   }
@@ -2731,7 +2733,7 @@ async function cargarExtrasGral(mes, filtro) {
             </div>
             <input type="text" id="eg-input-${g.conceptoKey}-${c.id}"
               data-grupo-key="${g.conceptoKey}" data-contrato-id="${c.id}"
-              value="" placeholder="$ importe total"
+              value="${sugerido}" placeholder="$ importe total"
               style="width:140px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem;text-align:right"
               ${!pctOk ? 'disabled title="Corregí los % en el contrato primero"' : ''}
               onkeydown="if(event.key==='Enter') guardarExtraGralItem('eg-input-${g.conceptoKey}-${c.id}')">
