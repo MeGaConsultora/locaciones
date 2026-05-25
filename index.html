@@ -356,7 +356,13 @@
   </div>
   <div style="display:flex;align-items:center;gap:1rem">
     <span class="sync-status" id="sync-status">Cargando...</span>
-    <span id="user-name" style="font-size:0.8rem;color:rgba(245,240,232,0.7)"></span><button class="sync-btn" onclick="loadAll()">↻ Actualizar</button><button class="sync-btn" onclick="doLogout()">Salir</button>
+    <span id="user-name" style="font-size:0.8rem;color:rgba(245,240,232,0.7)"></span>
+    <button id="btn-notif" onclick="toggleNotificaciones()" style="position:relative;background:rgba(255,255,255,0.12);border:none;color:var(--cream);width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:1.1rem;display:flex;align-items:center;justify-content:center" title="Notificaciones">
+      🔔
+      <span id="notif-badge" style="display:none;position:absolute;top:2px;right:2px;background:#c8483a;color:white;font-size:0.6rem;font-weight:700;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;line-height:1"></span>
+    </button>
+    <div id="notif-panel" style="display:none;position:absolute;top:56px;right:1rem;width:360px;max-height:480px;overflow-y:auto;background:white;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.25);z-index:300;border:1px solid var(--border)"></div>
+    <button class="sync-btn" onclick="loadAll()">↻ Actualizar</button><button class="sync-btn" onclick="doLogout()">Salir</button>
   </div>
 </header>
 
@@ -863,6 +869,7 @@ async function loadAll() {
     renderContratos();
     renderVencimientos();
     renderClientes();
+    actualizarBadgeNotificaciones();
   } catch(e) {
     document.getElementById('sync-status').textContent = '⚠ Error de conexión';
     toast('Error al conectar. Verificá tu conexión a internet.', 'error');
@@ -873,6 +880,112 @@ async function loadAll() {
     }
   }
 }
+
+// ============================================================
+// NOTIFICACIONES
+// ============================================================
+function calcularNotificaciones() {
+  const notifs = [];
+  const hoy = new Date(TODAY + 'T12:00:00');
+  const mesActual = TODAY.substring(0, 7);
+  const mesPrevio = (() => {
+    const [y,m] = mesActual.split('-').map(Number);
+    return m === 1 ? `${y-1}-12` : `${y}-${String(m-1).padStart(2,'0')}`;
+  })();
+  const dia = parseInt(TODAY.substring(8,10));
+
+  DB.contratos.forEach(c => {
+    const estado = getEstado(c);
+    if (!c.vigencia_hasta) return;
+    const venc = new Date(c.vigencia_hasta.substring(0,10) + 'T12:00:00');
+    const diasRestantes = Math.round((venc - hoy) / 86400000);
+
+    // 1 — Contratos que vencen en 10 días o menos
+    if ((estado === 'vigente' || estado === 'indefinido') && diasRestantes >= 0 && diasRestantes <= 10) {
+      notifs.push({
+        tipo: 'danger',
+        titulo: `Vence en ${diasRestantes === 0 ? 'hoy' : diasRestantes + ' días'}`,
+        texto: c.titulo || c.hoja,
+        contratoId: c.id
+      });
+    }
+
+    // 2 — El día 1: contratos vencidos el mes previo sin renovar ni rescindir
+    if (dia === 1) {
+      const vencMes = c.vigencia_hasta.substring(0, 7);
+      if (vencMes === mesPrevio && estado !== 'vigente' && estado !== 'rescindido') {
+        notifs.push({
+          tipo: 'warning',
+          titulo: 'Venció el mes pasado sin renovar',
+          texto: c.titulo || c.hoja,
+          contratoId: c.id
+        });
+      }
+    }
+
+    // 3 — Contratos vigentes con servicios con número sin cargar este mes
+    if (estado === 'vigente') {
+      const suministrosConNro = DB_SUMINISTROS.filter(s =>
+        parseInt(s.contrato_id) === c.id &&
+        s.nro_cuenta && s.nro_cuenta.trim() !== '' &&
+        ['epe','agua','tgiu','seguro','internet','expensas'].includes(s.tipo)
+      );
+      if (!suministrosConNro.length) return;
+      // Check pagos for current month
+      const pagoCurrent = pagosActuales.find(p => p.hoja === c.hoja && p.mes && p.mes.substring(0,7) === mesActual);
+      if (!pagoCurrent) return;
+      const tieneServicio = suministrosConNro.some(s => (pagoCurrent['monto_'+s.tipo]||0) > 0);
+      if (!tieneServicio) {
+        notifs.push({
+          tipo: 'info',
+          titulo: 'Sin servicios cargados este mes',
+          texto: c.titulo || c.hoja,
+          contratoId: null
+        });
+      }
+    }
+  });
+
+  return notifs;
+}
+
+function toggleNotificaciones() {
+  const panel = document.getElementById('notif-panel');
+  if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+  const notifs = calcularNotificaciones();
+  const colores = { danger: '#fdecea', warning: '#fff8e1', info: '#e8f4fd' };
+  const iconos = { danger: '🔴', warning: '🟡', info: '🔵' };
+  panel.innerHTML = notifs.length
+    ? `<div style="padding:0.75rem 1rem;border-bottom:1px solid var(--border);font-weight:600;font-size:0.85rem;color:#333">${notifs.length} notificación/es</div>` +
+      notifs.map(n => `
+        <div onclick="document.getElementById('notif-panel').style.display='none';${n.contratoId?`openContrato(${n.contratoId})`:`abrirCargarServicios()`}"
+          style="padding:0.75rem 1rem;border-bottom:1px solid #f5f0e8;cursor:pointer;background:${colores[n.tipo]};display:flex;gap:0.5rem;align-items:flex-start"
+          onmouseover="this.style.filter='brightness(0.97)'" onmouseout="this.style.filter=''">
+          <span style="flex-shrink:0">${iconos[n.tipo]}</span>
+          <div>
+            <div style="font-size:0.78rem;font-weight:600;color:#333">${n.titulo}</div>
+            <div style="font-size:0.75rem;color:#666">${n.texto}</div>
+          </div>
+        </div>`).join('')
+    : `<div style="padding:1.5rem;text-align:center;color:#aaa;font-size:0.85rem">✓ Sin notificaciones pendientes</div>`;
+  panel.style.display = 'block';
+}
+
+function actualizarBadgeNotificaciones() {
+  const badge = document.getElementById('notif-badge');
+  if (!badge) return;
+  try {
+    const n = calcularNotificaciones().length;
+    if (n > 0) { badge.textContent = n > 9 ? '9+' : n; badge.style.display = 'flex'; }
+    else { badge.style.display = 'none'; }
+  } catch(e) {}
+}
+
+document.addEventListener('click', e => {
+  const panel = document.getElementById('notif-panel');
+  const btn = document.getElementById('btn-notif');
+  if (panel && btn && !panel.contains(e.target) && !btn.contains(e.target)) panel.style.display = 'none';
+});
 
 // ============================================================
 // HELPERS
