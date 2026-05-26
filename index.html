@@ -905,7 +905,7 @@ function calcularNotificaciones() {
   if (porVencer.length) grupos.push({
     tipo: 'danger', cantidad: porVencer.length,
     titulo: `${porVencer.length} contrato${porVencer.length>1?'s':''} vence${porVencer.length>1?'n':''} en los próximos 10 días`,
-    accion: `showTab('vencimientos', document.querySelector('.tab-btn[onclick*=\'vencimientos\']'))`
+    accion: 'vencimientos'
   });
 
   if (dia === 1) {
@@ -918,7 +918,7 @@ function calcularNotificaciones() {
     if (sinRenovar.length) grupos.push({
       tipo: 'warning', cantidad: sinRenovar.length,
       titulo: `${sinRenovar.length} contrato${sinRenovar.length>1?'s':''} venci${sinRenovar.length>1?'eron':'ó'} el mes pasado sin renovar`,
-      accion: `showTab('vencimientos', document.querySelector('.tab-btn[onclick*=\'vencimientos\']'))`
+      accion: 'vencimientos'
     });
 
     // 4 — Contratos vigentes sin alquiler cargado
@@ -930,7 +930,7 @@ function calcularNotificaciones() {
     if (sinAlquiler.length) grupos.push({
       tipo: 'warning', cantidad: sinAlquiler.length,
       titulo: `${sinAlquiler.length} contrato${sinAlquiler.length>1?'s':''} sin alquiler cargado este mes`,
-      accion: `abrirActualizacionAlquileres()`
+      accion: 'actualizarAlquileres'
     });
   }
 
@@ -950,23 +950,26 @@ function calcularNotificaciones() {
   if (sinServicios.length) grupos.push({
     tipo: 'info', cantidad: sinServicios.length,
     titulo: `${sinServicios.length} contrato${sinServicios.length>1?'s':''} sin servicios cargados este mes`,
-    accion: `abrirCargarServicios()`
+    accion: 'cargarServicios'
   });
 
   return grupos;
 }
 
+// Store grupos for onclick access
+window._notifGrupos = [];
+
 function toggleNotificaciones() {
   const panel = document.getElementById('notif-panel');
   if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
   const grupos = calcularNotificaciones();
+  window._notifGrupos = grupos;
   const colores = { danger: '#fdecea', warning: '#fff8e1', info: '#e8f4fd' };
   const iconos = { danger: '🔴', warning: '🟡', info: '🔵' };
-  const total = grupos.reduce((t,g) => t+g.cantidad, 0);
   panel.innerHTML = grupos.length
-    ? `<div style="padding:0.75rem 1rem;border-bottom:1px solid var(--border);font-weight:600;font-size:0.85rem;color:#333">${total} notificación/es</div>` +
-      grupos.map(g => `
-        <div onclick="document.getElementById('notif-panel').style.display='none';${g.accion}"
+    ? `<div style="padding:0.75rem 1rem;border-bottom:1px solid var(--border);font-weight:600;font-size:0.85rem;color:#333">${grupos.length} notificación/es</div>` +
+      grupos.map((g,i) => `
+        <div data-notif-idx="${i}"
           style="padding:0.75rem 1rem;border-bottom:1px solid #f5f0e8;cursor:pointer;background:${colores[g.tipo]};display:flex;gap:0.5rem;align-items:center"
           onmouseover="this.style.filter='brightness(0.97)'" onmouseout="this.style.filter=''">
           <span style="flex-shrink:0;font-size:1.1rem">${iconos[g.tipo]}</span>
@@ -975,14 +978,31 @@ function toggleNotificaciones() {
         </div>`).join('')
     : `<div style="padding:1.5rem;text-align:center;color:#aaa;font-size:0.85rem">✓ Sin notificaciones pendientes</div>`;
   panel.style.display = 'block';
+  // Add click handlers after render
+  panel.querySelectorAll('[data-notif-idx]').forEach(el => {
+    el.addEventListener('click', () => {
+      panel.style.display = 'none';
+      const g = window._notifGrupos[parseInt(el.dataset.notifIdx)];
+      if (!g) return;
+      // Execute action
+      if (g.accion === 'vencimientos') {
+        const btn = document.querySelector('.tab-btn[onclick*="vencimientos"]');
+        showTab('vencimientos', btn);
+      } else if (g.accion === 'cargarServicios') {
+        abrirCargarServicios();
+      } else if (g.accion === 'actualizarAlquileres') {
+        abrirActualizacionAlquileres();
+      }
+    });
+  });
 }
 
 function actualizarBadgeNotificaciones() {
   const badge = document.getElementById('notif-badge');
   if (!badge) return;
   try {
-    const total = calcularNotificaciones().reduce((t,g) => t+g.cantidad, 0);
-    if (total > 0) { badge.textContent = total > 99 ? '99+' : total; badge.style.display = 'flex'; }
+    const n = calcularNotificaciones().length;
+    if (n > 0) { badge.textContent = n > 9 ? '9+' : n; badge.style.display = 'flex'; }
     else { badge.style.display = 'none'; }
   } catch(e) {}
 }
