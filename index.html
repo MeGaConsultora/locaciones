@@ -2588,6 +2588,8 @@ async function cargarListaServicios(filtro='') {
     // Get ALL vigente contracts that have this service with pct_inquilino > 0
     const todosConServicio = DB.contratos.filter(c => {
       if (getEstado(c) !== 'vigente') return false;
+      // Only show contracts that started on or before the selected month
+      if (c.vigencia_desde && c.vigencia_desde.substring(0,7) > mesKey) return false;
       const tieneSum = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv && (s.pct_inquilino||0) > 0);
       // fallback to old field if no suministros row
       const hasSuministros = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === parseInt(c.id));
@@ -2705,9 +2707,10 @@ async function cargarListaServicios(filtro='') {
               ${!pctOk ? `<div style="font-size:0.72rem;color:var(--accent);margin-top:2px">⚠ Los % suman ${totalPct}% — deben ser 100%</div>` : ''}
             </div>
             <div style="display:flex;gap:0.4rem;align-items:center">
-              <input type="text" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}" placeholder="$ importe cuota"
+              <input type="text" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}" placeholder="$ importe cuota" data-dirty="0"
                 style="width:140px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem"
                 ${!pctOk ? 'disabled title="Corregí los porcentajes primero"' : ''}
+                oninput="this.dataset.dirty='1'"
                 onkeydown="if(event.key==='Enter') guardarServicioItem('srv-${srv}-g-${ids}')">
               ${pctOk ? `<button onclick="guardarServicioItem('srv-${srv}-g-${ids}')"
                 style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem;white-space:nowrap">✓</button>` : ''}
@@ -2749,11 +2752,15 @@ async function cargarListaServicios(filtro='') {
             <strong style="font-size:0.88rem">${nro ? 'Cta: '+nro : c0.titulo||c0.hoja}</strong>
             <div style="font-size:0.75rem;color:#666;margin-top:2px">${detalle}</div>
           </div>
-          <div>
+          <div style="display:flex;gap:0.4rem;align-items:center">
             <input type="text" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}"
-              value="${totalBoleta}" data-original="${totalBoleta}"
-              placeholder="$ importe cuota" style="width:150px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem">
-            <div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ Total boleta: ${formatMoney(totalBoleta)}</div>
+              value="${totalBoleta}" data-original="${totalBoleta}" data-dirty="0"
+              placeholder="$ importe cuota" style="width:140px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem"
+              oninput="this.dataset.dirty='1';this.style.borderColor='#f0c040'"
+              onkeydown="if(event.key==='Enter') guardarServicioItem(this.id)">
+            <button onclick="guardarServicioItem('srv-${srv}-g-${ids}')"
+              style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem;white-space:nowrap">✓</button>
+            <div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ ${formatMoney(totalBoleta)}</div>
           </div>
         </div>
       </div>`;
@@ -3070,10 +3077,13 @@ async function guardarServicios() {
   for (const srv of ['epe', 'agua', 'tgiu', 'seguro', 'internet', 'expensas']) {
     const inputs = document.querySelectorAll(`[id^="srv-${srv}-"]:not([id*="cuota"])`);
     for (const input of inputs) {
+      // Only save inputs that were edited (dirty) or have a value and no original (new)
+      const isDirty = input.dataset.dirty === '1';
+      const isNew = input.dataset.original === undefined && parseMonto(input.value) > 0;
+      if (!isDirty && !isNew) continue;
       const importe = parseMonto(input.value);
-      // Process if has value OR if had a previous value (data-original set on ya-cargados)
-      const teníaAnterior = input.dataset.original !== undefined;
-      if (!importe && !teníaAnterior) continue;
+      // If dirty but cleared to 0, only save if had a previous value
+      if (isDirty && importe === 0 && !(parseFloat(input.dataset.original) > 0)) continue;
 
       // Get hojas - grouped input has data-hojas, legacy has data-hoja
       const hojas = input.dataset.hojas
