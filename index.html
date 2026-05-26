@@ -3056,37 +3056,34 @@ async function guardarServicioItem(inputId) {
   const mesKey = document.getElementById('srv-mes')?.value;
   if (!mesKey) return;
   const mes = mesKey + '-01';
-  const hojas = input.dataset.hojas
-    ? input.dataset.hojas.split('|').filter(Boolean)
-    : input.dataset.hoja ? [input.dataset.hoja] : [];
-  const sumIdsList = (input.dataset.sumIds || '').split(',').map(x => parseInt(x)||null);
+  const hojas = (input.dataset.hojas || input.dataset.hoja || '').split('|').filter(Boolean);
+
+  // Extract sumId from inputId (format: srv-epe-g-CONTRATOID-sX or srv-epe-g-CONTRATOID-sX_Y)
+  const sumMatch = inputId.match(/-s(\d+)(_|$)/);
+  const sumId = sumMatch ? parseInt(sumMatch[1]) : null;
 
   // Check EPE cuota2 checkbox
-  const contratoId0 = hojas[0] ? (DB.contratos.find(c=>c.hoja===hojas[0])?.id||'') : '';
-  const cuota2chk = document.getElementById(`srv-epe-cuota2-${contratoId0}`);
+  const c0 = DB.contratos.find(x => x.hoja === hojas[0]);
+  const cuota2chk = document.getElementById(`srv-epe-cuota2-${c0?.id}`);
   const mesNext = cuota2chk?.checked ? cuota2chk.dataset.next + '-01' : null;
 
   const _guardarEnMes = async (mesTarget) => {
-    for (let i = 0; i < hojas.length; i++) {
-      const hoja = hojas[i];
-      const sumId = sumIdsList[i] || null;
+    for (const hoja of hojas) {
       try {
         const hojaEncoded = encodeURIComponent(hoja);
         const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesTarget}&limit=1`);
         if (!pagos.length) continue;
         const pago = pagos[0];
         const c = DB.contratos.find(x => x.hoja === hoja);
-        // Find specific suministro by sumId, or fallback to first of type
         const sum = sumId
           ? DB_SUMINISTROS.find(s => s.id === sumId)
           : (c ? DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : null);
         const pct = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
         const montoInq = Math.round(importe * pct / 100 * 100) / 100;
         // Is this the first suministro of this type for this contract?
-        const allSumsOfType = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === (c?.id) && s.tipo === srv);
+        const allSumsOfType = c ? DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : [];
         const isFirst = !sumId || !allSumsOfType.length || allSumsOfType[0].id === sumId;
         if (isFirst) {
-          // Save to pagos.monto_srv
           const newTotal = (pago.importe_alquiler||0) + montoInq +
             ['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0);
           const yaAbonado = (pago.total||0) - (pago.saldo||0);
@@ -3096,9 +3093,8 @@ async function guardarServicioItem(inputId) {
             saldo: Math.max(0, newTotal - yaAbonado)
           });
         } else {
-          // Save to pagos_extras with suministro_id
-          const existing = await sbGet('pagos_extras', `pago_id=eq.${pago.id}&suministro_id=eq.${sumId}&limit=1`);
           const concepto = sum?.nombre || sum?.nro_cuenta || srv.toUpperCase();
+          const existing = await sbGet('pagos_extras', `pago_id=eq.${pago.id}&suministro_id=eq.${sumId}&limit=1`);
           if (existing.length) {
             await sbPatch('pagos_extras', existing[0].id, { importe: montoInq, concepto });
           } else {
