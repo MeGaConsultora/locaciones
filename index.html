@@ -2522,7 +2522,7 @@ async function abrirCargarServicios() {
       </div>
       <div class="form-group" style="margin:0;flex:1;min-width:200px">
         <label>Buscar contrato</label>
-        <input id="srv-buscar" type="text" placeholder="Nombre del contrato..." style="margin-top:4px" oninput="filtrarServiciosBusqueda()">
+        <input id="srv-buscar" type="text" placeholder="Nombre del contrato o N° de cuenta..." style="margin-top:4px" oninput="filtrarServiciosBusqueda()">
       </div>
     </div>
     <div class="solapas">
@@ -2593,7 +2593,7 @@ async function cargarListaServicios(filtro='') {
       const hasSuministros = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === parseInt(c.id));
       const tieneViejo = !hasSuministros && (c.servicios_inquilino||'').toLowerCase().includes(srv);
       if (!tieneSum && !tieneViejo) return false;
-      if (filtro && !(c.titulo||c.hoja||'').toLowerCase().includes(filtro)) return false;
+      if (filtro) { const nrosCuenta = DB_SUMINISTROS.filter(s=>parseInt(s.contrato_id)===c.id).map(s=>s.nro_cuenta||'').join(' ').toLowerCase(); if (!(c.titulo||c.hoja||'').toLowerCase().includes(filtro) && !nrosCuenta.includes(filtro)) return false; }
       return true;
     });
 
@@ -2786,7 +2786,7 @@ async function cargarExtrasGral(mes, filtro) {
     if (getEstado(c) !== 'vigente') return false;
     const tieneOtro = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === c.id && s.tipo === 'otro');
     if (!tieneOtro) return false;
-    if (filtro && !(c.titulo||c.hoja||'').toLowerCase().includes(filtro)) return false;
+    if (filtro) { const nrosCuenta = DB_SUMINISTROS.filter(s=>parseInt(s.contrato_id)===c.id).map(s=>s.nro_cuenta||'').join(' ').toLowerCase(); if (!(c.titulo||c.hoja||'').toLowerCase().includes(filtro) && !nrosCuenta.includes(filtro)) return false; }
     return true;
   });
 
