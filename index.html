@@ -2716,6 +2716,8 @@ async function cargarListaServicios(filtro='') {
         const detalle = g.items.map(({c,sumId}) => `<span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline">${c.titulo||c.hoja}</span> (${getPctInq(c,sumId)}%)`).join(', ');
         const hojas = g.items.map(({c}) => c.hoja).join('|');
         const ids = g.items.map(({c}) => c.id).join(',');
+        const sumIds = g.items.map(({sumId}) => sumId||'').join(',');
+        const inputId = `srv-${srv}-g-${ids}-s${sumIds.replace(/,/g,'_')}`;
         let epeExtra = '';
         if (srv === 'epe' && g.items.length > 0) {
           const c0 = g.items[0].c;
@@ -2735,12 +2737,12 @@ async function cargarListaServicios(filtro='') {
               ${!pctOk ? `<div style="font-size:0.72rem;color:var(--accent);margin-top:2px">⚠ Los % suman ${totalPct}% — deben ser 100%</div>` : ''}
             </div>
             <div style="display:flex;gap:0.4rem;align-items:center">
-              <input type="text" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}" placeholder="$ importe cuota" data-dirty="0"
+              <input type="text" id="${inputId}" data-hojas="${hojas}" data-srv="${srv}" data-sum-ids="${sumIds}" placeholder="$ importe cuota" data-dirty="0"
                 style="width:140px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem"
                 ${!pctOk ? 'disabled title="Corregí los porcentajes primero"' : ''}
                 oninput="this.dataset.dirty='1'"
-                onkeydown="if(event.key==='Enter') guardarServicioItem('srv-${srv}-g-${ids}')">
-              ${pctOk ? `<button onclick="guardarServicioItem('srv-${srv}-g-${ids}')"
+                onkeydown="if(event.key==='Enter') guardarServicioItem('${inputId}')">
+              ${pctOk ? `<button onclick="guardarServicioItem('${inputId}')"
                 style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem;white-space:nowrap">✓</button>` : ''}
             </div>
           </div>
@@ -2773,6 +2775,8 @@ async function cargarListaServicios(filtro='') {
       const detalle = g.items.map(({c,sumId}) => `<span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline">${c.titulo||c.hoja}</span> (${getPctInq(c,sumId)}%)`).join(', ');
       const hojas = g.items.map(({c}) => c.hoja).join('|');
       const ids = g.items.map(({c}) => c.id).join(',');
+      const sumIds = g.items.map(({sumId}) => sumId||'').join(',');
+      const cargInputId = `srv-${srv}-g-${ids}-s${sumIds.replace(/,/g,'_')}`;
       return `<div class="ya-cargado-${srv}" style="display:none;background:#f0fff4;border:1.5px solid var(--green);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;flex-wrap:wrap">
           <div style="flex:1">
@@ -2780,12 +2784,12 @@ async function cargarListaServicios(filtro='') {
             <div style="font-size:0.75rem;color:#666;margin-top:2px">${detalle}</div>
           </div>
           <div style="display:flex;gap:0.4rem;align-items:center">
-            <input type="text" id="srv-${srv}-g-${ids}" data-hojas="${hojas}" data-srv="${srv}"
+            <input type="text" id="${cargInputId}" data-hojas="${hojas}" data-srv="${srv}" data-sum-ids="${sumIds}"
               value="${totalBoleta}" data-original="${totalBoleta}" data-dirty="0"
               placeholder="$ importe cuota" style="width:140px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem"
               oninput="this.dataset.dirty='1';this.style.borderColor='#f0c040'"
               onkeydown="if(event.key==='Enter') guardarServicioItem(this.id)">
-            <button onclick="guardarServicioItem('srv-${srv}-g-${ids}')"
+            <button onclick="guardarServicioItem('${cargInputId}')"
               style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem;white-space:nowrap">✓</button>
             <div style="font-size:0.72rem;color:var(--green);margin-top:2px">✓ ${formatMoney(totalBoleta)}</div>
           </div>
@@ -3055,31 +3059,52 @@ async function guardarServicioItem(inputId) {
   const hojas = input.dataset.hojas
     ? input.dataset.hojas.split('|').filter(Boolean)
     : input.dataset.hoja ? [input.dataset.hoja] : [];
+  const sumIdsList = (input.dataset.sumIds || '').split(',').map(x => parseInt(x)||null);
 
   // Check EPE cuota2 checkbox
-  const ids = inputId.replace(`srv-${srv}-g-`, '');
-  const cuota2chk = document.getElementById(`srv-epe-cuota2-${ids.split(',')[0]}`);
+  const contratoId0 = hojas[0] ? (DB.contratos.find(c=>c.hoja===hojas[0])?.id||'') : '';
+  const cuota2chk = document.getElementById(`srv-epe-cuota2-${contratoId0}`);
   const mesNext = cuota2chk?.checked ? cuota2chk.dataset.next + '-01' : null;
 
   const _guardarEnMes = async (mesTarget) => {
-    for (const hoja of hojas) {
+    for (let i = 0; i < hojas.length; i++) {
+      const hoja = hojas[i];
+      const sumId = sumIdsList[i] || null;
       try {
         const hojaEncoded = encodeURIComponent(hoja);
         const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesTarget}&limit=1`);
         if (!pagos.length) continue;
         const pago = pagos[0];
         const c = DB.contratos.find(x => x.hoja === hoja);
-        const sum = c ? DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : null;
+        // Find specific suministro by sumId, or fallback to first of type
+        const sum = sumId
+          ? DB_SUMINISTROS.find(s => s.id === sumId)
+          : (c ? DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : null);
         const pct = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
         const montoInq = Math.round(importe * pct / 100 * 100) / 100;
-        const newTotal = (pago.importe_alquiler||0) + montoInq +
-          ['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0);
-        const yaAbonado = (pago.total||0) - (pago.saldo||0);
-        await sbPatch('pagos', pago.id, {
-          ['monto_'+srv]: montoInq,
-          total: newTotal,
-          saldo: Math.max(0, newTotal - yaAbonado)
-        });
+        // Is this the first suministro of this type for this contract?
+        const allSumsOfType = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === (c?.id) && s.tipo === srv);
+        const isFirst = !sumId || !allSumsOfType.length || allSumsOfType[0].id === sumId;
+        if (isFirst) {
+          // Save to pagos.monto_srv
+          const newTotal = (pago.importe_alquiler||0) + montoInq +
+            ['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0);
+          const yaAbonado = (pago.total||0) - (pago.saldo||0);
+          await sbPatch('pagos', pago.id, {
+            ['monto_'+srv]: montoInq,
+            total: newTotal,
+            saldo: Math.max(0, newTotal - yaAbonado)
+          });
+        } else {
+          // Save to pagos_extras with suministro_id
+          const existing = await sbGet('pagos_extras', `pago_id=eq.${pago.id}&suministro_id=eq.${sumId}&limit=1`);
+          const concepto = sum?.nombre || sum?.nro_cuenta || srv.toUpperCase();
+          if (existing.length) {
+            await sbPatch('pagos_extras', existing[0].id, { importe: montoInq, concepto });
+          } else {
+            await sbPost('pagos_extras', { pago_id: pago.id, suministro_id: sumId, importe: montoInq, concepto, a_cargo_de: 'inquilino' });
+          }
+        }
       } catch(e) { toast('Error: ' + e.message, 'error'); return false; }
     }
     return true;
