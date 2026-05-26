@@ -3062,8 +3062,16 @@ async function guardarServicioItem(inputId) {
 
   if (ok1) {
     input.style.borderColor = 'var(--green)';
+    input.dataset.dirty = '0';
     toast(`${srv.toUpperCase()} guardado ✓${mesNext ? ' (2 cuotas)' : ''}`);
+    // Preserve active tab
+    const activeTab = document.querySelector('.solapa-btn.active');
+    const activeTabId = activeTab?.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
     await cargarListaServicios();
+    if (activeTabId) {
+      const btn = document.querySelector(`.solapa-btn[onclick*="'${activeTabId}'"]`);
+      if (btn) mostrarSolapa(activeTabId, btn);
+    }
   }
 }
 
@@ -3164,7 +3172,13 @@ async function guardarServicios() {
   }
 
   toast(`${guardados} servicio/s guardados ✓`);
-  await loadAll();
+  const activeTab2 = document.querySelector('.solapa-btn.active');
+  const activeTabId2 = activeTab2?.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
+  await cargarListaServicios();
+  if (activeTabId2) {
+    const btn = document.querySelector(`.solapa-btn[onclick*="'${activeTabId2}'"]`);
+    if (btn) mostrarSolapa(activeTabId2, btn);
+  }
   cargarListaServicios();
 }
 
