@@ -2730,7 +2730,7 @@ async function cargarListaServicios(filtro='') {
         return `<div style="background:${pctOk?'var(--cream)':'#fff8e1'};border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;flex-wrap:wrap">
             <div style="flex:1">
-              <strong style="font-size:0.88rem">${g.nro ? 'Cta: '+g.nro : g.contratos[0].titulo||g.contratos[0].hoja}</strong>
+              <strong style="font-size:0.88rem">${g.nro ? 'Cta: '+g.nro : g.items[0].c.titulo||g.items[0].c.hoja}</strong>
               <div style="font-size:0.75rem;color:#666;margin-top:2px">${detalle}</div>
               ${!pctOk ? `<div style="font-size:0.72rem;color:var(--accent);margin-top:2px">⚠ Los % suman ${totalPct}% — deben ser 100%</div>` : ''}
             </div>
