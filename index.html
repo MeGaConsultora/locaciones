@@ -885,7 +885,7 @@ async function loadAll() {
 // NOTIFICACIONES
 // ============================================================
 function calcularNotificaciones() {
-  const notifs = [];
+  const grupos = [];
   const hoy = new Date(TODAY + 'T12:00:00');
   const mesActual = TODAY.substring(0, 7);
   const mesPrevio = (() => {
@@ -894,78 +894,84 @@ function calcularNotificaciones() {
   })();
   const dia = parseInt(TODAY.substring(8,10));
 
-  DB.contratos.forEach(c => {
+  // 1 — Contratos que vencen en 10 días o menos
+  const porVencer = DB.contratos.filter(c => {
     const estado = getEstado(c);
-    if (!c.vigencia_hasta) return;
-    const venc = new Date(c.vigencia_hasta.substring(0,10) + 'T12:00:00');
-    const diasRestantes = Math.round((venc - hoy) / 86400000);
-
-    // 1 — Contratos que vencen en 10 días o menos
-    if ((estado === 'vigente' || estado === 'indefinido') && diasRestantes >= 0 && diasRestantes <= 10) {
-      notifs.push({
-        tipo: 'danger',
-        titulo: `Vence en ${diasRestantes === 0 ? 'hoy' : diasRestantes + ' días'}`,
-        texto: c.titulo || c.hoja,
-        contratoId: c.id
-      });
-    }
-
-    // 2 — El día 1: contratos vencidos el mes previo sin renovar ni rescindir
-    if (dia === 1) {
-      const vencMes = c.vigencia_hasta.substring(0, 7);
-      if (vencMes === mesPrevio && estado !== 'vigente' && estado !== 'rescindido') {
-        notifs.push({
-          tipo: 'warning',
-          titulo: 'Venció el mes pasado sin renovar',
-          texto: c.titulo || c.hoja,
-          contratoId: c.id
-        });
-      }
-    }
-
-    // 3 — Contratos vigentes con servicios con número sin cargar este mes
-    if (estado === 'vigente') {
-      const suministrosConNro = DB_SUMINISTROS.filter(s =>
-        parseInt(s.contrato_id) === c.id &&
-        s.nro_cuenta && s.nro_cuenta.trim() !== '' &&
-        ['epe','agua','tgiu','seguro','internet','expensas'].includes(s.tipo)
-      );
-      if (!suministrosConNro.length) return;
-      // Check pagos for current month
-      const pagoCurrent = pagosActuales.find(p => p.hoja === c.hoja && p.mes && p.mes.substring(0,7) === mesActual);
-      if (!pagoCurrent) return;
-      const tieneServicio = suministrosConNro.some(s => (pagoCurrent['monto_'+s.tipo]||0) > 0);
-      if (!tieneServicio) {
-        notifs.push({
-          tipo: 'info',
-          titulo: 'Sin servicios cargados este mes',
-          texto: c.titulo || c.hoja,
-          contratoId: null
-        });
-      }
-    }
+    if (!c.vigencia_hasta) return false;
+    if (estado !== 'vigente' && estado !== 'indefinido') return false;
+    const dias = Math.round((new Date(c.vigencia_hasta.substring(0,10)+'T12:00:00') - hoy) / 86400000);
+    return dias >= 0 && dias <= 10;
+  });
+  if (porVencer.length) grupos.push({
+    tipo: 'danger', cantidad: porVencer.length,
+    titulo: `${porVencer.length} contrato${porVencer.length>1?'s':''} vence${porVencer.length>1?'n':''} en los próximos 10 días`,
+    accion: `showTab('vencimientos', document.querySelector('.tab-btn[onclick*=\'vencimientos\']'))`
   });
 
-  return notifs;
+  if (dia === 1) {
+    // 2 — Contratos vencidos el mes previo sin renovar ni rescindir
+    const sinRenovar = DB.contratos.filter(c => {
+      if (!c.vigencia_hasta) return false;
+      const estado = getEstado(c);
+      return c.vigencia_hasta.substring(0,7) === mesPrevio && estado !== 'vigente' && estado !== 'rescindido';
+    });
+    if (sinRenovar.length) grupos.push({
+      tipo: 'warning', cantidad: sinRenovar.length,
+      titulo: `${sinRenovar.length} contrato${sinRenovar.length>1?'s':''} venci${sinRenovar.length>1?'eron':'ó'} el mes pasado sin renovar`,
+      accion: `showTab('vencimientos', document.querySelector('.tab-btn[onclick*=\'vencimientos\']'))`
+    });
+
+    // 4 — Contratos vigentes sin alquiler cargado
+    const sinAlquiler = DB.contratos.filter(c => {
+      if (getEstado(c) !== 'vigente') return false;
+      const p = pagosActuales.find(p => p.hoja === c.hoja && p.mes && p.mes.substring(0,7) === mesActual);
+      return p && (!p.importe_alquiler || p.importe_alquiler === 0);
+    });
+    if (sinAlquiler.length) grupos.push({
+      tipo: 'warning', cantidad: sinAlquiler.length,
+      titulo: `${sinAlquiler.length} contrato${sinAlquiler.length>1?'s':''} sin alquiler cargado este mes`,
+      accion: `abrirActualizacionAlquileres()`
+    });
+  }
+
+  // 3 — Contratos vigentes con servicios con número sin cargar este mes
+  const sinServicios = DB.contratos.filter(c => {
+    if (getEstado(c) !== 'vigente') return false;
+    const suministrosConNro = DB_SUMINISTROS.filter(s =>
+      parseInt(s.contrato_id) === c.id &&
+      s.nro_cuenta && s.nro_cuenta.trim() !== '' &&
+      ['epe','agua','tgiu','seguro','internet','expensas'].includes(s.tipo)
+    );
+    if (!suministrosConNro.length) return false;
+    const p = pagosActuales.find(p => p.hoja === c.hoja && p.mes && p.mes.substring(0,7) === mesActual);
+    if (!p) return false;
+    return !suministrosConNro.some(s => (p['monto_'+s.tipo]||0) > 0);
+  });
+  if (sinServicios.length) grupos.push({
+    tipo: 'info', cantidad: sinServicios.length,
+    titulo: `${sinServicios.length} contrato${sinServicios.length>1?'s':''} sin servicios cargados este mes`,
+    accion: `abrirCargarServicios()`
+  });
+
+  return grupos;
 }
 
 function toggleNotificaciones() {
   const panel = document.getElementById('notif-panel');
   if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
-  const notifs = calcularNotificaciones();
+  const grupos = calcularNotificaciones();
   const colores = { danger: '#fdecea', warning: '#fff8e1', info: '#e8f4fd' };
   const iconos = { danger: '🔴', warning: '🟡', info: '🔵' };
-  panel.innerHTML = notifs.length
-    ? `<div style="padding:0.75rem 1rem;border-bottom:1px solid var(--border);font-weight:600;font-size:0.85rem;color:#333">${notifs.length} notificación/es</div>` +
-      notifs.map(n => `
-        <div onclick="document.getElementById('notif-panel').style.display='none';${n.contratoId?`openContrato(${n.contratoId})`:`abrirCargarServicios()`}"
-          style="padding:0.75rem 1rem;border-bottom:1px solid #f5f0e8;cursor:pointer;background:${colores[n.tipo]};display:flex;gap:0.5rem;align-items:flex-start"
+  const total = grupos.reduce((t,g) => t+g.cantidad, 0);
+  panel.innerHTML = grupos.length
+    ? `<div style="padding:0.75rem 1rem;border-bottom:1px solid var(--border);font-weight:600;font-size:0.85rem;color:#333">${total} notificación/es</div>` +
+      grupos.map(g => `
+        <div onclick="document.getElementById('notif-panel').style.display='none';${g.accion}"
+          style="padding:0.75rem 1rem;border-bottom:1px solid #f5f0e8;cursor:pointer;background:${colores[g.tipo]};display:flex;gap:0.5rem;align-items:center"
           onmouseover="this.style.filter='brightness(0.97)'" onmouseout="this.style.filter=''">
-          <span style="flex-shrink:0">${iconos[n.tipo]}</span>
-          <div>
-            <div style="font-size:0.78rem;font-weight:600;color:#333">${n.titulo}</div>
-            <div style="font-size:0.75rem;color:#666">${n.texto}</div>
-          </div>
+          <span style="flex-shrink:0;font-size:1.1rem">${iconos[g.tipo]}</span>
+          <div style="flex:1;font-size:0.82rem;color:#333">${g.titulo}</div>
+          <span style="font-size:0.75rem;color:#999">→</span>
         </div>`).join('')
     : `<div style="padding:1.5rem;text-align:center;color:#aaa;font-size:0.85rem">✓ Sin notificaciones pendientes</div>`;
   panel.style.display = 'block';
@@ -975,8 +981,8 @@ function actualizarBadgeNotificaciones() {
   const badge = document.getElementById('notif-badge');
   if (!badge) return;
   try {
-    const n = calcularNotificaciones().length;
-    if (n > 0) { badge.textContent = n > 9 ? '9+' : n; badge.style.display = 'flex'; }
+    const total = calcularNotificaciones().reduce((t,g) => t+g.cantidad, 0);
+    if (total > 0) { badge.textContent = total > 99 ? '99+' : total; badge.style.display = 'flex'; }
     else { badge.style.display = 'none'; }
   } catch(e) {}
 }
@@ -1456,7 +1462,7 @@ let contratoActual = null;
 let pagosActuales = [];
 let extrasActuales = {};
 
-async function openContrato(id) {
+async function openContrato(id, _unused1, _unused2, tabInicial) {
   if (!id) return;
   const c = DB.contratos.find(x => x.id===id);
   if (!c) return;
@@ -1525,6 +1531,10 @@ async function openContrato(id) {
   `;
   document.getElementById('modal-overlay').dataset.contratoId = '';
   document.getElementById('modal-overlay').classList.add('open');
+  if (tabInicial) {
+    const btn = document.querySelector(`.solapa-btn[onclick*="'${tabInicial}'"]`);
+    if (btn) { mostrarSolapa(tabInicial, btn); }
+  }
   await recargarGrilla(c);
 }
 
