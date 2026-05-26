@@ -3063,15 +3063,11 @@ async function guardarServicioItem(inputId) {
   if (ok1) {
     input.style.borderColor = 'var(--green)';
     input.dataset.dirty = '0';
+    input.dataset.original = String(parseMonto(input.value));
+    // Update the "total boleta" label next to input if exists
+    const label = input.parentElement?.querySelector('div[style*="green"]');
+    if (label) label.textContent = '✓ ' + formatMoney(parseMonto(input.value)).replace(/<[^>]+>/g,'');
     toast(`${srv.toUpperCase()} guardado ✓${mesNext ? ' (2 cuotas)' : ''}`);
-    // Preserve active tab
-    const activeTab = document.querySelector('.solapa-btn.active');
-    const activeTabId = activeTab?.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
-    await cargarListaServicios();
-    if (activeTabId) {
-      const btn = document.querySelector(`.solapa-btn[onclick*="'${activeTabId}'"]`);
-      if (btn) mostrarSolapa(activeTabId, btn);
-    }
   }
 }
 
