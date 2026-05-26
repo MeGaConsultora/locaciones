@@ -2619,19 +2619,6 @@ async function cargarListaServicios(filtro='') {
       const nro = getNro(c);
       if (p && p[campo] > 0 && nro) nrosConImporte.add(nro);
     });
-    const contratos = todosConServicio.filter(c => {
-      const p = pagosPorHoja[c.hoja];
-      const nro = getNro(c);
-      if (nro && nrosConImporte.has(nro)) return false;
-      return !p || !p[campo] || p[campo] === 0;
-    });
-    const cargados = todosConServicio.filter(c => {
-      const nro = getNro(c);
-      if (nro && nrosConImporte.has(nro)) return true;
-      const p = pagosPorHoja[c.hoja];
-      return p && p[campo] > 0;
-    });
-    const sinCargar = contratos.length;
 
     const mesNext = (() => {
       const [y, m] = mesKey.split('-').map(Number);
@@ -2640,36 +2627,75 @@ async function cargarListaServicios(filtro='') {
       return `${ny}-${String(nm).padStart(2,'0')}`;
     })();
 
-    // Helper: get pct for a contract/service from DB_SUMINISTROS or fallback
-    const getPctInq = (c) => { const s = DB_SUMINISTROS.find(x => parseInt(x.contrato_id) === c.id && x.tipo === srv); return s ? (s.pct_inquilino ?? 100) : (c['pct_'+srv] ?? 100); };
-    const getPctProp = (c) => { const s = DB_SUMINISTROS.find(x => parseInt(x.contrato_id) === c.id && x.tipo === srv); return s ? (s.pct_propietario ?? 0) : (c['pct_prop_'+srv] ?? 0); };
-    const getNroC = (c) => { const s = DB_SUMINISTROS.find(x => parseInt(x.contrato_id) === c.id && x.tipo === srv); return s?.nro_cuenta || c['nro_'+srv] || ''; };
+    // Helper: get pct for a specific suministro row (by suministro id)
+    const getPctInq = (c, sumId) => { const s = sumId ? DB_SUMINISTROS.find(x=>x.id===sumId) : DB_SUMINISTROS.find(x => parseInt(x.contrato_id) === c.id && x.tipo === srv); return s ? (s.pct_inquilino ?? 100) : (c['pct_'+srv] ?? 100); };
+    const getPctProp = (c, sumId) => { const s = sumId ? DB_SUMINISTROS.find(x=>x.id===sumId) : DB_SUMINISTROS.find(x => parseInt(x.contrato_id) === c.id && x.tipo === srv); return s ? (s.pct_propietario ?? 0) : (c['pct_prop_'+srv] ?? 0); };
+    const getNroC = (c, sumId) => { const s = sumId ? DB_SUMINISTROS.find(x=>x.id===sumId) : DB_SUMINISTROS.find(x => parseInt(x.contrato_id) === c.id && x.tipo === srv); return s?.nro_cuenta || c['nro_'+srv] || ''; };
 
-    // Check pct sum - use only VIGENTE contracts with same nro
-    const pctWarnings = [];
-    const nrosVistos = {};
-    const todosContratos = DB.contratos.filter(c => getNroC(c) && getEstado(c) === 'vigente');
-    todosContratos.forEach(c => {
-      const nro = getNroC(c);
-      if (!nrosVistos[nro]) nrosVistos[nro] = { contratos: [], totalPct: 0 };
-      nrosVistos[nro].contratos.push(c);
-      nrosVistos[nro].totalPct += getPctInq(c) + getPctProp(c);
-    });
-    Object.entries(nrosVistos).forEach(([nro, data]) => {
-      if (Math.abs(data.totalPct - 100) > 0.5) {
-        const enLista = data.contratos.some(c => contratos.find(x=>x.id===c.id));
-        if (enLista) {
-          const ids = data.contratos.map(c=>c.id);
-          pctWarnings.push({ msg: `Nro ${nro} (${data.contratos.map(c=>c.titulo||c.hoja).join(', ')}): suman ${data.totalPct}% (debería ser 100%)`, ids });
-        }
+    // Build list of (contrato, suministro) pairs — one per suministro row with pct_inquilino > 0
+    const contratosConSuministros = [];
+    todosConServicio.forEach(c => {
+      const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv && (s.pct_inquilino||0) > 0);
+      if (sums.length > 0) {
+        sums.forEach(s => contratosConSuministros.push({ c, sumId: s.id, nro: s.nro_cuenta || '' }));
+      } else {
+        // fallback old model
+        contratosConSuministros.push({ c, sumId: null, nro: c['nro_'+srv] || '' });
       }
     });
-    contratos.filter(c => !getNroC(c)).forEach(c => {
-      const total = getPctInq(c) + getPctProp(c);
+
+    // Check pct sum per nro across all contracts
+    const pctWarnings = [];
+    const nrosVistos = {};
+    contratosConSuministros.forEach(({c, sumId, nro}) => {
+      if (!nro) return;
+      if (!nrosVistos[nro]) nrosVistos[nro] = { items: [], totalPct: 0 };
+      nrosVistos[nro].items.push({c, sumId});
+      nrosVistos[nro].totalPct += getPctInq(c, sumId) + getPctProp(c, sumId);
+    });
+    // Also check per-contract for suministros without nro
+    contratosConSuministros.filter(x => !x.nro).forEach(({c, sumId}) => {
+      const total = getPctInq(c, sumId) + getPctProp(c, sumId);
       if (Math.abs(total - 100) > 0.5) {
         pctWarnings.push({ msg: `${c.titulo||c.hoja}: suma ${total}% (debería ser 100%)`, ids: [c.id] });
       }
     });
+    Object.entries(nrosVistos).forEach(([nro, data]) => {
+      if (Math.abs(data.totalPct - 100) > 0.5) {
+        pctWarnings.push({ msg: `Nro ${nro} (${data.items.map(x=>x.c.titulo||x.c.hoja).join(', ')}): suman ${Math.round(data.totalPct)}% (debería ser 100%)`, ids: data.items.map(x=>x.c.id) });
+      }
+    });
+
+    // Split cargados/sinCargar per (contrato, suministro) pair
+    const getPagoImporte = (c, sumId) => {
+      const p = pagosPorHoja[c.hoja];
+      if (!p) return 0;
+      // Check pagos_extras for additional suministros
+      const sumRow = DB_SUMINISTROS.find(x=>x.id===sumId);
+      const nro = sumRow?.nro_cuenta || '';
+      // First suministro of type uses pagos.monto_xxx, additional ones use pagos_extras
+      const allSumsOfType = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv);
+      if (sumId && allSumsOfType[0]?.id !== sumId) {
+        // Secondary suministro - check pagos_extras
+        return 0; // will be loaded later
+      }
+      return p[campo] || 0;
+    };
+
+    const contratosCargar = contratosConSuministros.filter(({c, sumId, nro}) => {
+      const importe = getPagoImporte(c, sumId);
+      if (nro && nrosConImporte.has(nro)) return false;
+      return importe === 0;
+    });
+    const contratosYaCargados = contratosConSuministros.filter(({c, sumId, nro}) => {
+      const importe = getPagoImporte(c, sumId);
+      if (nro && nrosConImporte.has(nro)) return true;
+      return importe > 0;
+    });
+    const sinCargarCount = contratosCargar.length;
+    const contratos = contratosCargar.map(x => x.c);
+    const cargados = contratosYaCargados.map(x => x.c);
+    const sinCargar = sinCargarCount;
 
     // Build sinCargar HTML - grouped by nro
     const agruparSinCargar = (lista) => {
