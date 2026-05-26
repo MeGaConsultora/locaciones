@@ -3019,7 +3019,7 @@ async function guardarServicioItem(inputId) {
   const input = document.getElementById(inputId);
   if (!input) return;
   const importe = parseMonto(input.value);
-  const teníaAnterior = parseFloat(input.dataset.original) > 0;
+  const teníaAnterior = input.dataset.original !== undefined && input.dataset.original !== '';
   if (!importe && !teníaAnterior) { toast('Ingresá un importe', 'error'); return; }
   const srv = input.dataset.srv;
   const mesKey = document.getElementById('srv-mes')?.value;
