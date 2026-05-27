@@ -3968,10 +3968,10 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
 
           // Get importe for this specific suministro
           const psEntry = sum ? (window._pagosSuministros?.[p?.id]?.[sum.id]) : null;
-          const montoInqSum = psEntry !== undefined
+          const montoInqSum = (psEntry !== undefined && psEntry !== null)
             ? (typeof psEntry === 'object' ? (psEntry.inq||0) : (psEntry||0))
             : (sum ? 0 : srv.monto);
-          const montoPropSum = psEntry !== undefined
+          const montoPropSum = (psEntry !== undefined && psEntry !== null)
             ? (typeof psEntry === 'object' ? (psEntry.prop||0) : 0)
             : (pctInq > 0 && montoInqSum > 0 ? Math.round(montoInqSum * pctProp / pctInq) : 0);
 
