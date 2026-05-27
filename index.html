@@ -3470,19 +3470,28 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
         ${(() => {
           const mkSrvField = (id, label, val, srv) => {
             const pct = c?.['pct_'+srv] ?? 100;
-            const hint = '';
             const onInput = `onchange="recalcGP(window._gpComision||8)"`;
             const disabledHint = `<div style="font-size:0.72rem;color:#aaa;margin-top:2px">Modificar desde Cargar servicios del mes</div>`;
             return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" ${onInput} style="background:#f5f5f5;color:#999;cursor:not-allowed" readonly title="Modificar desde Cargar servicios del mes">${disabledHint}</div>`;
           };
+          // Get value from pagos_suministros with fallback to pagos.monto_xxx
+          const getSrvVal = (srv) => {
+            const ps = window._pagosSuministros?.[p?.id] || {};
+            const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === srv);
+            if (sums.length > 0) {
+              const total = sums.reduce((t, s) => t + (ps[s.id] !== undefined ? (ps[s.id]||0) : 0), 0);
+              if (total > 0 || sums.some(s => ps[s.id] !== undefined)) return total;
+            }
+            return p?.['monto_'+srv] || '';
+          };
           const servs = (c?.servicios_inquilino||'').toLowerCase();
           let fields = '';
-          fields += mkSrvField('gp-epe','EPE', p?.monto_epe, 'epe');
-          fields += mkSrvField('gp-agua','Agua', p?.monto_agua, 'agua');
-          fields += mkSrvField('gp-tgiu','TGIU', p?.monto_tgiu, 'tgiu');
-          fields += mkSrvField('gp-seguro','Seguro', p?.monto_seguro, 'seguro');
-          if (servs.includes('internet')) fields += mkSrvField('gp-internet','Internet', p?.monto_internet, 'internet');
-          if (servs.includes('expensas')) fields += mkSrvField('gp-expensas','Expensas', p?.monto_expensas, 'expensas');
+          fields += mkSrvField('gp-epe','EPE', getSrvVal('epe'), 'epe');
+          fields += mkSrvField('gp-agua','Agua', getSrvVal('agua'), 'agua');
+          fields += mkSrvField('gp-tgiu','TGIU', getSrvVal('tgiu'), 'tgiu');
+          fields += mkSrvField('gp-seguro','Seguro', getSrvVal('seguro'), 'seguro');
+          if (servs.includes('internet')) fields += mkSrvField('gp-internet','Internet', getSrvVal('internet'), 'internet');
+          if (servs.includes('expensas')) fields += mkSrvField('gp-expensas','Expensas', getSrvVal('expensas'), 'expensas');
           // Gastos de inicio cuota - readonly, just informative
           const gastoCuotaGP = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey));
           if (gastoCuotaGP?.monto_inquilino > 0) {
@@ -4103,6 +4112,33 @@ async function eliminarExtraGP(extraId, hoja, contratoId, mesKey, comisionPct) {
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
+async function _syncPagosSuministros(pagoId, contratoId, montosMap) {
+  // montosMap = {epe: X, agua: Y, tgiu: Z, seguro: W, internet: V, expensas: U}
+  // For each type, find suministros of that type for this contract and upsert
+  for (const [tipo, totalMonto] of Object.entries(montosMap)) {
+    const sums = DB_SUMINISTROS.filter(s =>
+      parseInt(s.contrato_id) === contratoId &&
+      s.tipo === tipo &&
+      (s.pct_inquilino||0) > 0
+    );
+    if (!sums.length) continue;
+    const pctTotal = sums.reduce((t, s) => t + (s.pct_inquilino||0), 0);
+    for (const s of sums) {
+      const importe = pctTotal > 0
+        ? Math.round(totalMonto * (s.pct_inquilino||0) / pctTotal * 100) / 100
+        : totalMonto;
+      try {
+        const existing = await sbGet('pagos_suministros', `pago_id=eq.${pagoId}&suministro_id=eq.${s.id}&limit=1`);
+        if (existing.length) {
+          await sbPatch('pagos_suministros', existing[0].id, { importe });
+        } else {
+          await sbPost('pagos_suministros', { pago_id: pagoId, suministro_id: s.id, importe });
+        }
+      } catch(e) { console.error('_syncPagosSuministros error:', e); }
+    }
+  }
+}
+
 async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
   const mes = mesKey+'-01';
   const alq = parseMonto(document.getElementById('gp-alquiler')?.value);
@@ -4158,6 +4194,8 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
         monto_tgiu:tgiu, monto_seguro:seguro, monto_internet:internetVal, monto_expensas:expensasVal, total,
         comision_8:comision, fecha_pago_hasta:vence, saldo:nuevoSaldo
       });
+      // Sync pagos_suministros
+      await _syncPagosSuministros(pagoId, contratoId, {epe, agua, tgiu, seguro, internet:internetVal, expensas:expensasVal});
     } else {
       const internetNew = applyFieldPct('gp-internet');
       const expensasNew = applyFieldPct('gp-expensas');
@@ -4168,6 +4206,7 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
         comision_8:comision, fecha_pago_hasta:vence, saldo:total, pagado:'0'
       });
       pagoId = r[0]?.id;
+      if (pagoId) await _syncPagosSuministros(pagoId, contratoId, {epe, agua, tgiu, seguro, internet:internetNew, expensas:expensasNew});
     }
     toast('Importes guardados ✓');
 
