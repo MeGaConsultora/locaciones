@@ -2772,9 +2772,9 @@ async function cargarListaServicios(filtro='') {
           : g.items;
         const totalPct = todosConNro.reduce((s,{c,sumId}) => s + getPctInq(c,sumId) + getPctProp(c,sumId), 0);
         const pctOk = Math.abs(totalPct - 100) < 1;
-        const pctInqVal = getPctInq(c, sumId);
-        const pctPropVal = getPctProp(c, sumId);
-        const pctLabel = pctInqVal > 0 ? `${pctInqVal}%` : `100% prop.`;
+        const firstItem = g.items[0];
+        const pctInqVal = firstItem ? getPctInq(firstItem.c, firstItem.sumId) : 100;
+        const pctPropVal = firstItem ? getPctProp(firstItem.c, firstItem.sumId) : 0;
         const detalle = g.items.map(({c,sumId}) => `<span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline">${c.titulo||c.hoja}</span> (${getPctInq(c,sumId) > 0 ? getPctInq(c,sumId)+'%' : '100% prop.'})`).join(', ');
         const hojas = g.items.map(({c}) => c.hoja).join('|');
         const ids = g.items.map(({c}) => c.id).join(',');
