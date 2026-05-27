@@ -2803,13 +2803,19 @@ async function cargarListaServicios(filtro='') {
     const cargadosHtml = Object.values(cargadosGrupos).map(g => {
       const c0 = g.items[0].c;
       const nro = g.nro;
-      // Calculate total boleta
+      // Calculate total boleta from pagos_suministros
       let totalBoleta = 0;
       for (const {c, sumId} of g.items) {
-        const p = pagosPorHoja[c.hoja];
-        const monto = p?.[campo] || 0;
-        const pct = getPctInq(c, sumId);
-        if (monto > 0 && pct > 0) { totalBoleta = Math.round(monto * 100 / pct * 100) / 100; break; }
+        if (sumId && psSumMap[sumId] !== undefined) {
+          const inq = psSumMap[sumId] || 0;
+          const pct = getPctInq(c, sumId);
+          if (inq > 0 && pct > 0) { totalBoleta = Math.round(inq * 100 / pct * 100) / 100; break; }
+        } else {
+          const p = pagosPorHoja[c.hoja];
+          const monto = p?.[campo] || 0;
+          const pct = getPctInq(c, sumId);
+          if (monto > 0 && pct > 0) { totalBoleta = Math.round(monto * 100 / pct * 100) / 100; break; }
+        }
       }
       const detalle = g.items.map(({c,sumId}) => `<span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline">${c.titulo||c.hoja}</span> (${getPctInq(c,sumId)}%)`).join(', ');
       const hojas = g.items.map(({c}) => c.hoja).join('|');
@@ -3932,70 +3938,77 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
       ];
       let html = '';
       for (const srv of srvList) {
-        const sum = DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === srv.key);
-        const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv.key] ?? 100);
-        const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv.key] ?? 0);
-        // Check if this service belongs to the active propietario
-        const srPropId = sum?.propietario_persona_id ? parseInt(sum.propietario_persona_id) : null;
-        const sdPropId = sum?.descuenta_persona_id ? parseInt(sum.descuenta_persona_id) : null;
+        // Get ALL suministros of this type for this contract
+        const allSums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === srv.key);
         const activePropId = activeCp ? parseInt(activeCp.persona_id) : null;
-        const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv.key);
-        const seDescuenta = sum ? !!sum.descuenta_persona_id : (!sum && pctProp > 0 && !seRinde);
-        if (!seRinde && !seDescuenta) continue;
-        if (!srv.monto && !pctProp) continue;
 
-        // If multiple propietarios and service has no specific assignment, warn instead of showing
-        if (hayMultiplesProp && seRinde && !srPropId) {
-          html += `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:5px 10px;margin:3px 0;font-size:0.8rem;color:#856404">⚠ ${srv.label} (a rendir) — sin propietario asignado, editá el suministro en el contrato.</div>`;
-          continue;
-        }
-        if (hayMultiplesProp && seDescuenta && !sdPropId) {
-          html += `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:5px 10px;margin:3px 0;font-size:0.8rem;color:#856404">⚠ ${srv.label} (descuenta) — sin propietario asignado, editá el suministro en el contrato.</div>`;
-          continue;
-        }
-        // If assigned to specific propietario, only show for that one
-        if (srPropId && activePropId && srPropId !== activePropId) continue;
-        if (sdPropId && activePropId && sdPropId !== activePropId) continue;
+        // Handle each suministro independently
+        const sumsToProcess = allSums.length > 0 ? allSums : [null];
+        for (const sum of sumsToProcess) {
+          const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv.key] ?? 100);
+          const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv.key] ?? 0);
+          const srPropId = sum?.propietario_persona_id ? parseInt(sum.propietario_persona_id) : null;
+          const sdPropId = sum?.descuenta_persona_id ? parseInt(sum.descuenta_persona_id) : null;
+          const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv.key);
+          const seDescuenta = sum ? !!sum.descuenta_persona_id : (!sum && pctProp > 0 && !seRinde);
+          if (!seRinde && !seDescuenta) continue;
 
-        if (seRinde) {
+          // Get importe for this specific suministro
+          const psEntry = sum ? (window._pagosSuministros?.[p?.id]?.[sum.id]) : null;
+          const montoInqSum = psEntry !== undefined
+            ? (typeof psEntry === 'object' ? (psEntry.inq||0) : (psEntry||0))
+            : (sum ? 0 : srv.monto);
+          const montoPropSum = psEntry !== undefined
+            ? (typeof psEntry === 'object' ? (psEntry.prop||0) : 0)
+            : (pctInq > 0 && montoInqSum > 0 ? Math.round(montoInqSum * pctProp / pctInq) : 0);
+
+          if (!montoInqSum && !montoPropSum) continue;
+
+          if (hayMultiplesProp && seRinde && !srPropId) {
+            html += `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:5px 10px;margin:3px 0;font-size:0.8rem;color:#856404">⚠ ${srv.label} (a rendir) — sin propietario asignado.</div>`;
+            continue;
+          }
+          if (hayMultiplesProp && seDescuenta && !sdPropId) {
+            html += `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:5px 10px;margin:3px 0;font-size:0.8rem;color:#856404">⚠ ${srv.label} (descuenta) — sin propietario asignado.</div>`;
+            continue;
+          }
+          if (srPropId && activePropId && srPropId !== activePropId) continue;
+          if (sdPropId && activePropId && sdPropId !== activePropId) continue;
+
           const nro = sum?.nro_cuenta || c?.['nro_'+srv.key];
-          const mesKey = p.mes?.substring(0,7) || '';
-          let totalRendidoInq = srv.monto;
-          if (nro) {
-            const otrosContratos = DB.contratos.filter(x => x.id !== c?.id && (DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(x.id) && s.tipo === srv.key)?.nro_cuenta || x['nro_'+srv.key]) === nro && getEstado(x) === 'vigente');
-            for (const oc of otrosContratos) {
-              const ocPago = DB.pagos.find(pg => pg.hoja === oc.hoja && pg.mes && pg.mes.startsWith(mesKey));
-              if (ocPago) {
-                const ocPs = window._pagosSuministros?.[ocPago.id] || {};
-                const ocSums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === oc.id && s.tipo === srv.key);
-                let ocMonto = 0;
-                if (ocSums.length > 0) {
-                  ocMonto = ocSums.reduce((t, s) => t + (ocPs[s.id] !== undefined ? (ocPs[s.id]||0) : 0), 0);
-                  if (ocMonto === 0 && ocSums.every(s => ocPs[s.id] === undefined)) ocMonto = ocPago['monto_'+srv.key] || 0;
-                } else {
-                  ocMonto = ocPago['monto_'+srv.key] || 0;
+          const sumLabel = srv.label + (nro && allSums.length > 1 ? ` Cta.${nro}` : '');
+
+          if (seRinde) {
+            const mesKey = p.mes?.substring(0,7) || '';
+            let totalRendidoInq = montoInqSum;
+            if (nro) {
+              const otrosContratos = DB.contratos.filter(x => x.id !== c?.id && DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(x.id) && s.tipo === srv.key && s.nro_cuenta === nro) && getEstado(x) === 'vigente');
+              for (const oc of otrosContratos) {
+                const ocPago = DB.pagos.find(pg => pg.hoja === oc.hoja && pg.mes && pg.mes.startsWith(mesKey));
+                if (ocPago) {
+                  const ocPs = window._pagosSuministros?.[ocPago.id] || {};
+                  const ocSums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === oc.id && s.tipo === srv.key && s.nro_cuenta === nro);
+                  for (const os of ocSums) {
+                    const entry = ocPs[os.id];
+                    totalRendidoInq += entry !== undefined ? (typeof entry === 'object' ? (entry.inq||0) : (entry||0)) : (ocPago['monto_'+srv.key] || 0);
+                  }
                 }
-                totalRendidoInq += ocMonto;
               }
             }
-          }
-          html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
-            <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
-              <input type="checkbox" id="prop-chk-srv-${srv.key}" value="${totalRendidoInq}" data-signo="1" checked onchange="recalcProp()" style="width:15px;height:15px">
-              ${srv.label} (a rendir${nro?' — Cta '+nro:''})
-            </label>
-            <span style="font-size:0.85rem;color:var(--green)">+ ${formatMoney(totalRendidoInq)}</span>
-          </div>`;
-        } else if (seDescuenta && pctProp > 0) {
-          // Propietario pays his % — deduct from liquidation
-          const montoPropVal = srv.montoProp > 0 ? srv.montoProp : (pctInq > 0 ? Math.round(Math.round(srv.monto * 100 / pctInq) * pctProp / 100) : 0);
-          if (montoPropVal > 0) {
             html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
               <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
-                <input type="checkbox" id="prop-chk-srv-prop-${srv.key}" value="${montoPropVal}" data-signo="-1" checked onchange="recalcProp()" style="width:15px;height:15px">
-                ${srv.label} (propietario ${pctProp}%)
+                <input type="checkbox" id="prop-chk-srv-${srv.key}-${sum?.id||0}" value="${totalRendidoInq}" data-signo="1" checked onchange="recalcProp()" style="width:15px;height:15px">
+                ${sumLabel} (a rendir)
               </label>
-              <span style="font-size:0.85rem;color:var(--accent)">− ${formatMoney(montoPropVal)}</span>
+              <span style="font-size:0.85rem;color:var(--green)">+ ${formatMoney(totalRendidoInq)}</span>
+            </div>`;
+          } else if (seDescuenta && montoPropSum > 0) {
+            html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
+              <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
+                <input type="checkbox" id="prop-chk-srv-prop-${srv.key}-${sum?.id||0}" value="${montoPropSum}" data-signo="-1" checked onchange="recalcProp()" style="width:15px;height:15px">
+                ${sumLabel} (propietario ${pctProp}%)
+              </label>
+              <span style="font-size:0.85rem;color:var(--accent)">− ${formatMoney(montoPropSum)}</span>
             </div>`;
           }
         }
