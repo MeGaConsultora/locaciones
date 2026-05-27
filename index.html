@@ -2712,9 +2712,15 @@ async function cargarListaServicios(filtro='') {
     const getPagoImporte = (c, sumId) => {
       const p = pagosPorHoja[c.hoja];
       if (!p) return 0;
-      // Check pagos_suministros first (new model)
-      if (sumId && psSumMap[sumId] !== undefined) return psSumMap[sumId] || 0;
-      // Fallback to pagos.monto_xxx (old model / historical)
+      if (sumId) {
+        // If sumId exists in psSumMap, use it (even if 0)
+        if (psSumMap[sumId] !== undefined) return psSumMap[sumId] || 0;
+        // Check if contract has multiple suministros of this type
+        const allSumsOfType = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv);
+        if (allSumsOfType.length > 1) return 0; // multiple suministros - don't use fallback
+        // Single suministro - use pagos.monto_xxx as fallback
+        return p[campo] || 0;
+      }
       return p[campo] || 0;
     };
 
