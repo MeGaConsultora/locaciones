@@ -2320,25 +2320,40 @@ Ante cualquier duda, comunicate con nosotros.`;
 
 
 async function proyectarPeriodo(hoja, desdeKey, importe, periodicidad, diaVenc, modalidad) {
-  // Calculate how many months to project based on periodicidad
   const mesesPeriodo = {
     'Mensual': 1, 'Bimestral': 2, 'Trimestral': 3,
     'Cuatrimestral': 4, 'Semestral': 6, 'Anual': 12
   }[periodicidad] || 12;
 
-  // Get all pagos for this contrato
   const hojaEncoded = encodeURIComponent(hoja);
   const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc&limit=500`);
+  const mesesExistentes = new Set(pagos.map(p => p.mes?.substring(0,7)).filter(Boolean));
 
-  // Find pagos starting from desdeKey, up to mesesPeriodo months
+  // Create missing pagos in range if they don't exist
+  const nuevos = [];
+  let [cy, cm] = desdeKey.split('-').map(Number);
+  for (let i = 0; i < mesesPeriodo; i++) {
+    const key = `${cy}-${String(cm).padStart(2,'0')}`;
+    if (!mesesExistentes.has(key)) {
+      nuevos.push({ hoja, mes: key+'-01', corresponde_a_mes: key+'-01', importe_alquiler: 0, total: 0, saldo: 0, pagado: '0' });
+    }
+    cm++; if (cm > 12) { cm = 1; cy++; }
+  }
+  if (nuevos.length) {
+    for (let i = 0; i < nuevos.length; i += 50) await sbPost('pagos', nuevos.slice(i, i+50));
+  }
+
+  // Reload pagos after creating new ones
+  const pagosActualizados = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc&limit=500`);
+
+  // Now update pagos in range
   let count = 0;
-  for (const p of pagos) {
+  for (const p of pagosActualizados) {
     if (!p.mes) continue;
     const mesKey = p.mes.substring(0,7);
     if (mesKey < desdeKey) continue;
     if (count >= mesesPeriodo) break;
 
-    // Calculate vencimiento date
     const [y, m] = mesKey.split('-').map(Number);
     let vencY = y, vencM = m;
     if (modalidad === 'VENCIDO') {
@@ -7711,17 +7726,24 @@ async function procesarPDF() {
         // Clean text for easier parsing
         const cleanText = text.replace(/\s+/g, ' ');
         
-        // Cuenta: 5-7 digit standalone number (not part of date xx/xx/xx or DNI 11 digits)
-        // In this format it appears near "Usuario" - look for 5-6 digit numbers
+        // Cuenta: look for number near "Usuario" or "Propietario" keyword
         let cuenta = null;
-        const cuentaMatches = cleanText.match(/\b(\d{5,7})\b/g) || [];
-        // Filter out numbers that are part of dates or look like DNI (11 digits)
-        for (const m of cuentaMatches) {
-          if (m.length >= 5 && m.length <= 7) {
-            // Check it's not preceded/followed by slash (date) 
+        // Try after "Propietario" first (Agua Potable format)
+        const propMatch = cleanText.match(/Propietario\s+(\d{5,7})\b/i);
+        // Try after "Usuario"
+        const usuarioMatch = cleanText.match(/Usuario\s+[\d/\s]+?(\d{5,7})\b/i) ||
+                             cleanText.match(/\bUsuario\b[^0-9]*(\d{5,7})\b/i);
+        if (propMatch) {
+          cuenta = propMatch[1];
+        } else if (usuarioMatch) {
+          cuenta = usuarioMatch[1];
+        } else {
+          // Fallback: first 5-7 digit number not in date, not preceded by Doc/DNI context
+          const cuentaMatches = cleanText.match(/\b(\d{5,7})\b/g) || [];
+          for (const m of cuentaMatches) {
             const idx = cleanText.indexOf(m);
-            const around = cleanText.substring(Math.max(0,idx-2), idx+m.length+2);
-            if (!around.match(/\//)) {
+            const around = cleanText.substring(Math.max(0,idx-10), idx+m.length+10);
+            if (!around.match(/\//) && !around.match(/Doc\.|DNI|CUIT|CUIL/i)) {
               cuenta = m;
               break;
             }
