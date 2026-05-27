@@ -1581,10 +1581,10 @@ async function recargarGrilla(c) {
       // Load pagos_suministros
       window._pagosSuministros = {};
       try {
-        const ps = await sbGet('pagos_suministros', `pago_id=in.(${ids})&select=pago_id,suministro_id,importe`);
+        const ps = await sbGet('pagos_suministros', `pago_id=in.(${ids})&select=pago_id,suministro_id,importe,importe_propietario`);
         ps.forEach(r => {
           if (!window._pagosSuministros[r.pago_id]) window._pagosSuministros[r.pago_id] = {};
-          window._pagosSuministros[r.pago_id][r.suministro_id] = r.importe;
+          window._pagosSuministros[r.pago_id][r.suministro_id] = { inq: r.importe, prop: r.importe_propietario||0 };
         });
       } catch(e) {}
       // Load pagos_pdf for PDF buttons
@@ -1695,8 +1695,11 @@ function renderGrilla(c) {
     const getMonto = (tipo) => {
       const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id && s.tipo === tipo);
       if (sums.length > 0) {
-        const total = sums.reduce((t, s) => t + (ps[s.id] !== undefined ? (ps[s.id]||0) : 0), 0);
-        // If no pagos_suministros data, fallback to pagos.monto_xxx
+        const total = sums.reduce((t, s) => {
+          const entry = ps[s.id];
+          if (entry === undefined) return t;
+          return t + (typeof entry === 'object' ? (entry.inq||0) : (entry||0));
+        }, 0);
         if (total === 0 && sums.every(s => ps[s.id] === undefined)) return p['monto_'+tipo] || 0;
         return total;
       }
@@ -2607,7 +2610,7 @@ async function cargarListaServicios(filtro='') {
   let pagosSuministros = [];
   try {
     if (pagoIds.length) {
-      pagosSuministros = await sbGet('pagos_suministros', `pago_id=in.(${pagoIds.join(',')})&select=pago_id,suministro_id,importe`);
+      pagosSuministros = await sbGet('pagos_suministros', `pago_id=in.(${pagoIds.join(',')})&select=pago_id,suministro_id,importe,importe_propietario`);
     }
   } catch(e) {}
   // Map: suministroId -> importe (and pagoId -> {suministroId -> importe})
@@ -2935,10 +2938,10 @@ async function cargarExtrasGral(mes, filtro) {
   panel.innerHTML = `
     <div style="margin-bottom:0.75rem;font-size:0.82rem;color:#888;display:flex;align-items:center;gap:1rem">
       <span>${totalSin + totalYa} ítem/s · <strong>${totalSin}</strong> sin cargar · ${totalYa} ya cargados</span>
-      ${yaCargados.length ? `<button id="btn-toggle-ya-extras" onclick="const d=document.getElementById('ya-extras-wrap');const b=this;d.style.display=d.style.display==='none'?'block':'none';b.textContent=d.style.display==='none'?'▶ Ver/Modificar ya cargados (${yaCargados.length})':'▼ Ocultar ya cargados'" style="background:none;border:none;color:var(--accent);font-size:0.78rem;cursor:pointer;text-decoration:underline">▶ Ver/Modificar ya cargados (${yaCargados.length})</button>` : ''}
+      ${yaCargados.length ? `<button id="btn-ya-cargados-extras-gral" onclick="toggleYaCargados('extras-gral')" style="background:none;border:none;color:var(--accent);font-size:0.78rem;cursor:pointer;text-decoration:underline;margin-left:8px">&#9654; Ver/Modificar ya cargados</button>` : ''}
     </div>
     ${sinCargar.length ? `
-      <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1rem">
+      <div id="sin-cargar-extras-gral" style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1rem">
         ${sinCargar.map(({c, g, pctOk, sugerido}) => `
           <div style="background:white;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:8px;padding:0.75rem 1rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
             <div style="flex:1;min-width:0">
@@ -2957,9 +2960,9 @@ async function cargarExtrasGral(mes, filtro) {
           </div>`).join('')}
       </div>` : ''}
     ${yaCargados.length ? `
-      <div id="ya-extras-wrap" style="display:none;margin-top:0.5rem">
+      <div>
         ${yaCargados.map(({c, g, totalCargado, pctOk}) => `
-          <div style="background:#f0fff4;border:1.5px solid var(--green);border-radius:8px;padding:0.6rem 1rem;display:flex;align-items:center;gap:0.75rem;margin-bottom:0.4rem;flex-wrap:wrap">
+          <div class="ya-cargado-extras-gral" style="display:none;background:#f0fff4;border:1.5px solid var(--green);border-radius:8px;padding:0.6rem 1rem;display:none;align-items:center;gap:0.75rem;margin-bottom:0.4rem;flex-wrap:wrap">
             <div style="flex:1;font-size:0.85rem">
               <span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-weight:600">${c.titulo||c.hoja}</span>
               <span style="color:#888;font-size:0.75rem;margin-left:6px">${g.concepto}</span>
@@ -3014,7 +3017,7 @@ async function guardarExtraGralItem(inputId) {
       const pct = (s.pct_inquilino ?? 0) + (s.pct_propietario ?? 0);
       const importe = Math.round(importeTotal * pct / 100 * 100) / 100;
       const aCargoDe = (s.pct_propietario ?? 0) > 0 ? 'propietario' : 'inquilino';
-      const propPerId = s.descuenta_persona_id || s.propietario_persona_id || null;
+      const propPerId = aCargoDe === 'propietario' ? (s.descuenta_persona_id || s.propietario_persona_id || null) : null;
       const yaExiste = extrasExistentes.find(e => parseInt(e.suministro_id) === parseInt(s.id));
 
       if (yaExiste) {
@@ -3120,33 +3123,29 @@ async function guardarServicioItem(inputId) {
         const c = DB.contratos.find(x => x.hoja === hoja);
         const sum = sumId ? DB_SUMINISTROS.find(s => s.id === sumId)
           : (c ? DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : null);
-        const pct = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
-        const montoInq = Math.round(importe * pct / 100 * 100) / 100;
+        const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
+        const pctProp = sum ? (sum.pct_propietario ?? 0) : 0;
+        const montoInq = Math.round(importe * pctInq / 100 * 100) / 100;
+        const montoProp = Math.round(importe * pctProp / 100 * 100) / 100;
 
         // Save to pagos_suministros if we have a sumId
         if (sumId) {
           const existing = await sbGet('pagos_suministros', `pago_id=eq.${pago.id}&suministro_id=eq.${sumId}&limit=1`);
           if (existing.length) {
-            await sbPatch('pagos_suministros', existing[0].id, { importe: montoInq });
+            await sbPatch('pagos_suministros', existing[0].id, { importe: montoInq, importe_propietario: montoProp });
           } else {
-            await sbPost('pagos_suministros', { pago_id: pago.id, suministro_id: sumId, importe: montoInq });
+            await sbPost('pagos_suministros', { pago_id: pago.id, suministro_id: sumId, importe: montoInq, importe_propietario: montoProp });
           }
         }
 
-        // Calculate new total from all suministros of this type for this pago
-        // Sum all suministros of this type for this contract
+        // Update pagos.monto_srv = sum of all inquilino portions for this type
         const allSumsOfType = c ? DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : [];
-        let totalTipo = 0;
+        let totalTipo = montoInq;
         for (const s of allSumsOfType) {
-          if (s.id === sumId) {
-            totalTipo += montoInq;
-          } else {
-            // Check pagos_suministros for other suministros of same type
-            const otherPs = await sbGet('pagos_suministros', `pago_id=eq.${pago.id}&suministro_id=eq.${s.id}&limit=1`);
-            totalTipo += otherPs.length ? (otherPs[0].importe||0) : (pago[campo]||0);
-          }
+          if (s.id === sumId) continue; // already counted
+          const otherPs = await sbGet('pagos_suministros', `pago_id=eq.${pago.id}&suministro_id=eq.${s.id}&limit=1`);
+          totalTipo += otherPs.length ? (parseFloat(otherPs[0].importe)||0) : 0;
         }
-        if (!allSumsOfType.length) totalTipo = montoInq;
 
         const newTotal = (pago.importe_alquiler||0) + totalTipo +
           ['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0);
@@ -3293,9 +3292,11 @@ function toggleYaCargados(srv) {
   const btn = document.getElementById(`btn-ya-cargados-${srv}`);
   const cards = document.querySelectorAll(`.ya-cargado-${srv}`);
   const visible = cards.length > 0 && cards[0].style.display !== 'none';
-  cards.forEach(c => c.style.display = visible ? 'none' : 'block');
-  if (btn) btn.textContent = visible ? '▶ Ver/Modificar ya cargados' : '▼ Ocultar ya cargados';
-  // Hide by default on load
+  cards.forEach(c => { c.style.display = visible ? 'none' : 'flex'; });
+  if (btn) btn.innerHTML = visible ? '&#9654; Ver/Modificar ya cargados' : '&#9660; Ocultar ya cargados';
+  // Hide sinCargar when showing cargados (like EPE behavior)
+  const sinCargarWrap = document.getElementById(`sin-cargar-${srv}`);
+  if (sinCargarWrap) sinCargarWrap.style.display = visible ? 'flex' : 'none';
 }
 
 async function verBoleta(pagoId, srv) {
@@ -3653,7 +3654,11 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
   const getSrvMonto = (tipo) => {
     const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === tipo);
     if (sums.length > 0) {
-      const total = sums.reduce((t, s) => t + (ps[s.id] !== undefined ? (ps[s.id]||0) : 0), 0);
+      const total = sums.reduce((t, s) => {
+        const entry = ps[s.id];
+        if (entry === undefined) return t;
+        return t + (typeof entry === 'object' ? (entry.inq||0) : (entry||0));
+      }, 0);
       if (total > 0 || sums.some(s => ps[s.id] !== undefined)) return total;
     }
     return p['monto_'+tipo] || 0;
@@ -3890,18 +3895,34 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
       const getSrvMonto = (tipo) => {
         const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === tipo);
         if (sums.length > 0) {
-          const total = sums.reduce((t, s) => t + (ps[s.id] !== undefined ? (ps[s.id]||0) : 0), 0);
+          const total = sums.reduce((t, s) => {
+            const entry = ps[s.id];
+            if (entry === undefined) return t;
+            return t + (typeof entry === 'object' ? (entry.inq||0) : (entry||0));
+          }, 0);
           if (total > 0 || sums.some(s => ps[s.id] !== undefined)) return total;
         }
         return p['monto_'+tipo] || 0;
       };
+      const getSrvMontoProp = (tipo) => {
+        const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === tipo);
+        if (sums.length > 0) {
+          const total = sums.reduce((t, s) => {
+            const entry = ps[s.id];
+            if (entry === undefined) return t;
+            return t + (typeof entry === 'object' ? (entry.prop||0) : 0);
+          }, 0);
+          return total;
+        }
+        return 0;
+      };
       const srvList = [
-        {key:'epe', label:'EPE', monto: getSrvMonto('epe')},
-        {key:'agua', label:'Agua', monto: getSrvMonto('agua')},
-        {key:'tgiu', label:'TGIU', monto: getSrvMonto('tgiu')},
-        {key:'seguro', label:'Seguro', monto: getSrvMonto('seguro')},
-        {key:'internet', label:'Internet', monto: getSrvMonto('internet')},
-        {key:'expensas', label:'Expensas', monto: getSrvMonto('expensas')},
+        {key:'epe', label:'EPE', monto: getSrvMonto('epe'), montoProp: getSrvMontoProp('epe')},
+        {key:'agua', label:'Agua', monto: getSrvMonto('agua'), montoProp: getSrvMontoProp('agua')},
+        {key:'tgiu', label:'TGIU', monto: getSrvMonto('tgiu'), montoProp: getSrvMontoProp('tgiu')},
+        {key:'seguro', label:'Seguro', monto: getSrvMonto('seguro'), montoProp: getSrvMontoProp('seguro')},
+        {key:'internet', label:'Internet', monto: getSrvMonto('internet'), montoProp: getSrvMontoProp('internet')},
+        {key:'expensas', label:'Expensas', monto: getSrvMonto('expensas'), montoProp: getSrvMontoProp('expensas')},
       ];
       let html = '';
       for (const srv of srvList) {
@@ -3961,15 +3982,14 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
           </div>`;
         } else if (seDescuenta && pctProp > 0) {
           // Propietario pays his % — deduct from liquidation
-          const totalBill = pctInq > 0 ? Math.round(srv.monto * 100 / pctInq) : srv.monto;
-          const montoProp = Math.round(totalBill * pctProp / 100);
-          if (montoProp > 0) {
+          const montoPropVal = srv.montoProp > 0 ? srv.montoProp : (pctInq > 0 ? Math.round(Math.round(srv.monto * 100 / pctInq) * pctProp / 100) : 0);
+          if (montoPropVal > 0) {
             html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
               <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
-                <input type="checkbox" id="prop-chk-srv-prop-${srv.key}" value="${montoProp}" data-signo="-1" checked onchange="recalcProp()" style="width:15px;height:15px">
+                <input type="checkbox" id="prop-chk-srv-prop-${srv.key}" value="${montoPropVal}" data-signo="-1" checked onchange="recalcProp()" style="width:15px;height:15px">
                 ${srv.label} (propietario ${pctProp}%)
               </label>
-              <span style="font-size:0.85rem;color:var(--accent)">− ${formatMoney(montoProp)}</span>
+              <span style="font-size:0.85rem;color:var(--accent)">− ${formatMoney(montoPropVal)}</span>
             </div>`;
           }
         }
@@ -4162,12 +4182,15 @@ async function _syncPagosSuministros(pagoId, contratoId, montosMap) {
       const importe = pctTotal > 0
         ? Math.round(totalMonto * (s.pct_inquilino||0) / pctTotal * 100) / 100
         : totalMonto;
+      const importe_propietario = (s.pct_inquilino||0) > 0
+        ? Math.round(importe * (s.pct_propietario||0) / (s.pct_inquilino||0) * 100) / 100
+        : 0;
       try {
         const existing = await sbGet('pagos_suministros', `pago_id=eq.${pagoId}&suministro_id=eq.${s.id}&limit=1`);
         if (existing.length) {
-          await sbPatch('pagos_suministros', existing[0].id, { importe });
+          await sbPatch('pagos_suministros', existing[0].id, { importe, importe_propietario });
         } else {
-          await sbPost('pagos_suministros', { pago_id: pagoId, suministro_id: s.id, importe });
+          await sbPost('pagos_suministros', { pago_id: pagoId, suministro_id: s.id, importe, importe_propietario });
         }
       } catch(e) { console.error('_syncPagosSuministros error:', e); }
     }
