@@ -2704,17 +2704,22 @@ async function cargarListaServicios(filtro='') {
     });
 
     // Check pct sum per nro across all contracts
+    // Only sum pct_inquilino (propietario-only suministros don't count toward the 100% check)
     const pctWarnings = [];
     const nrosVistos = {};
     contratosConSuministros.forEach(({c, sumId, nro}) => {
       if (!nro) return;
+      const pctInq = getPctInq(c, sumId);
+      if (pctInq === 0) return; // skip propietario-only suministros
       if (!nrosVistos[nro]) nrosVistos[nro] = { items: [], totalPct: 0 };
       nrosVistos[nro].items.push({c, sumId});
-      nrosVistos[nro].totalPct += getPctInq(c, sumId) + getPctProp(c, sumId);
+      nrosVistos[nro].totalPct += pctInq;
     });
     // Also check per-contract for suministros without nro
     contratosConSuministros.filter(x => !x.nro).forEach(({c, sumId}) => {
-      const total = getPctInq(c, sumId) + getPctProp(c, sumId);
+      const pctInq = getPctInq(c, sumId);
+      const pctProp = getPctProp(c, sumId);
+      const total = pctInq + pctProp;
       if (Math.abs(total - 100) > 0.5) {
         pctWarnings.push({ msg: `${c.titulo||c.hoja}: suma ${total}% (debería ser 100%)`, ids: [c.id] });
       }
@@ -7778,7 +7783,17 @@ async function procesarPDF() {
           if (simple) importe = parseFloat(simple[1].replace(',','.'));
         }
 
-        const contrato = cuenta ? DB.contratos.find(c => c[`nro_${srv}`] === String(cuenta)) : null;
+        // Find contrato by nro_cuenta — check contrato_suministros first, then old field
+        let contrato = null;
+        if (cuenta) {
+          const sum = DB_SUMINISTROS.find(s => s.nro_cuenta === String(cuenta) && s.tipo === srv);
+          if (sum) {
+            contrato = DB.contratos.find(c => c.id === parseInt(sum.contrato_id)) || null;
+          }
+          if (!contrato) {
+            contrato = DB.contratos.find(c => c[`nro_${srv}`] === String(cuenta)) || null;
+          }
+        }
         resultados.push({
           pagina: i,
           cuenta: cuenta || null,
