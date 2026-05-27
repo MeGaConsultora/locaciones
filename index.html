@@ -3121,10 +3121,20 @@ async function guardarServicioItem(inputId) {
           const concepto = (srvLabels[srv]||srv.toUpperCase()) + (sum?.nro_cuenta ? ' Cta.'+sum.nro_cuenta : '');
           try {
             const existing = await sbGet('pagos_extras', `pago_id=eq.${pago.id}&suministro_id=eq.${sumId}&limit=1`);
+            const oldImporte = existing.length ? (parseFloat(existing[0].importe)||0) : 0;
             if (existing.length) {
               await sbPatch('pagos_extras', existing[0].id, { importe: montoInq, concepto });
             } else {
               await sbPost('pagos_extras', { pago_id: pago.id, suministro_id: sumId, importe: montoInq, concepto, a_cargo_de: 'inquilino' });
+            }
+            // Update pagos.total and saldo to include this extra
+            const diff = montoInq - oldImporte;
+            if (diff !== 0) {
+              const yaAbonado = (pago.total||0) - (pago.saldo||0);
+              await sbPatch('pagos', pago.id, {
+                total: (pago.total||0) + diff,
+                saldo: Math.max(0, (pago.saldo||0) + diff)
+              });
             }
           } catch(extraErr) {
             toast('Error guardando extra: ' + extraErr.message, 'error');
