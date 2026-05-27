@@ -3050,11 +3050,12 @@ async function guardarExtrasGral() {
   let guardados = 0;
   for (const input of inputs) {
     const importe = parseMonto(input.value);
-    if (!importe) continue;
+    const extraId = input.dataset.extraId ? parseInt(input.dataset.extraId) : null;
+    // Skip if empty and no existing record to clear
+    if (!importe && !extraId) continue;
     const suministroId = parseInt(input.dataset.suministroId);
     const contratoId = parseInt(input.dataset.contratoId);
     const concepto = input.dataset.concepto;
-    const extraId = input.dataset.extraId ? parseInt(input.dataset.extraId) : null;
     try {
       // Get pago for this contract/month
       const c = DB.contratos.find(x => x.id === contratoId);
@@ -3065,7 +3066,11 @@ async function guardarExtrasGral() {
       const pagoId = pagos[0].id;
       const body = { pago_id: pagoId, concepto, importe, suministro_id: suministroId, a_cargo_de: 'inquilino' };
       if (extraId) {
-        await sbPatch('pagos_extras', extraId, { importe });
+        if (!importe) {
+          await sbDelete('pagos_extras', extraId);
+        } else {
+          await sbPatch('pagos_extras', extraId, { importe });
+        }
       } else {
         await sbPost('pagos_extras', body);
       }
