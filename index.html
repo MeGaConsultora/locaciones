@@ -3297,7 +3297,19 @@ function actualizarTotalPct(srv) {
 }
 
 function validarPctAlGuardar(contratoId) {
-  return true; // Validation now in suministros UI
+  const suministros = leerSuministros();
+  const nroTipoCount = {};
+  for (const s of suministros) {
+    if (!s.nro_cuenta || !s.tipo) continue;
+    const key = s.nro_cuenta.trim() + '|' + s.tipo;
+    nroTipoCount[key] = (nroTipoCount[key] || 0) + 1;
+  }
+  const duplicados = Object.entries(nroTipoCount).filter(([k,v]) => v > 1).map(([k]) => k.split('|'));
+  if (duplicados.length) {
+    toast('⚠ N° de cuenta duplicado: ' + duplicados.map(([nro,tipo]) => `${nro} (${tipo.toUpperCase()})`).join(', ') + '. Corregí antes de guardar.', 'error');
+    return false;
+  }
+  return true;
 }
 
 function toggleYaCargados(srv) {
@@ -3611,6 +3623,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       </div>
       <div class="form-actions" style="justify-content:space-between">
         ${((p.total||0) > (p.saldo||0) || (p.pagado && p.pagado !== '0')) ? `<button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="revertirCobro('${hoja}',${contratoId},'${mesKey}',${comisionPct})">↩ Revertir cobro</button>` : '<div></div>'}
+        <button class="btn btn-secondary" onclick="previsualizarReciboInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct})" style="margin-right:0.5rem">👁 Vista previa</button>
         <button class="btn btn-green" onclick="confirmarCobroInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct})">✓ Confirmar cobro + Imprimir recibo</button>
       </div>`}
     </div>
@@ -4430,6 +4443,58 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
       }, 150);
     }
   } catch(e) { toast('Error: '+e.message,'error'); }
+}
+
+async function previsualizarReciboInquilino(hoja, contratoId, mesKey, comisionPct) {
+  const mes = mesKey+'-01';
+  const hojaEncoded = encodeURIComponent(hoja);
+  const existing = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
+  if (!existing.length) { toast('Guardá los importes primero','error'); return; }
+  const p = existing[0];
+  const c = DB.contratos.find(x=>x.id===contratoId);
+
+  // Collect cobro items exactly like confirmarCobroInquilino
+  const checks = document.querySelectorAll('[id^="cobro-chk-"]');
+  let totalCobrado = 0;
+  let honorariosCobrado = 0;
+  const itemsRecibo = [];
+  checks.forEach(chk => {
+    if (chk.checked) {
+      const signo = parseFloat(chk.dataset.signo||'1');
+      const val = parseFloat(chk.value)||0;
+      totalCobrado += signo * val;
+      if (chk.id === 'cobro-chk-honorarios') honorariosCobrado = val;
+      const label = chk.closest('div')?.querySelector('label')?.textContent?.trim()||'';
+      itemsRecibo.push({label, monto: signo*val});
+    }
+  });
+  const acuenta = parseFloat(document.getElementById('gp-acuenta')?.value)||0;
+  const acuentaConcepto = document.getElementById('gp-acuenta-concepto')?.value||'A cuenta';
+  if (acuenta > 0) { totalCobrado += acuenta; itemsRecibo.push({label: acuentaConcepto, monto: acuenta}); }
+
+  const interesChk = document.getElementById('gp-interes-chk');
+  if (interesChk?.checked) {
+    const interesVal = parseFloat(interesChk.dataset.interes||0);
+    if (interesVal > 0) { totalCobrado += interesVal; itemsRecibo.push({label: 'Interés punitorio', monto: interesVal}); }
+  }
+
+  if (totalCobrado <= 0) { toast('Seleccioná al menos un ítem','error'); return; }
+
+  const nuevoSaldo = Math.max(0, (p.saldo||0) - (totalCobrado - honorariosCobrado));
+  const nroMes = pagosActuales.findIndex(x=>x.id===p.id) + 1 || 1;
+
+  // Just print — no DB writes
+  imprimirRecibo({
+    contrato: c,
+    nroMes,
+    mes: p.mes,
+    fechaPago: TODAY,
+    itemsAbonados: itemsRecibo,
+    totalAbonado: totalCobrado,
+    nuevoSaldo,
+    itemsPendientes: [],
+    esPreview: true
+  });
 }
 
 async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
@@ -5748,6 +5813,7 @@ async function guardarContrato() {
   // Check for duplicate (only for new contracts)
   const existe = DB.contratos.find(c => c.titulo?.toLowerCase() === titulo.toLowerCase() || c.hoja?.toLowerCase() === titulo.toLowerCase());
   if (existe) { toast('Ya existe un contrato con ese nombre','error'); return; }
+  if (!validarPctAlGuardar(null)) return;
 
   // Collect personas from form
   const propItems = document.querySelectorAll('[data-rol="propietario"]');
@@ -6327,9 +6393,11 @@ function imprimirRecibo(data) {
   const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const fechaMes = data.mes ? (() => { const [y,m,d]=data.mes.split('-'); return `${meses[parseInt(m)-1]} ${y}`; })() : '';
   const fechaPago = data.fechaPago ? (() => { const [y,m,d]=data.fechaPago.split('-'); return `${d}/${m}/${y}`; })() : '';
+  const previewBanner = data.esPreview ? `<div style="background:#fff3cd;border:2px dashed #ffc107;border-radius:6px;padding:8px 14px;margin-bottom:10px;text-align:center;font-weight:700;font-size:0.85rem;color:#856404;letter-spacing:0.05em">⚠ VISTA PREVIA — No es un recibo oficial</div>` : '';
 
   const recibo = `
     <div style="font-family:'DM Sans',Arial,sans-serif;width:100%;padding:0;border:1.5px solid #1a1a2e;border-radius:4px">
+      ${previewBanner}
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;border-bottom:1.5px solid #1a1a2e;padding:10px 14px 8px">
         <div>
           <div style="font-size:1.1rem;font-weight:700;color:#1a1a2e">MeGa Consultora</div>
@@ -8468,6 +8536,30 @@ function validarPctSuministros() {
   const suministros = leerSuministros();
   const contratoId = parseInt(document.getElementById('modal-overlay')?.dataset?.contratoId) || null;
 
+  // Check for duplicate nro_cuenta+tipo within same contract
+  const nroTipoCount = {};
+  for (const s of suministros) {
+    if (!s.nro_cuenta || !s.tipo) continue;
+    const key = s.nro_cuenta.trim() + '|' + s.tipo;
+    nroTipoCount[key] = (nroTipoCount[key] || 0) + 1;
+  }
+  const duplicados = Object.entries(nroTipoCount).filter(([k,v]) => v > 1).map(([k]) => k.split('|'));
+
+  // Get or create warn element (single instance)
+  let warnEl = document.getElementById('suministros-pct-warn');
+  if (!warnEl) {
+    warnEl = document.createElement('div');
+    warnEl.id = 'suministros-pct-warn';
+    warnEl.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:6px 10px;font-size:0.8rem;color:#856404;margin-bottom:0.5rem';
+    document.getElementById('lista-suministros')?.after(warnEl);
+  }
+
+  if (duplicados.length) {
+    warnEl.style.display = 'block';
+    warnEl.textContent = '⚠ N° de cuenta duplicado en el mismo contrato: ' + duplicados.map(([nro,tipo]) => `${nro} (${tipo.toUpperCase()})`).join(', ') + ' — usá distintos N° de cuenta para suministros del mismo tipo.';
+    return;
+  }
+
   // Group by nro_cuenta+tipo to validate shared services
   const grupos = {};
   for (const s of suministros) {
@@ -8500,18 +8592,11 @@ function validarPctSuministros() {
     }
   }
 
-  let warn = document.getElementById('suministros-pct-warn');
-  if (!warn) {
-    warn = document.createElement('div');
-    warn.id = 'suministros-pct-warn';
-    warn.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:6px 10px;font-size:0.8rem;color:#856404;margin-bottom:0.5rem';
-    document.getElementById('lista-suministros')?.after(warn);
-  }
   if (problemas.length) {
-    warn.style.display = 'block';
-    warn.textContent = '⚠ Los % no suman 100% en: ' + problemas.join(', ') + ' — Recordá: cada % es sobre el total de la boleta.';
+    warnEl.style.display = 'block';
+    warnEl.textContent = '⚠ Los % no suman 100% en: ' + problemas.join(', ') + ' — Recordá: cada % es sobre el total de la boleta.';
   } else {
-    warn.style.display = 'none';
+    warnEl.style.display = 'none';
   }
 }
 
