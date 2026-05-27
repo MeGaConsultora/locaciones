@@ -1578,6 +1578,15 @@ async function recargarGrilla(c) {
         if (!extrasActuales[e.pago_id]) extrasActuales[e.pago_id] = [];
         extrasActuales[e.pago_id].push(e);
       });
+      // Load pagos_suministros
+      window._pagosSuministros = {};
+      try {
+        const ps = await sbGet('pagos_suministros', `pago_id=in.(${ids})&select=pago_id,suministro_id,importe`);
+        ps.forEach(r => {
+          if (!window._pagosSuministros[r.pago_id]) window._pagosSuministros[r.pago_id] = {};
+          window._pagosSuministros[r.pago_id][r.suministro_id] = r.importe;
+        });
+      } catch(e) {}
       // Load pagos_pdf for PDF buttons
       window._pagosPdf = {};
       try {
@@ -1681,6 +1690,18 @@ function renderGrilla(c) {
 
   const rows = pagosOrdenados.map(p => {
     const extras = extrasActuales[p.id] || [];
+    const ps = window._pagosSuministros?.[p.id] || {};
+    // Calculate per-type totals from pagos_suministros (with fallback to pagos.monto_xxx)
+    const getMonto = (tipo) => {
+      const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id && s.tipo === tipo);
+      if (sums.length > 0) {
+        const total = sums.reduce((t, s) => t + (ps[s.id] !== undefined ? (ps[s.id]||0) : 0), 0);
+        // If no pagos_suministros data, fallback to pagos.monto_xxx
+        if (total === 0 && sums.every(s => ps[s.id] === undefined)) return p['monto_'+tipo] || 0;
+        return total;
+      }
+      return p['monto_'+tipo] || 0;
+    };
     const extrasGral = extras.filter(e => {
       if (!e.suministro_id || e.a_cargo_de === 'propietario') return false;
       const sum = DB_SUMINISTROS.find(s => s.id === parseInt(e.suministro_id));
@@ -1706,12 +1727,12 @@ function renderGrilla(c) {
       <td class="grid-mes"><strong>${formatDate(p.mes)}</strong></td>
       <td style="font-size:0.78rem;color:#888;white-space:nowrap">${(() => { const f = calcularFechaVencimiento(p.mes?.substring(0,7)||'', c); return formatDate(f, true); })()}</td>
       <td class="num">${p.importe_alquiler>0?formatMoney(p.importe_alquiler):'—'}</td>
-      ${serviciosInquilino.epe?`<td class="num">${p.monto_epe>0?formatMoney(p.monto_epe):'—'}</td>`:''}
-      ${serviciosInquilino.agua?`<td class="num">${p.monto_agua>0?formatMoney(p.monto_agua):'—'}</td>`:''}
-      ${serviciosInquilino.tgiu?`<td class="num">${p.monto_tgiu>0?formatMoney(p.monto_tgiu):'—'}</td>`:''}
-      ${serviciosInquilino.seguro?`<td class="num">${p.monto_seguro>0?formatMoney(p.monto_seguro):'—'}</td>`:''}
-      ${serviciosInquilino.internet?`<td class="num">${p.monto_internet>0?formatMoney(p.monto_internet):'—'}</td>`:''}
-      ${serviciosInquilino.expensas?`<td class="num">${p.monto_expensas>0?formatMoney(p.monto_expensas):'—'}</td>`:''}
+      ${serviciosInquilino.epe?`<td class="num">${getMonto('epe')>0?formatMoney(getMonto('epe')):'—'}</td>`:''}
+      ${serviciosInquilino.agua?`<td class="num">${getMonto('agua')>0?formatMoney(getMonto('agua')):'—'}</td>`:''}
+      ${serviciosInquilino.tgiu?`<td class="num">${getMonto('tgiu')>0?formatMoney(getMonto('tgiu')):'—'}</td>`:''}
+      ${serviciosInquilino.seguro?`<td class="num">${getMonto('seguro')>0?formatMoney(getMonto('seguro')):'—'}</td>`:''}
+      ${serviciosInquilino.internet?`<td class="num">${getMonto('internet')>0?formatMoney(getMonto('internet')):'—'}</td>`:''}
+      ${serviciosInquilino.expensas?`<td class="num">${getMonto('expensas')>0?formatMoney(getMonto('expensas')):'—'}</td>`:''}
 
       <td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasGralLabel}">${totalExtrasGral > 0 ? formatMoney(totalExtrasGral) : '—'}</td>
       <td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasMesLabel}">${totalExtrasMes > 0 ? formatMoney(totalExtrasMes) : '—'}</td>
@@ -2578,7 +2599,25 @@ async function cargarListaServicios(filtro='') {
     pagosMes = await sbGet('pagos', `mes=eq.${mes}&select=id,hoja,monto_epe,monto_agua,monto_tgiu,monto_seguro,monto_internet,monto_expensas&limit=500`);
   } catch(e) {}
   const pagosPorHoja = {};
-  pagosMes.forEach(p => pagosPorHoja[p.hoja] = p);
+  const pagosPorId = {};
+  pagosMes.forEach(p => { pagosPorHoja[p.hoja] = p; pagosPorId[p.id] = p; });
+
+  // Load pagos_suministros for this month
+  const pagoIds = pagosMes.map(p=>p.id);
+  let pagosSuministros = [];
+  try {
+    if (pagoIds.length) {
+      pagosSuministros = await sbGet('pagos_suministros', `pago_id=in.(${pagoIds.join(',')})&select=pago_id,suministro_id,importe`);
+    }
+  } catch(e) {}
+  // Map: suministroId -> importe (and pagoId -> {suministroId -> importe})
+  const psSumMap = {}; // suministroId -> importe
+  const psPagoMap = {}; // pagoId -> {suministroId -> importe}
+  pagosSuministros.forEach(ps => {
+    psSumMap[ps.suministro_id] = ps.importe;
+    if (!psPagoMap[ps.pago_id]) psPagoMap[ps.pago_id] = {};
+    psPagoMap[ps.pago_id][ps.suministro_id] = ps.importe;
+  });
 
   // Get contracts with each service using contrato_suministros
   const serviciosMap = { epe: 'EPE', agua: 'Agua', tgiu: 'TGIU', seguro: 'Seguro', internet: 'Internet', expensas: 'Expensas' };
@@ -2670,8 +2709,9 @@ async function cargarListaServicios(filtro='') {
     const getPagoImporte = (c, sumId) => {
       const p = pagosPorHoja[c.hoja];
       if (!p) return 0;
-      // All suministros of same type share pagos.monto_srv
-      // A group is "cargado" if pagos.monto_srv > 0
+      // Check pagos_suministros first (new model)
+      if (sumId && psSumMap[sumId] !== undefined) return psSumMap[sumId] || 0;
+      // Fallback to pagos.monto_xxx (old model / historical)
       return p[campo] || 0;
     };
 
@@ -3069,11 +3109,37 @@ async function guardarServicioItem(inputId) {
           : (c ? DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : null);
         const pct = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
         const montoInq = Math.round(importe * pct / 100 * 100) / 100;
-        const newTotal = (pago.importe_alquiler||0) + montoInq +
+
+        // Save to pagos_suministros if we have a sumId
+        if (sumId) {
+          const existing = await sbGet('pagos_suministros', `pago_id=eq.${pago.id}&suministro_id=eq.${sumId}&limit=1`);
+          if (existing.length) {
+            await sbPatch('pagos_suministros', existing[0].id, { importe: montoInq });
+          } else {
+            await sbPost('pagos_suministros', { pago_id: pago.id, suministro_id: sumId, importe: montoInq });
+          }
+        }
+
+        // Calculate new total from all suministros of this type for this pago
+        // Sum all suministros of this type for this contract
+        const allSumsOfType = c ? DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : [];
+        let totalTipo = 0;
+        for (const s of allSumsOfType) {
+          if (s.id === sumId) {
+            totalTipo += montoInq;
+          } else {
+            // Check pagos_suministros for other suministros of same type
+            const otherPs = await sbGet('pagos_suministros', `pago_id=eq.${pago.id}&suministro_id=eq.${s.id}&limit=1`);
+            totalTipo += otherPs.length ? (otherPs[0].importe||0) : (pago[campo]||0);
+          }
+        }
+        if (!allSumsOfType.length) totalTipo = montoInq;
+
+        const newTotal = (pago.importe_alquiler||0) + totalTipo +
           ['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0);
         const yaAbonado = (pago.total||0) - (pago.saldo||0);
         await sbPatch('pagos', pago.id, {
-          ['monto_'+srv]: montoInq,
+          ['monto_'+srv]: totalTipo,
           total: newTotal,
           saldo: Math.max(0, newTotal - yaAbonado)
         });
