@@ -2580,6 +2580,18 @@ async function cargarListaServicios(filtro='') {
   const pagosPorHoja = {};
   pagosMes.forEach(p => pagosPorHoja[p.hoja] = p);
 
+  // Fetch pagos_extras for this month (for secondary suministros)
+  const pagoIds = pagosMes.map(p=>p.id);
+  let extrasMes = [];
+  try {
+    if (pagoIds.length) {
+      extrasMes = await sbGet('pagos_extras', `pago_id=in.(${pagoIds.join(',')})&suministro_id=not.is.null&select=pago_id,suministro_id,importe`);
+    }
+  } catch(e) {}
+  // Map: suministroId -> importe
+  const extrasPorSuministro = {};
+  extrasMes.forEach(e => { if (e.suministro_id) extrasPorSuministro[e.suministro_id] = e.importe; });
+
   // Get contracts with each service using contrato_suministros
   const serviciosMap = { epe: 'EPE', agua: 'Agua', tgiu: 'TGIU', seguro: 'Seguro', internet: 'Internet', expensas: 'Expensas' };
   
@@ -2670,14 +2682,10 @@ async function cargarListaServicios(filtro='') {
     const getPagoImporte = (c, sumId) => {
       const p = pagosPorHoja[c.hoja];
       if (!p) return 0;
-      // Check pagos_extras for additional suministros
-      const sumRow = DB_SUMINISTROS.find(x=>x.id===sumId);
-      const nro = sumRow?.nro_cuenta || '';
-      // First suministro of type uses pagos.monto_xxx, additional ones use pagos_extras
       const allSumsOfType = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv);
-      if (sumId && allSumsOfType[0]?.id !== sumId) {
-        // Secondary suministro - check pagos_extras
-        return 0; // will be loaded later
+      if (sumId && allSumsOfType.length > 0 && allSumsOfType[0].id !== sumId) {
+        // Secondary suministro — check pagos_extras
+        return extrasPorSuministro[sumId] || 0;
       }
       return p[campo] || 0;
     };
@@ -2764,12 +2772,17 @@ async function cargarListaServicios(filtro='') {
       // Calculate total boleta
       let totalBoleta = 0;
       for (const {c, sumId} of g.items) {
-        const p = pagosPorHoja[c.hoja];
-        const monto = p?.[campo] || 0;
-        const pct = getPctInq(c, sumId);
-        if (monto > 0 && pct > 0) {
-          totalBoleta = Math.round(monto * 100 / pct * 100) / 100;
-          break;
+        const allSumsOfType = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv);
+        const isSecondary = sumId && allSumsOfType.length > 0 && allSumsOfType[0].id !== sumId;
+        if (isSecondary) {
+          const montoExtra = extrasPorSuministro[sumId] || 0;
+          const pct = getPctInq(c, sumId);
+          if (montoExtra > 0 && pct > 0) { totalBoleta = Math.round(montoExtra * 100 / pct * 100) / 100; break; }
+        } else {
+          const p = pagosPorHoja[c.hoja];
+          const monto = p?.[campo] || 0;
+          const pct = getPctInq(c, sumId);
+          if (monto > 0 && pct > 0) { totalBoleta = Math.round(monto * 100 / pct * 100) / 100; break; }
         }
       }
       const detalle = g.items.map(({c,sumId}) => `<span onclick="abrirContratoDesdeServicios(${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline">${c.titulo||c.hoja}</span> (${getPctInq(c,sumId)}%)`).join(', ');
