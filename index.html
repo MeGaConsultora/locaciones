@@ -1681,17 +1681,6 @@ function renderGrilla(c) {
 
   const rows = pagosOrdenados.map(p => {
     const extras = extrasActuales[p.id] || [];
-    // Secondary suministros (same type, different nro) - add to respective service column
-    const srvTypes = ['epe','agua','tgiu','seguro','internet','expensas'];
-    const extrasPorTipo = {};
-    srvTypes.forEach(t => extrasPorTipo[t] = 0);
-    extras.forEach(e => {
-      if (!e.suministro_id || e.a_cargo_de === 'propietario') return;
-      const sum = DB_SUMINISTROS.find(s => s.id === parseInt(e.suministro_id));
-      if (sum && srvTypes.includes(sum.tipo)) {
-        extrasPorTipo[sum.tipo] += parseFloat(e.importe)||0;
-      }
-    });
     const extrasGral = extras.filter(e => {
       if (!e.suministro_id || e.a_cargo_de === 'propietario') return false;
       const sum = DB_SUMINISTROS.find(s => s.id === parseInt(e.suministro_id));
@@ -1717,12 +1706,12 @@ function renderGrilla(c) {
       <td class="grid-mes"><strong>${formatDate(p.mes)}</strong></td>
       <td style="font-size:0.78rem;color:#888;white-space:nowrap">${(() => { const f = calcularFechaVencimiento(p.mes?.substring(0,7)||'', c); return formatDate(f, true); })()}</td>
       <td class="num">${p.importe_alquiler>0?formatMoney(p.importe_alquiler):'—'}</td>
-      ${serviciosInquilino.epe?`<td class="num">${(p.monto_epe||0)+(extrasPorTipo.epe||0)>0?formatMoney((p.monto_epe||0)+(extrasPorTipo.epe||0)):'—'}</td>`:''}
-      ${serviciosInquilino.agua?`<td class="num">${(p.monto_agua||0)+(extrasPorTipo.agua||0)>0?formatMoney((p.monto_agua||0)+(extrasPorTipo.agua||0)):'—'}</td>`:''}
-      ${serviciosInquilino.tgiu?`<td class="num">${(p.monto_tgiu||0)+(extrasPorTipo.tgiu||0)>0?formatMoney((p.monto_tgiu||0)+(extrasPorTipo.tgiu||0)):'—'}</td>`:''}
-      ${serviciosInquilino.seguro?`<td class="num">${(p.monto_seguro||0)+(extrasPorTipo.seguro||0)>0?formatMoney((p.monto_seguro||0)+(extrasPorTipo.seguro||0)):'—'}</td>`:''}
-      ${serviciosInquilino.internet?`<td class="num">${(p.monto_internet||0)+(extrasPorTipo.internet||0)>0?formatMoney((p.monto_internet||0)+(extrasPorTipo.internet||0)):'—'}</td>`:''}
-      ${serviciosInquilino.expensas?`<td class="num">${(p.monto_expensas||0)+(extrasPorTipo.expensas||0)>0?formatMoney((p.monto_expensas||0)+(extrasPorTipo.expensas||0)):'—'}</td>`:''}
+      ${serviciosInquilino.epe?`<td class="num">${p.monto_epe>0?formatMoney(p.monto_epe):'—'}</td>`:''}
+      ${serviciosInquilino.agua?`<td class="num">${p.monto_agua>0?formatMoney(p.monto_agua):'—'}</td>`:''}
+      ${serviciosInquilino.tgiu?`<td class="num">${p.monto_tgiu>0?formatMoney(p.monto_tgiu):'—'}</td>`:''}
+      ${serviciosInquilino.seguro?`<td class="num">${p.monto_seguro>0?formatMoney(p.monto_seguro):'—'}</td>`:''}
+      ${serviciosInquilino.internet?`<td class="num">${p.monto_internet>0?formatMoney(p.monto_internet):'—'}</td>`:''}
+      ${serviciosInquilino.expensas?`<td class="num">${p.monto_expensas>0?formatMoney(p.monto_expensas):'—'}</td>`:''}
 
       <td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasGralLabel}">${totalExtrasGral > 0 ? formatMoney(totalExtrasGral) : '—'}</td>
       <td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasMesLabel}">${totalExtrasMes > 0 ? formatMoney(totalExtrasMes) : '—'}</td>
@@ -2591,18 +2580,6 @@ async function cargarListaServicios(filtro='') {
   const pagosPorHoja = {};
   pagosMes.forEach(p => pagosPorHoja[p.hoja] = p);
 
-  // Fetch pagos_extras for this month (for secondary suministros)
-  const pagoIds = pagosMes.map(p=>p.id);
-  let extrasMes = [];
-  try {
-    if (pagoIds.length) {
-      extrasMes = await sbGet('pagos_extras', `pago_id=in.(${pagoIds.join(',')})&suministro_id=not.is.null&select=pago_id,suministro_id,importe`);
-    }
-  } catch(e) {}
-  // Map: suministroId -> importe
-  const extrasPorSuministro = {};
-  extrasMes.forEach(e => { if (e.suministro_id) extrasPorSuministro[e.suministro_id] = e.importe; });
-
   // Get contracts with each service using contrato_suministros
   const serviciosMap = { epe: 'EPE', agua: 'Agua', tgiu: 'TGIU', seguro: 'Seguro', internet: 'Internet', expensas: 'Expensas' };
   
@@ -2693,11 +2670,8 @@ async function cargarListaServicios(filtro='') {
     const getPagoImporte = (c, sumId) => {
       const p = pagosPorHoja[c.hoja];
       if (!p) return 0;
-      const allSumsOfType = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv);
-      if (sumId && allSumsOfType.length > 0 && allSumsOfType[0].id !== sumId) {
-        // Secondary suministro — check pagos_extras
-        return extrasPorSuministro[sumId] || 0;
-      }
+      // All suministros of same type share pagos.monto_srv
+      // A group is "cargado" if pagos.monto_srv > 0
       return p[campo] || 0;
     };
 
@@ -3103,45 +3077,14 @@ async function guardarServicioItem(inputId) {
           : (c ? DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : null);
         const pct = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
         const montoInq = Math.round(importe * pct / 100 * 100) / 100;
-        // If sumId matches the FIRST suministro of this type → pagos.monto_srv
-        // Otherwise → pagos_extras
-        const firstSum = c ? DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : null;
-        const useExtras = sumId && firstSum && firstSum.id !== sumId;
-        if (!useExtras) {
-          const newTotal = (pago.importe_alquiler||0) + montoInq +
-            ['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0);
-          const yaAbonado = (pago.total||0) - (pago.saldo||0);
-          await sbPatch('pagos', pago.id, {
-            ['monto_'+srv]: montoInq,
-            total: newTotal,
-            saldo: Math.max(0, newTotal - yaAbonado)
-          });
-        } else {
-          const srvLabels = {epe:'EPE', agua:'Agua', tgiu:'TGIU', seguro:'Seguro', internet:'Internet', expensas:'Expensas'};
-          const concepto = (srvLabels[srv]||srv.toUpperCase()) + (sum?.nro_cuenta ? ' Cta.'+sum.nro_cuenta : '');
-          try {
-            const existing = await sbGet('pagos_extras', `pago_id=eq.${pago.id}&suministro_id=eq.${sumId}&limit=1`);
-            const oldImporte = existing.length ? (parseFloat(existing[0].importe)||0) : 0;
-            if (existing.length) {
-              await sbPatch('pagos_extras', existing[0].id, { importe: montoInq, concepto });
-            } else {
-              await sbPost('pagos_extras', { pago_id: pago.id, suministro_id: sumId, importe: montoInq, concepto, a_cargo_de: 'inquilino' });
-            }
-            // Update pagos.total and saldo to include this extra
-            const diff = montoInq - oldImporte;
-            if (diff !== 0) {
-              const yaAbonado = (pago.total||0) - (pago.saldo||0);
-              await sbPatch('pagos', pago.id, {
-                total: (pago.total||0) + diff,
-                saldo: Math.max(0, (pago.saldo||0) + diff)
-              });
-            }
-          } catch(extraErr) {
-            toast('Error guardando extra: ' + extraErr.message, 'error');
-            console.error('pagos_extras error:', extraErr);
-            return false;
-          }
-        }
+        const newTotal = (pago.importe_alquiler||0) + montoInq +
+          ['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0);
+        const yaAbonado = (pago.total||0) - (pago.saldo||0);
+        await sbPatch('pagos', pago.id, {
+          ['monto_'+srv]: montoInq,
+          total: newTotal,
+          saldo: Math.max(0, newTotal - yaAbonado)
+        });
       } catch(e) { toast('Error: ' + e.message, 'error'); return false; }
     }
     return true;
@@ -8349,6 +8292,8 @@ function _renderSuministroRow(s) {
 
 function validarPctSuministros() {
   const suministros = leerSuministros();
+  const contratoId = parseInt(document.getElementById('modal-overlay')?.dataset?.contratoId) || null;
+
   // Group by nro_cuenta+tipo to validate shared services
   const grupos = {};
   for (const s of suministros) {
@@ -8356,11 +8301,31 @@ function validarPctSuministros() {
     if (!grupos[key]) grupos[key] = { label: s.nombre || s.nro_cuenta || s.tipo, filas: [] };
     grupos[key].filas.push(s);
   }
+
   const problemas = [];
   for (const [k, g] of Object.entries(grupos)) {
-    const suma = g.filas.reduce((s, f) => s + (parseFloat(f.pct_inquilino)||0) + (parseFloat(f.pct_propietario)||0), 0);
-    if (Math.abs(suma - 100) > 0.5) problemas.push(`${g.label}: ${Math.round(suma)}%`);
+    // Sum % from this contract's rows
+    let suma = g.filas.reduce((s, f) => s + (parseFloat(f.pct_inquilino)||0) + (parseFloat(f.pct_propietario)||0), 0);
+
+    // Add % from OTHER contracts that share the same nro_cuenta+tipo
+    const [nroCuenta, tipo] = k.split('|');
+    if (nroCuenta && tipo) {
+      DB_SUMINISTROS.forEach(s => {
+        if (contratoId && parseInt(s.contrato_id) === contratoId) return; // skip current contract
+        if (s.nro_cuenta === nroCuenta && s.tipo === tipo) {
+          const c = DB.contratos.find(x => x.id === parseInt(s.contrato_id));
+          if (c && getEstado(c) === 'vigente') {
+            suma += (s.pct_inquilino||0) + (s.pct_propietario||0);
+          }
+        }
+      });
+    }
+
+    if (Math.abs(suma - 100) > 0.5) {
+      problemas.push(`${g.label}: ${Math.round(suma)}% (incluye otros contratos)`);
+    }
   }
+
   let warn = document.getElementById('suministros-pct-warn');
   if (!warn) {
     warn = document.createElement('div');
