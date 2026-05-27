@@ -2730,12 +2730,19 @@ async function cargarListaServicios(filtro='') {
       const p = pagosPorHoja[c.hoja];
       if (!p) return 0;
       if (sumId) {
-        // If sumId exists in psSumMap, use it (even if 0)
-        if (psSumMap[sumId] !== undefined) return psSumMap[sumId] || 0;
+        if (psSumMap[sumId] !== undefined) {
+          // For propietario-only (pct_inquilino=0), use importe_propietario to determine if cargado
+          const sum = DB_SUMINISTROS.find(s => s.id === sumId);
+          if (sum && (sum.pct_inquilino||0) === 0 && (sum.pct_propietario||0) > 0) {
+            // Check pagos_suministros for importe_propietario
+            const psEntry = pagosSuministros.find(ps => ps.suministro_id === sumId);
+            return psEntry ? (psEntry.importe_propietario || 0) : 0;
+          }
+          return psSumMap[sumId] || 0;
+        }
         // Check if contract has multiple suministros of this type
         const allSumsOfType = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv);
-        if (allSumsOfType.length > 1) return 0; // multiple suministros - don't use fallback
-        // Single suministro - use pagos.monto_xxx as fallback
+        if (allSumsOfType.length > 1) return 0;
         return p[campo] || 0;
       }
       return p[campo] || 0;
