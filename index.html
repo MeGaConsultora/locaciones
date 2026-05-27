@@ -3649,6 +3649,18 @@ function mostrarSolapa(id, btn) {
 function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
 
+  const ps = window._pagosSuministros?.[p?.id] || {};
+  const getSrvMonto = (tipo) => {
+    const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === tipo);
+    if (sums.length > 0) {
+      const total = sums.reduce((t, s) => t + (ps[s.id] !== undefined ? (ps[s.id]||0) : 0), 0);
+      if (total > 0 || sums.some(s => ps[s.id] !== undefined)) return total;
+    }
+    return p['monto_'+tipo] || 0;
+  };
+  const epe = getSrvMonto('epe'), agua = getSrvMonto('agua'), tgiu = getSrvMonto('tgiu');
+  const seguro = getSrvMonto('seguro'), internet = getSrvMonto('internet'), expensas = getSrvMonto('expensas');
+
   // Use per-item pagado if available, or reconstruct from total for legacy paid records
   let tieneItemsPagados = ['alquiler','epe','agua','tgiu','seguro','internet','expensas']
     .some(k => p[`pagado_${k}`] > 0);
@@ -3657,17 +3669,12 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
   if (!tieneItemsPagados && (p.pagado === 'SI' || p.saldo === 0)) {
     const totalPagado = (p.total||0) - (p.saldo||0);
     if (totalPagado > 0) {
-      // Fill pagado_ fields in memory from montos (don't write to DB)
       const orden = ['alquiler','epe','agua','tgiu','expensas','seguro','internet'];
       let restante = totalPagado;
       for (const k of orden) {
         if (restante <= 0) break;
-        const monto = k === 'alquiler' ? (p.importe_alquiler||0) : (p[`monto_${k}`]||0);
-        if (monto > 0) {
-          const pagar = Math.min(restante, monto);
-          p[`pagado_${k}`] = pagar;
-          restante -= pagar;
-        }
+        const monto = k === 'alquiler' ? (p.importe_alquiler||0) : getSrvMonto(k);
+        if (monto > 0) { const pagar = Math.min(restante, monto); p[`pagado_${k}`] = pagar; restante -= pagar; }
       }
       tieneItemsPagados = true;
     }
@@ -3675,38 +3682,36 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
   
   let items;
   if (tieneItemsPagados) {
-    // Use per-item saldos
     items = [
       { id:'alquiler', label:'Alquiler', val: Math.max(0,(p.importe_alquiler||0)-(parseFloat(p.pagado_alquiler)||0)) },
-      { id:'epe',      label:'EPE',      val: Math.max(0,(p.monto_epe||0)-(parseFloat(p.pagado_epe)||0)) },
-      { id:'agua',     label:'Agua',     val: Math.max(0,(p.monto_agua||0)-(parseFloat(p.pagado_agua)||0)) },
-      { id:'tgiu',     label:'TGIU',     val: Math.max(0,(p.monto_tgiu||0)-(parseFloat(p.pagado_tgiu)||0)) },
-      { id:'seguro',   label:'Seguro',   val: Math.max(0,(p.monto_seguro||0)-(parseFloat(p.pagado_seguro)||0)) },
-      { id:'internet', label:'Internet', val: Math.max(0,(p.monto_internet||0)-(parseFloat(p.pagado_internet)||0)) },
-      { id:'expensas', label:'Expensas', val: Math.max(0,(p.monto_expensas||0)-(parseFloat(p.pagado_expensas)||0)) },
+      { id:'epe',      label:'EPE',      val: Math.max(0,epe-(parseFloat(p.pagado_epe)||0)) },
+      { id:'agua',     label:'Agua',     val: Math.max(0,agua-(parseFloat(p.pagado_agua)||0)) },
+      { id:'tgiu',     label:'TGIU',     val: Math.max(0,tgiu-(parseFloat(p.pagado_tgiu)||0)) },
+      { id:'seguro',   label:'Seguro',   val: Math.max(0,seguro-(parseFloat(p.pagado_seguro)||0)) },
+      { id:'internet', label:'Internet', val: Math.max(0,internet-(parseFloat(p.pagado_internet)||0)) },
+      { id:'expensas', label:'Expensas', val: Math.max(0,expensas-(parseFloat(p.pagado_expensas)||0)) },
     ].filter(i => i.val > 0);
   } else {
-    // Fall back to showing all items with full amounts (saldo will cap the total)
     items = [
       { id:'alquiler', label:'Alquiler', val: p.importe_alquiler||0 },
-      { id:'epe',      label:'EPE',      val: p.monto_epe||0 },
-      { id:'agua',     label:'Agua',     val: p.monto_agua||0 },
-      { id:'tgiu',     label:'TGIU',     val: p.monto_tgiu||0 },
-      { id:'seguro',   label:'Seguro',   val: p.monto_seguro||0 },
-      { id:'internet', label:'Internet', val: p.monto_internet||0 },
-      { id:'expensas', label:'Expensas', val: p.monto_expensas||0 },
+      { id:'epe',      label:'EPE',      val: epe },
+      { id:'agua',     label:'Agua',     val: agua },
+      { id:'tgiu',     label:'TGIU',     val: tgiu },
+      { id:'seguro',   label:'Seguro',   val: seguro },
+      { id:'internet', label:'Internet', val: internet },
+      { id:'expensas', label:'Expensas', val: expensas },
     ].filter(i => i.val > 0);
   }
 
   // Build paid items (for revert buttons)
   const allItemDefs = [
     { id:'alquiler', label:'Alquiler', monto: p.importe_alquiler||0, pagado: parseFloat(p.pagado_alquiler)||0 },
-    { id:'epe',      label:'EPE',      monto: p.monto_epe||0,       pagado: parseFloat(p.pagado_epe)||0 },
-    { id:'agua',     label:'Agua',     monto: p.monto_agua||0,      pagado: parseFloat(p.pagado_agua)||0 },
-    { id:'tgiu',     label:'TGIU',     monto: p.monto_tgiu||0,      pagado: parseFloat(p.pagado_tgiu)||0 },
-    { id:'seguro',   label:'Seguro',   monto: p.monto_seguro||0,    pagado: parseFloat(p.pagado_seguro)||0 },
-    { id:'internet', label:'Internet', monto: p.monto_internet||0,  pagado: parseFloat(p.pagado_internet)||0 },
-    { id:'expensas', label:'Expensas', monto: p.monto_expensas||0,  pagado: parseFloat(p.pagado_expensas)||0 },
+    { id:'epe',      label:'EPE',      monto: epe,      pagado: parseFloat(p.pagado_epe)||0 },
+    { id:'agua',     label:'Agua',     monto: agua,     pagado: parseFloat(p.pagado_agua)||0 },
+    { id:'tgiu',     label:'TGIU',     monto: tgiu,     pagado: parseFloat(p.pagado_tgiu)||0 },
+    { id:'seguro',   label:'Seguro',   monto: seguro,   pagado: parseFloat(p.pagado_seguro)||0 },
+    { id:'internet', label:'Internet', monto: internet, pagado: parseFloat(p.pagado_internet)||0 },
+    { id:'expensas', label:'Expensas', monto: expensas, pagado: parseFloat(p.pagado_expensas)||0 },
   ];
   const paidItems = tieneItemsPagados ? allItemDefs.filter(i => i.monto > 0 && i.pagado > 0) : [];
   const honorariosCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
@@ -3881,13 +3886,22 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
     ${(() => {
       const servRinde = (c?.servicios_rendir_propietario||'').toLowerCase();
       const hayMultiplesProp = propsCp.length > 1;
+      const ps = window._pagosSuministros?.[p?.id] || {};
+      const getSrvMonto = (tipo) => {
+        const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === tipo);
+        if (sums.length > 0) {
+          const total = sums.reduce((t, s) => t + (ps[s.id] !== undefined ? (ps[s.id]||0) : 0), 0);
+          if (total > 0 || sums.some(s => ps[s.id] !== undefined)) return total;
+        }
+        return p['monto_'+tipo] || 0;
+      };
       const srvList = [
-        {key:'epe', label:'EPE', monto: p.monto_epe||0},
-        {key:'agua', label:'Agua', monto: p.monto_agua||0},
-        {key:'tgiu', label:'TGIU', monto: p.monto_tgiu||0},
-        {key:'seguro', label:'Seguro', monto: p.monto_seguro||0},
-        {key:'internet', label:'Internet', monto: p.monto_internet||0},
-        {key:'expensas', label:'Expensas', monto: p.monto_expensas||0},
+        {key:'epe', label:'EPE', monto: getSrvMonto('epe')},
+        {key:'agua', label:'Agua', monto: getSrvMonto('agua')},
+        {key:'tgiu', label:'TGIU', monto: getSrvMonto('tgiu')},
+        {key:'seguro', label:'Seguro', monto: getSrvMonto('seguro')},
+        {key:'internet', label:'Internet', monto: getSrvMonto('internet')},
+        {key:'expensas', label:'Expensas', monto: getSrvMonto('expensas')},
       ];
       let html = '';
       for (const srv of srvList) {
@@ -3923,9 +3937,19 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
           if (nro) {
             const otrosContratos = DB.contratos.filter(x => x.id !== c?.id && (DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(x.id) && s.tipo === srv.key)?.nro_cuenta || x['nro_'+srv.key]) === nro && getEstado(x) === 'vigente');
             for (const oc of otrosContratos) {
-              // Find pago for this other contract in the same month
               const ocPago = DB.pagos.find(pg => pg.hoja === oc.hoja && pg.mes && pg.mes.startsWith(mesKey));
-              if (ocPago) totalRendidoInq += ocPago['monto_'+srv.key] || 0;
+              if (ocPago) {
+                const ocPs = window._pagosSuministros?.[ocPago.id] || {};
+                const ocSums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === oc.id && s.tipo === srv.key);
+                let ocMonto = 0;
+                if (ocSums.length > 0) {
+                  ocMonto = ocSums.reduce((t, s) => t + (ocPs[s.id] !== undefined ? (ocPs[s.id]||0) : 0), 0);
+                  if (ocMonto === 0 && ocSums.every(s => ocPs[s.id] === undefined)) ocMonto = ocPago['monto_'+srv.key] || 0;
+                } else {
+                  ocMonto = ocPago['monto_'+srv.key] || 0;
+                }
+                totalRendidoInq += ocMonto;
+              }
             }
           }
           html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
