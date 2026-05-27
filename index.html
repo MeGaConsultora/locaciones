@@ -3061,7 +3061,6 @@ async function guardarServicioItem(inputId) {
   // Extract sumId from inputId (format: srv-epe-g-CONTRATOID-sX or srv-epe-g-CONTRATOID-sX_Y)
   const sumMatch = inputId.match(/-s(\d+)/);
   const sumId = sumMatch ? parseInt(sumMatch[1]) : null;
-  console.log('guardarServicioItem:', inputId, 'sumId:', sumId, 'srv:', srv, 'hojas:', hojas, 'importe:', importe);
 
   // Check EPE cuota2 checkbox
   const c0 = DB.contratos.find(x => x.hoja === hojas[0]);
@@ -3084,7 +3083,6 @@ async function guardarServicioItem(inputId) {
         // Otherwise → pagos_extras
         const firstSum = c ? DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : null;
         const useExtras = sumId && firstSum && firstSum.id !== sumId;
-        console.log('pago:', pago.id, 'firstSum:', firstSum?.id, 'sumId:', sumId, 'useExtras:', useExtras);
         if (!useExtras) {
           const newTotal = (pago.importe_alquiler||0) + montoInq +
             ['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0);
@@ -3096,11 +3094,17 @@ async function guardarServicioItem(inputId) {
           });
         } else {
           const concepto = sum?.nombre || sum?.nro_cuenta || srv.toUpperCase();
-          const existing = await sbGet('pagos_extras', `pago_id=eq.${pago.id}&suministro_id=eq.${sumId}&limit=1`);
-          if (existing.length) {
-            await sbPatch('pagos_extras', existing[0].id, { importe: montoInq, concepto });
-          } else {
-            await sbPost('pagos_extras', { pago_id: pago.id, suministro_id: sumId, importe: montoInq, concepto, a_cargo_de: 'inquilino' });
+          try {
+            const existing = await sbGet('pagos_extras', `pago_id=eq.${pago.id}&suministro_id=eq.${sumId}&limit=1`);
+            if (existing.length) {
+              await sbPatch('pagos_extras', existing[0].id, { importe: montoInq, concepto });
+            } else {
+              await sbPost('pagos_extras', { pago_id: pago.id, suministro_id: sumId, importe: montoInq, concepto, a_cargo_de: 'inquilino' });
+            }
+          } catch(extraErr) {
+            toast('Error guardando extra: ' + extraErr.message, 'error');
+            console.error('pagos_extras error:', extraErr);
+            return false;
           }
         }
       } catch(e) { toast('Error: ' + e.message, 'error'); return false; }
