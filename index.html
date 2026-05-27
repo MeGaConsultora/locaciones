@@ -3059,8 +3059,9 @@ async function guardarServicioItem(inputId) {
   const hojas = (input.dataset.hojas || input.dataset.hoja || '').split('|').filter(Boolean);
 
   // Extract sumId from inputId (format: srv-epe-g-CONTRATOID-sX or srv-epe-g-CONTRATOID-sX_Y)
-  const sumMatch = inputId.match(/-s(\d+)(_|$)/);
+  const sumMatch = inputId.match(/-s(\d+)/);
   const sumId = sumMatch ? parseInt(sumMatch[1]) : null;
+  console.log('guardarServicioItem:', inputId, 'sumId:', sumId, 'srv:', srv, 'hojas:', hojas, 'importe:', importe);
 
   // Check EPE cuota2 checkbox
   const c0 = DB.contratos.find(x => x.hoja === hojas[0]);
@@ -3075,15 +3076,15 @@ async function guardarServicioItem(inputId) {
         if (!pagos.length) continue;
         const pago = pagos[0];
         const c = DB.contratos.find(x => x.hoja === hoja);
-        const sum = sumId
-          ? DB_SUMINISTROS.find(s => s.id === sumId)
+        const sum = sumId ? DB_SUMINISTROS.find(s => s.id === sumId)
           : (c ? DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : null);
         const pct = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
         const montoInq = Math.round(importe * pct / 100 * 100) / 100;
-        // Is this the first suministro of this type for this contract?
-        const allSumsOfType = c ? DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : [];
-        const isFirst = !sumId || !allSumsOfType.length || allSumsOfType[0].id === sumId;
-        if (isFirst) {
+        // If sumId matches the FIRST suministro of this type → pagos.monto_srv
+        // Otherwise → pagos_extras
+        const firstSum = c ? DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : null;
+        const useExtras = sumId && firstSum && firstSum.id !== sumId;
+        if (!useExtras) {
           const newTotal = (pago.importe_alquiler||0) + montoInq +
             ['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0);
           const yaAbonado = (pago.total||0) - (pago.saldo||0);
