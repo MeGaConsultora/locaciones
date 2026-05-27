@@ -3084,6 +3084,7 @@ async function guardarServicioItem(inputId) {
         // Otherwise → pagos_extras
         const firstSum = c ? DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === c.id && s.tipo === srv) : null;
         const useExtras = sumId && firstSum && firstSum.id !== sumId;
+        console.log('pago:', pago.id, 'firstSum:', firstSum?.id, 'sumId:', sumId, 'useExtras:', useExtras);
         if (!useExtras) {
           const newTotal = (pago.importe_alquiler||0) + montoInq +
             ['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0);
