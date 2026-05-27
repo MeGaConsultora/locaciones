@@ -2933,8 +2933,9 @@ async function cargarExtrasGral(mes, filtro) {
   };
 
   panel.innerHTML = `
-    <div style="margin-bottom:0.75rem;font-size:0.82rem;color:#888">
-      ${totalSin + totalYa} ítem/s · <strong>${totalSin}</strong> sin cargar · ${totalYa} ya cargados
+    <div style="margin-bottom:0.75rem;font-size:0.82rem;color:#888;display:flex;align-items:center;gap:1rem">
+      <span>${totalSin + totalYa} ítem/s · <strong>${totalSin}</strong> sin cargar · ${totalYa} ya cargados</span>
+      ${yaCargados.length ? `<button id="btn-toggle-ya-extras" onclick="const d=document.getElementById('ya-extras-wrap');const b=this;d.style.display=d.style.display==='none'?'block':'none';b.textContent=d.style.display==='none'?'▶ Ver/Modificar ya cargados (${yaCargados.length})':'▼ Ocultar ya cargados'" style="background:none;border:none;color:var(--accent);font-size:0.78rem;cursor:pointer;text-decoration:underline">▶ Ver/Modificar ya cargados (${yaCargados.length})</button>` : ''}
     </div>
     ${sinCargar.length ? `
       <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1rem">
@@ -2956,12 +2957,7 @@ async function cargarExtrasGral(mes, filtro) {
           </div>`).join('')}
       </div>` : ''}
     ${yaCargados.length ? `
-      <div style="margin-top:0.5rem">
-        <button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.textContent=this.textContent.includes('Ver')?'▼ Ocultar ya cargados':'▶ Ver/Modificar ya cargados (${yaCargados.length})'"
-          style="background:none;border:none;color:var(--accent);font-size:0.78rem;cursor:pointer;text-decoration:underline;margin-bottom:0.5rem">
-          ▶ Ver/Modificar ya cargados (${yaCargados.length})
-        </button>
-        <div style="display:none">
+      <div id="ya-extras-wrap" style="display:none;margin-top:0.5rem">
         ${yaCargados.map(({c, g, totalCargado, pctOk}) => `
           <div style="background:#f0fff4;border:1.5px solid var(--green);border-radius:8px;padding:0.6rem 1rem;display:flex;align-items:center;gap:0.75rem;margin-bottom:0.4rem;flex-wrap:wrap">
             <div style="flex:1;font-size:0.85rem">
@@ -2971,13 +2967,13 @@ async function cargarExtrasGral(mes, filtro) {
             </div>
             <input type="text" id="eg-input-${g.conceptoKey}-${c.id}"
               data-grupo-key="${g.conceptoKey}" data-contrato-id="${c.id}" data-ya-cargado="1"
-              value="${totalCargado}"
+              value="${totalCargado}" placeholder="$ importe total"
               style="width:140px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem;text-align:right"
+              oninput="this.style.borderColor=this.value?'var(--green)':'#f0c040'"
               onkeydown="if(event.key==='Enter') guardarExtraGralItem('eg-input-${g.conceptoKey}-${c.id}')">
             <button onclick="guardarExtraGralItem('eg-input-${g.conceptoKey}-${c.id}')"
               style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem">✓</button>
           </div>`).join('')}
-        </div>
       </div>` : ''}
   `;
 }
