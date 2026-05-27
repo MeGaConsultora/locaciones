@@ -2957,7 +2957,11 @@ async function cargarExtrasGral(mes, filtro) {
       </div>` : ''}
     ${yaCargados.length ? `
       <div style="margin-top:0.5rem">
-        <div style="font-size:0.78rem;color:#888;margin-bottom:0.5rem;font-weight:600">YA CARGADOS</div>
+        <button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.textContent=this.textContent.includes('Ver')?'▼ Ocultar ya cargados':'▶ Ver/Modificar ya cargados (${yaCargados.length})'"
+          style="background:none;border:none;color:var(--accent);font-size:0.78rem;cursor:pointer;text-decoration:underline;margin-bottom:0.5rem">
+          ▶ Ver/Modificar ya cargados (${yaCargados.length})
+        </button>
+        <div style="display:none">
         ${yaCargados.map(({c, g, totalCargado, pctOk}) => `
           <div style="background:#f0fff4;border:1.5px solid var(--green);border-radius:8px;padding:0.6rem 1rem;display:flex;align-items:center;gap:0.75rem;margin-bottom:0.4rem;flex-wrap:wrap">
             <div style="flex:1;font-size:0.85rem">
@@ -2973,6 +2977,7 @@ async function cargarExtrasGral(mes, filtro) {
             <button onclick="guardarExtraGralItem('eg-input-${g.conceptoKey}-${c.id}')"
               style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem">✓</button>
           </div>`).join('')}
+        </div>
       </div>` : ''}
   `;
 }
@@ -2981,7 +2986,8 @@ async function guardarExtraGralItem(inputId) {
   const input = document.getElementById(inputId);
   if (!input) return;
   const importeTotal = parseMonto(input.value);
-  if (!importeTotal) { toast('Ingresá un importe total', 'error'); return; }
+  const yaGuardado = input.dataset.yaCargado === '1';
+  if (!importeTotal && !yaGuardado) { toast('Ingresá un importe total', 'error'); return; }
   const mesKey = document.getElementById('srv-mes')?.value;
   if (!mesKey) return;
   const mes01 = mesKey.length === 7 ? mesKey + '-01' : mesKey;
@@ -3016,8 +3022,12 @@ async function guardarExtraGralItem(inputId) {
       const yaExiste = extrasExistentes.find(e => parseInt(e.suministro_id) === parseInt(s.id));
 
       if (yaExiste) {
-        await sbPatch('pagos_extras', yaExiste.id, { importe, concepto, a_cargo_de: aCargoDe, propietario_persona_id: propPerId });
-      } else {
+        if (!importeTotal) {
+          await sbDelete('pagos_extras', yaExiste.id);
+        } else {
+          await sbPatch('pagos_extras', yaExiste.id, { importe, concepto, a_cargo_de: aCargoDe, propietario_persona_id: propPerId });
+        }
+      } else if (importeTotal) {
         await sbPost('pagos_extras', {
           pago_id: pagoId, concepto, importe,
           suministro_id: s.id, a_cargo_de: aCargoDe,
@@ -3038,7 +3048,9 @@ async function guardarExtraGralItem(inputId) {
       return `${pct}% = $${imp.toLocaleString('es-AR',{minimumFractionDigits:2})}`;
     }).join(' · ');
     toast(`Guardado ✓ — ${breakdown}`);
-    await cargarExtrasGral(mesKey, '');
+    const mesActual = document.getElementById('srv-mes')?.value;
+    const filtroActual = document.getElementById('srv-buscar')?.value || '';
+    if (mesActual) await cargarExtrasGral(mesActual, filtroActual);
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
@@ -3157,13 +3169,11 @@ async function guardarServicioItem(inputId) {
   if (ok1 && mesNext) await _guardarEnMes(mesNext);
 
   if (ok1) {
-    input.style.borderColor = 'var(--green)';
-    input.dataset.dirty = '0';
-    input.dataset.original = String(parseMonto(input.value));
-    // Update the "total boleta" label next to input if exists
-    const label = input.parentElement?.querySelector('div[style*="green"]');
-    if (label) label.textContent = '✓ ' + formatMoney(parseMonto(input.value)).replace(/<[^>]+>/g,'');
     toast(`${srv.toUpperCase()} guardado ✓${mesNext ? ' (2 cuotas)' : ''}`);
+    const filtro2 = document.getElementById('srv-buscar')?.value || '';
+    await cargarListaServicios(filtro2);
+    const activeBtn = document.querySelector(`.solapa-btn[onclick*="'srv-${srv}'"]`);
+    if (activeBtn) mostrarSolapa(`srv-${srv}`, activeBtn);
   }
 }
 
