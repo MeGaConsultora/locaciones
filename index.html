@@ -7884,8 +7884,9 @@ function mostrarResultadosPDF(resultados, mes, srv) {
         </tr></thead>
         <tbody>
           ${resultados.map((r, i) => {
-            const pct = r.contrato ? (r.contrato[`pct_${srv}`] ?? 100) : 100;
-            const aCargar = r.importe ? Math.round(r.importe * pct / 100) : 0;
+            const sums = r.contrato ? DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === r.contrato.id && s.tipo === srv && (s.pct_inquilino||0) > 0) : [];
+            const pct = sums.length > 0 ? sums.reduce((t,s) => t + (s.pct_inquilino||0), 0) : (r.contrato ? (r.contrato[`pct_${srv}`] ?? 100) : 100);
+            const aCargar = r.importe ? Math.round(r.importe * pct / 100 * 100) / 100 : 0;
             const rowColor = !r.cuenta ? '#f5f5f5' : !r.contrato ? '#fff8f8' : '';
             return `<tr style="border-bottom:1px solid #eee;background:${rowColor}">
               <td style="padding:6px 8px;text-align:center">
@@ -7955,28 +7956,48 @@ async function confirmarImportarPDF() {
   
   for (const r of seleccionados) {
     try {
-          const hoja = r.contrato.hoja;
+      const hoja = r.contrato.hoja;
       const hojaEncoded = encodeURIComponent(hoja);
       const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesStr}&limit=1`);
-          if (!pagos.length) { continue; }
+      if (!pagos.length) continue;
       const p = pagos[0];
+      const contratoId = r.contrato.id;
+
+      // Find all suministros of this type for this contract
+      const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === srv && ((s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0));
       
-      const fresh = await sbGet('contratos', `hoja=eq.${hojaEncoded}&select=pct_${srv}&limit=1`);
-      const pct = fresh[0]?.[`pct_${srv}`] ?? 100;
-          const monto = Math.round(r.importe * pct / 100);
-      
+      let totalMonto = 0;
+      if (sums.length > 0) {
+        // Save to pagos_suministros with correct pct per suministro
+        for (const s of sums) {
+          const montoInq = Math.round(r.importe * (s.pct_inquilino||0) / 100 * 100) / 100;
+          const montoProp = Math.round(r.importe * (s.pct_propietario||0) / 100 * 100) / 100;
+          totalMonto += montoInq;
+          const existing = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&suministro_id=eq.${s.id}&limit=1`);
+          if (existing.length) {
+            await sbPatch('pagos_suministros', existing[0].id, { importe: montoInq, importe_propietario: montoProp });
+          } else {
+            await sbPost('pagos_suministros', { pago_id: p.id, suministro_id: s.id, importe: montoInq, importe_propietario: montoProp });
+          }
+        }
+      } else {
+        // Fallback: use old pct field
+        const pctInq = r.contrato[`pct_${srv}`] ?? 100;
+        totalMonto = Math.round(r.importe * pctInq / 100 * 100) / 100;
+      }
+
       const alq = p.importe_alquiler || 0;
       const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
-      const newTotal = alq + servicios.reduce((s, sv) => sv === srv ? s + monto : s + (p['monto_'+sv] || 0), 0);
+      const newTotal = alq + servicios.reduce((s, sv) => sv === srv ? s + totalMonto : s + (p['monto_'+sv] || 0), 0);
       const patch = { total: newTotal, saldo: Math.max(0, newTotal - ((p.total||0) - (p.saldo||0))) };
-      patch['monto_'+srv] = monto;
+      patch['monto_'+srv] = totalMonto;
       
-          await sbPatch('pagos', p.id, patch);
-    
+      await sbPatch('pagos', p.id, patch);
+
       if (window._pdfFileName) {
         await sbDeleteWhere('pagos_pdf', `pago_id=eq.${p.id}&servicio=eq.${srv}`);
-              await sbPost('pagos_pdf', { pago_id: p.id, servicio: srv, pdf_path: window._pdfFileName, pdf_pagina: r.pagina });
-            }
+        await sbPost('pagos_pdf', { pago_id: p.id, servicio: srv, pdf_path: window._pdfFileName, pdf_pagina: r.pagina });
+      }
       cargados++;
     } catch(e) { console.error('Error en boleta:', r.contrato?.titulo, e.message); }
   }
