@@ -2786,10 +2786,17 @@ async function cargarListaServicios(filtro='') {
         grupos[key].items.push({c, sumId});
       });
       return Object.values(grupos).map(g => {
-        const todosConNro = g.nro
-          ? contratosConSuministros.filter(x => x.nro === g.nro)
-          : g.items;
-        const totalPct = todosConNro.reduce((s,{c,sumId}) => s + getPctInq(c,sumId) + getPctProp(c,sumId), 0);
+        // Calculate pctOk using ALL vigente contracts sharing this nro
+        let totalPct;
+        if (g.nro) {
+          const allSumsForNro = DB_SUMINISTROS.filter(s => s.nro_cuenta === g.nro && s.tipo === srv && (s.pct_inquilino||0) > 0);
+          totalPct = allSumsForNro.reduce((t, s) => {
+            const cc = DB.contratos.find(x => x.id === parseInt(s.contrato_id));
+            return (cc && getEstado(cc) === 'vigente') ? t + (s.pct_inquilino||0) : t;
+          }, 0);
+        } else {
+          totalPct = g.items.reduce((s,{c,sumId}) => s + getPctInq(c,sumId) + getPctProp(c,sumId), 0);
+        }
         const pctOk = Math.abs(totalPct - 100) < 1;
         const firstItem = g.items[0];
         const pctInqVal = firstItem ? getPctInq(firstItem.c, firstItem.sumId) : 100;
