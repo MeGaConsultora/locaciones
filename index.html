@@ -8777,18 +8777,31 @@ function leerSuministros() {
 async function guardarSuministros(contratoId) {
   const nuevos = leerSuministros();
 
-  // Validate pct sums per nro_cuenta group
-  const grupos = {};
-  for (const s of nuevos) {
-    const key = (s.nro_cuenta || s.nombre || s.tipo) + '_' + (s.tipo||'');
-    if (!grupos[key]) grupos[key] = { label: s.nombre || s.nro_cuenta || s.tipo, filas: [] };
-    grupos[key].filas.push(s);
-  }
+  // Validate pct sums per nro_cuenta — check across all vigente contracts
   const problemas = [];
-  for (const [k, g] of Object.entries(grupos)) {
-    const suma = g.filas.reduce((s, f) => s + (f.pct_inquilino||0) + (f.pct_propietario||0), 0);
-    if (Math.abs(suma - 100) > 0.5) {
-      problemas.push(`${g.label}: suma ${Math.round(suma)}% (debe ser 100%)`);
+  const nrosChecked = new Set();
+  for (const s of nuevos) {
+    if ((s.pct_inquilino||0) === 0) continue; // skip propietario-only
+    const nro = s.nro_cuenta;
+    if (!nro || nrosChecked.has(nro+'|'+s.tipo)) continue;
+    nrosChecked.add(nro+'|'+s.tipo);
+    const allSums = DB_SUMINISTROS.filter(x => x.nro_cuenta === nro && x.tipo === s.tipo && ((x.pct_inquilino||0) > 0 || (x.pct_propietario||0) > 0));
+    let totalPct = (s.pct_inquilino||0) + (s.pct_propietario||0);
+    allSums.forEach(x => {
+      if (parseInt(x.contrato_id) === parseInt(contratoId)) return; // skip current
+      const cc = DB.contratos.find(c => c.id === parseInt(x.contrato_id));
+      if (cc && getEstado(cc) === 'vigente') totalPct += (x.pct_inquilino||0) + (x.pct_propietario||0);
+    });
+    if (Math.abs(totalPct - 100) > 0.5) {
+      problemas.push(`${nro}: suma ${Math.round(totalPct)}% (debe ser 100%)`);
+    }
+  }
+  // Also check suministros without nro
+  for (const s of nuevos) {
+    if (s.nro_cuenta) continue;
+    const total = (s.pct_inquilino||0) + (s.pct_propietario||0);
+    if (Math.abs(total - 100) > 0.5) {
+      problemas.push(`${s.nombre||s.tipo}: suma ${Math.round(total)}% (debe ser 100%)`);
     }
   }
   if (problemas.length) {
