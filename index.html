@@ -3381,7 +3381,7 @@ function validarPctAlGuardar(contratoId) {
     const thisContratoPct = (parseFloat(s.pct_inquilino)||0) + (parseFloat(s.pct_propietario)||0);
     let totalPct = thisContratoPct;
     allSums.forEach(x => {
-      if (contratoId && parseInt(x.contrato_id) === contratoId) return; // skip current (using form value)
+      if (contratoId && parseInt(x.contrato_id) === parseInt(contratoId)) return; // skip current (using form value)
       const cc = DB.contratos.find(c => c.id === parseInt(x.contrato_id));
       if (cc && getEstado(cc) === 'vigente') totalPct += (x.pct_inquilino||0) + (x.pct_propietario||0);
     });
