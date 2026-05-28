@@ -8466,8 +8466,19 @@ function renderNumeracionServicios() {
   };
 
   let contratos = DB.contratos.filter(c => getEstado(c) === 'vigente' || getEstado(c) === 'indefinido');
-  if (filtro === 'sin-nro') contratos = contratos.filter(c => !getNroContrato(c));
-  else if (filtro === 'con-nro') contratos = contratos.filter(c => !!getNroContrato(c));
+  // Only show contracts that have at least one suministro of this type (or old nro field set)
+  if (filtro === 'sin-nro') {
+    contratos = contratos.filter(c => {
+      const tieneSum = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv);
+      const tieneNroViejo = !!c['nro_'+srv];
+      // Show if has suministro with no nro, OR has old nro field without suministros
+      if (tieneSum) return !getNroContrato(c);
+      if (tieneNroViejo) return false; // has old nro, doesn't need updating
+      return false; // no service of this type configured
+    });
+  } else if (filtro === 'con-nro') {
+    contratos = contratos.filter(c => !!getNroContrato(c));
+  }
   if (buscar) contratos = contratos.filter(c =>
     (c.titulo||'').toLowerCase().includes(buscar) ||
     (c.locatario||'').toLowerCase().includes(buscar) ||
