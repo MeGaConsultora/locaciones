@@ -2713,11 +2713,11 @@ async function cargarListaServicios(filtro='') {
       const pctInq = getPctInq(c, sumId);
       if (pctInq === 0) return; // skip propietario-only
       // Sum pct_inquilino from ALL vigente contracts sharing this nro
-      const allSumsForNro = DB_SUMINISTROS.filter(s => s.nro_cuenta === nro && s.tipo === srv && (s.pct_inquilino||0) > 0);
+      const allSumsForNro = DB_SUMINISTROS.filter(s => s.nro_cuenta === nro && s.tipo === srv && ((s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0));
       const totalPct = allSumsForNro.reduce((t, s) => {
         const cc = DB.contratos.find(x => x.id === parseInt(s.contrato_id));
         if (!cc || getEstado(cc) !== 'vigente') return t;
-        return t + (s.pct_inquilino||0);
+        return t + (s.pct_inquilino||0) + (s.pct_propietario||0);
       }, 0);
       if (Math.abs(totalPct - 100) > 0.5) {
         const nombres = allSumsForNro.map(s => {
@@ -2793,10 +2793,10 @@ async function cargarListaServicios(filtro='') {
           // 100% propietario suministros don't need pct validation
           totalPct = 100;
         } else if (g.nro) {
-          const allSumsForNro = DB_SUMINISTROS.filter(s => s.nro_cuenta === g.nro && s.tipo === srv && (s.pct_inquilino||0) > 0);
+          const allSumsForNro = DB_SUMINISTROS.filter(s => s.nro_cuenta === g.nro && s.tipo === srv && ((s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0));
           totalPct = allSumsForNro.reduce((t, s) => {
             const cc = DB.contratos.find(x => x.id === parseInt(s.contrato_id));
-            return (cc && getEstado(cc) === 'vigente') ? t + (s.pct_inquilino||0) : t;
+            return (cc && getEstado(cc) === 'vigente') ? t + (s.pct_inquilino||0) + (s.pct_propietario||0) : t;
           }, 0);
         } else {
           totalPct = g.items.reduce((s,{c,sumId}) => s + getPctInq(c,sumId) + getPctProp(c,sumId), 0);
