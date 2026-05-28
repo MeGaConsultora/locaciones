@@ -8038,9 +8038,13 @@ async function confirmarImportarPDF() {
         patch['monto_'+srv] = totalSrv;
         await sbPatch('pagos', p.id, patch);
 
-        if (window._pdfFileName && contrato.id === r.contrato.id) {
-          await sbDeleteWhere('pagos_pdf', `pago_id=eq.${p.id}&servicio=eq.${srv}`);
-          await sbPost('pagos_pdf', { pago_id: p.id, servicio: srv, pdf_path: window._pdfFileName, pdf_pagina: r.pagina });
+        if (window._pdfFileName) {
+          // Only save PDF link for the contract that has inquilino portion
+          const hasInqPortion = sums.some(s => (s.pct_inquilino||0) > 0);
+          if (hasInqPortion) {
+            await sbDeleteWhere('pagos_pdf', `pago_id=eq.${p.id}&servicio=eq.${srv}`);
+            await sbPost('pagos_pdf', { pago_id: p.id, servicio: srv, pdf_path: window._pdfFileName, pdf_pagina: r.pagina });
+          }
         }
       }
       cargados++;
