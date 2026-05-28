@@ -2703,17 +2703,29 @@ async function cargarListaServicios(filtro='') {
       }
     });
 
-    // Check pct sum per nro across all contracts
-    // Only sum pct_inquilino (propietario-only suministros don't count toward the 100% check)
+    // Check pct sum per nro across all contracts — use DB_SUMINISTROS directly
     const pctWarnings = [];
-    const nrosVistos = {};
+    const nrosEnLista = new Set(contratosConSuministros.filter(x => x.nro).map(x => x.nro));
+    const nrosValidados = new Set();
     contratosConSuministros.forEach(({c, sumId, nro}) => {
-      if (!nro) return;
+      if (!nro || nrosValidados.has(nro)) return;
+      nrosValidados.add(nro);
       const pctInq = getPctInq(c, sumId);
-      if (pctInq === 0) return; // skip propietario-only suministros
-      if (!nrosVistos[nro]) nrosVistos[nro] = { items: [], totalPct: 0 };
-      nrosVistos[nro].items.push({c, sumId});
-      nrosVistos[nro].totalPct += pctInq;
+      if (pctInq === 0) return; // skip propietario-only
+      // Sum pct_inquilino from ALL vigente contracts sharing this nro
+      const allSumsForNro = DB_SUMINISTROS.filter(s => s.nro_cuenta === nro && s.tipo === srv && (s.pct_inquilino||0) > 0);
+      const totalPct = allSumsForNro.reduce((t, s) => {
+        const cc = DB.contratos.find(x => x.id === parseInt(s.contrato_id));
+        if (!cc || getEstado(cc) !== 'vigente') return t;
+        return t + (s.pct_inquilino||0);
+      }, 0);
+      if (Math.abs(totalPct - 100) > 0.5) {
+        const nombres = allSumsForNro.map(s => {
+          const cc = DB.contratos.find(x => x.id === parseInt(s.contrato_id));
+          return cc?.titulo || cc?.hoja || '';
+        }).filter(Boolean).join(', ');
+        pctWarnings.push({ msg: `Nro ${nro} (${nombres}): suman ${Math.round(totalPct)}% (debería ser 100%)`, ids: allSumsForNro.map(s => parseInt(s.contrato_id)) });
+      }
     });
     // Also check per-contract for suministros without nro
     contratosConSuministros.filter(x => !x.nro).forEach(({c, sumId}) => {
@@ -2722,11 +2734,6 @@ async function cargarListaServicios(filtro='') {
       const total = pctInq + pctProp;
       if (Math.abs(total - 100) > 0.5) {
         pctWarnings.push({ msg: `${c.titulo||c.hoja}: suma ${total}% (debería ser 100%)`, ids: [c.id] });
-      }
-    });
-    Object.entries(nrosVistos).forEach(([nro, data]) => {
-      if (Math.abs(data.totalPct - 100) > 0.5) {
-        pctWarnings.push({ msg: `Nro ${nro} (${data.items.map(x=>x.c.titulo||x.c.hoja).join(', ')}): suman ${Math.round(data.totalPct)}% (debería ser 100%)`, ids: data.items.map(x=>x.c.id) });
       }
     });
 
