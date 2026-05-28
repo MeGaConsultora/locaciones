@@ -7992,10 +7992,16 @@ async function confirmarImportarPDF() {
         }
 
         const alq = p.importe_alquiler || 0;
+        // Recalculate from all pagos_suministros for this pago
+        const allPsForPago = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&select=suministro_id,importe`);
+        const totalSrv = allPsForPago.reduce((t, ps) => {
+          const cs = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
+          return cs?.tipo === srv ? t + (ps.importe||0) : t;
+        }, 0);
         const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
-        const newTotal = alq + servicios.reduce((sv2, sv) => sv === srv ? sv2 + totalMonto : sv2 + (p['monto_'+sv] || 0), 0);
+        const newTotal = alq + servicios.reduce((sv2, sv) => sv === srv ? sv2 + totalSrv : sv2 + (p['monto_'+sv] || 0), 0);
         const patch = { total: newTotal, saldo: Math.max(0, newTotal - ((p.total||0) - (p.saldo||0))) };
-        patch['monto_'+srv] = totalMonto;
+        patch['monto_'+srv] = totalSrv;
         await sbPatch('pagos', p.id, patch);
 
         if (window._pdfFileName && contrato.id === r.contrato.id) {
