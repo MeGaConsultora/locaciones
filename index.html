@@ -2788,7 +2788,11 @@ async function cargarListaServicios(filtro='') {
       return Object.values(grupos).map(g => {
         // Calculate pctOk using ALL vigente contracts sharing this nro
         let totalPct;
-        if (g.nro) {
+        const isPropOnly = g.items.every(({c,sumId}) => getPctInq(c,sumId) === 0);
+        if (isPropOnly) {
+          // 100% propietario suministros don't need pct validation
+          totalPct = 100;
+        } else if (g.nro) {
           const allSumsForNro = DB_SUMINISTROS.filter(s => s.nro_cuenta === g.nro && s.tipo === srv && (s.pct_inquilino||0) > 0);
           totalPct = allSumsForNro.reduce((t, s) => {
             const cc = DB.contratos.find(x => x.id === parseInt(s.contrato_id));
