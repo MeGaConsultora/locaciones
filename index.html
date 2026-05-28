@@ -7956,19 +7956,29 @@ async function confirmarImportarPDF() {
   
   for (const r of seleccionados) {
     try {
-      const hoja = r.contrato.hoja;
-      const hojaEncoded = encodeURIComponent(hoja);
-      const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesStr}&limit=1`);
-      if (!pagos.length) continue;
-      const p = pagos[0];
-      const contratoId = r.contrato.id;
+      const srv = window._pdfSrv;
+      // Find ALL suministros sharing this nro_cuenta (distributed account)
+      const allSumsForNro = r.cuenta
+        ? DB_SUMINISTROS.filter(s => s.nro_cuenta === String(r.cuenta) && s.tipo === srv && ((s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0))
+        : DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === r.contrato.id && s.tipo === srv && ((s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0));
 
-      // Find all suministros of this type for this contract
-      const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === srv && ((s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0));
-      
-      let totalMonto = 0;
-      if (sums.length > 0) {
-        // Save to pagos_suministros with correct pct per suministro
+      // Group by contract
+      const contratosSums = {};
+      allSumsForNro.forEach(s => {
+        if (!contratosSums[s.contrato_id]) contratosSums[s.contrato_id] = [];
+        contratosSums[s.contrato_id].push(s);
+      });
+
+      for (const [contratoId, sums] of Object.entries(contratosSums)) {
+        const contrato = DB.contratos.find(c => c.id === parseInt(contratoId));
+        if (!contrato || getEstado(contrato) !== 'vigente') continue;
+        const hoja = contrato.hoja;
+        const hojaEncoded = encodeURIComponent(hoja);
+        const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesStr}&limit=1`);
+        if (!pagos.length) continue;
+        const p = pagos[0];
+
+        let totalMonto = 0;
         for (const s of sums) {
           const montoInq = Math.round(r.importe * (s.pct_inquilino||0) / 100 * 100) / 100;
           const montoProp = Math.round(r.importe * (s.pct_propietario||0) / 100 * 100) / 100;
@@ -7980,23 +7990,18 @@ async function confirmarImportarPDF() {
             await sbPost('pagos_suministros', { pago_id: p.id, suministro_id: s.id, importe: montoInq, importe_propietario: montoProp });
           }
         }
-      } else {
-        // Fallback: use old pct field
-        const pctInq = r.contrato[`pct_${srv}`] ?? 100;
-        totalMonto = Math.round(r.importe * pctInq / 100 * 100) / 100;
-      }
 
-      const alq = p.importe_alquiler || 0;
-      const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
-      const newTotal = alq + servicios.reduce((s, sv) => sv === srv ? s + totalMonto : s + (p['monto_'+sv] || 0), 0);
-      const patch = { total: newTotal, saldo: Math.max(0, newTotal - ((p.total||0) - (p.saldo||0))) };
-      patch['monto_'+srv] = totalMonto;
-      
-      await sbPatch('pagos', p.id, patch);
+        const alq = p.importe_alquiler || 0;
+        const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
+        const newTotal = alq + servicios.reduce((sv2, sv) => sv === srv ? sv2 + totalMonto : sv2 + (p['monto_'+sv] || 0), 0);
+        const patch = { total: newTotal, saldo: Math.max(0, newTotal - ((p.total||0) - (p.saldo||0))) };
+        patch['monto_'+srv] = totalMonto;
+        await sbPatch('pagos', p.id, patch);
 
-      if (window._pdfFileName) {
-        await sbDeleteWhere('pagos_pdf', `pago_id=eq.${p.id}&servicio=eq.${srv}`);
-        await sbPost('pagos_pdf', { pago_id: p.id, servicio: srv, pdf_path: window._pdfFileName, pdf_pagina: r.pagina });
+        if (window._pdfFileName && contrato.id === r.contrato.id) {
+          await sbDeleteWhere('pagos_pdf', `pago_id=eq.${p.id}&servicio=eq.${srv}`);
+          await sbPost('pagos_pdf', { pago_id: p.id, servicio: srv, pdf_path: window._pdfFileName, pdf_pagina: r.pagina });
+        }
       }
       cargados++;
     } catch(e) { console.error('Error en boleta:', r.contrato?.titulo, e.message); }
