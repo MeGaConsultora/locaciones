@@ -1499,9 +1499,8 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
   document.getElementById('modal-title').textContent = c.titulo||c.hoja;
   document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · Cargando...`;
   document.getElementById('modal-body').innerHTML = `
-    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px">
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
       <button class="btn btn-secondary" style="font-size:0.78rem;white-space:nowrap" onclick="openEditContrato(${c.id})">✏️ Editar</button>
-      <button class="btn btn-secondary" style="font-size:0.78rem;white-space:nowrap" onclick="imprimirHistorial(${c.id})">📋 Historial</button>
       <button class="btn btn-secondary" style="font-size:0.78rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="abrirCrearAcceso(${c.id},'${c.hoja}')">🔑 Acceso inquilino</button>
       ${c.periodicidad_actualizacion && c.periodicidad_actualizacion !== 'Sin actualización' ? `<button class="btn btn-secondary" style="font-size:0.78rem;color:#6610f2;border-color:#6610f2;white-space:nowrap" onclick="abrirProyectarContrato(${c.id},'${c.hoja}')">📈 Proyectar alquiler</button>` : ''}
       ${!c.fecha_rescision
@@ -1509,9 +1508,15 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
         : `<span class="badge badge-red" style="font-size:0.78rem;white-space:nowrap;align-self:center">Rescindido ${formatDate(c.fecha_rescision,true)}</span>
            <button class="btn btn-secondary" style="font-size:0.78rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="revertirRescision(${c.id},'${c.hoja}')">↩ Revertir rescisión</button>`
       }
-      <button class="btn btn-secondary" style="font-size:0.78rem;color:#6610f2;border-color:#6610f2;white-space:nowrap" onclick="regenerarMeses(${c.id},'${c.hoja}')">↺ Regenerar meses</button>
-      <button class="btn btn-secondary" style="font-size:0.78rem;color:#0d6efd;border-color:#0d6efd;white-space:nowrap" onclick="duplicarContrato(${c.id})">📋 Duplicar contrato</button>
       <button class="btn btn-secondary" style="font-size:0.78rem;color:#721c24;border-color:#721c24;white-space:nowrap" onclick="eliminarContrato(${c.id})">🗑 Eliminar</button>
+      <div style="position:relative;display:inline-block">
+        <button class="btn btn-secondary" style="font-size:0.78rem;white-space:nowrap" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';event.stopPropagation()">⋯ Más</button>
+        <div style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:white;border:1.5px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:100;min-width:160px;padding:4px 0" onclick="event.stopPropagation()">
+          <button onclick="imprimirHistorial(${c.id});this.closest('[style*=absolute]').style.display='none'" style="display:block;width:100%;text-align:left;padding:7px 14px;background:none;border:none;font-size:0.82rem;cursor:pointer;color:var(--ink)">📋 Historial</button>
+          <button onclick="regenerarMeses(${c.id},'${c.hoja}');this.closest('[style*=absolute]').style.display='none'" style="display:block;width:100%;text-align:left;padding:7px 14px;background:none;border:none;font-size:0.82rem;cursor:pointer;color:#6610f2">↺ Regenerar meses</button>
+          <button onclick="duplicarContrato(${c.id});this.closest('[style*=absolute]').style.display='none'" style="display:block;width:100%;text-align:left;padding:7px 14px;background:none;border:none;font-size:0.82rem;cursor:pointer;color:#0d6efd">📋 Duplicar contrato</button>
+        </div>
+      </div>
     </div>
     <p style="font-size:0.78rem;color:#999;margin-bottom:0.75rem">💡 Clic en un mes para editarlo o registrar cobro</p>
     <div class="detail-grid" style="margin-bottom:1rem">
@@ -5927,6 +5932,10 @@ document.addEventListener('click', e => {
   if (!e.target.closest('#dropdown-informes') && !e.target.closest('#informes-menu')) {
     document.getElementById('informes-menu').style.display = 'none';
   }
+  // Close any open "Más acciones" dropdowns
+  document.querySelectorAll('[style*="position:absolute"][style*="right:0"][style*="top:100%"]').forEach(d => {
+    if (!d.contains(e.target) && d.style.display !== 'none') d.style.display = 'none';
+  });
 });
 
 async function buscarPersona(tipo, q) {
