@@ -8059,6 +8059,8 @@ async function confirmarImportarEPE() {
   if (!seleccionados.length) { toast('Seleccioná al menos un registro', 'error'); return; }
 
   toast('Importando EPE...', 'info');
+  // Reload suministros to ensure fresh data
+  try { window.DB_SUMINISTROS = await sbGet('contrato_suministros', 'select=*&limit=5000'); } catch(e) {}
   let cargados = 0;
 
   for (const d of seleccionados) {
@@ -8267,6 +8269,7 @@ async function confirmarImportarExcel() {
   const mesStr = mesKey + '-01';
   let cargados = 0;
   toast('Importando...', 'info');
+  try { window.DB_SUMINISTROS = await sbGet('contrato_suministros', 'select=*&limit=5000'); } catch(e) {}
 
   for (const r of seleccionados) {
     try {
