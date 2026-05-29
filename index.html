@@ -2642,9 +2642,13 @@ async function cargarListaServicios(filtro='') {
   
   for (const [srv, label] of Object.entries(serviciosMap)) {
     const campo = `monto_${srv}`;
-    // Get ALL vigente contracts that have this service with pct_inquilino > 0
     const todosConServicio = DB.contratos.filter(c => {
-      if (getEstado(c) !== 'vigente') return false;
+      const estado = getEstado(c);
+      if (estado !== 'vigente') {
+        // Allow contracts that expired within the selected month
+        if (!c.vigencia_hasta) return false;
+        if (c.vigencia_hasta.substring(0,7) !== mesKey) return false;
+      }
       // Only show contracts that started on or before the selected month
       if (c.vigencia_desde && c.vigencia_desde.substring(0,7) > mesKey) return false;
       const tieneSum = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv && ((s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0));
