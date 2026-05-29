@@ -7977,11 +7977,10 @@ async function abrirImportarEPE() {
         <button class="btn btn-secondary" style="font-size:0.82rem" onclick="recargarDatosEPE()">🔄 Actualizar</button>
       </div>
       <div id="epe-datos-wrap">
-        ${datos.length ? _renderEPEPreview(datos) : '<div style="text-align:center;color:#aaa;padding:2rem">No hay datos importados para este mes.<br><small>Ejecutá el bookmarklet en la Oficina Virtual EPE primero.</small></div>'}
+        ${datos.length ? _renderEPEPreview(datos) : '<div style="text-align:center;color:#aaa;padding:2rem">No hay datos importados para este mes.<br><small>Ejecutá la extensión en la Oficina Virtual EPE primero.</small></div>'}
       </div>
       <div class="form-actions" style="margin-top:1rem">
         <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
-        ${datos.length ? `<button class="btn btn-green" onclick="confirmarImportarEPE()">✓ Procesar importación</button>` : ''}
       </div>
     </div>
   `;
@@ -8032,6 +8031,10 @@ function _renderEPEPreview(datos) {
           }).join('')}
         </tbody>
       </table>
+    </div>
+    <div class="form-actions" style="margin-top:1rem">
+      <button class="btn btn-secondary" onclick="recargarDatosEPE()">🔄 Actualizar</button>
+      <button class="btn btn-green" onclick="confirmarImportarEPE()">✓ Procesar importación</button>
     </div>`;
 }
 
