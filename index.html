@@ -2620,6 +2620,26 @@ async function cargarListaServicios(filtro='') {
   const pagosPorId = {};
   pagosMes.forEach(p => { pagosPorHoja[p.hoja] = p; pagosPorId[p.id] = p; });
 
+  // Fetch previous month pagos for suggestions (for suministros without nro)
+  const [mesY, mesM] = mesKey.split('-').map(Number);
+  const mesPrevKey = mesM === 1 ? `${mesY-1}-12-01` : `${mesY}-${String(mesM-1).padStart(2,'0')}-01`;
+  let pagosMesPrev = [];
+  try {
+    pagosMesPrev = await sbGet('pagos', `mes=eq.${mesPrevKey}&select=id,hoja,monto_epe,monto_agua,monto_tgiu,monto_seguro,monto_internet,monto_expensas&limit=500`);
+  } catch(e) {}
+  const pagosPrevPorHoja = {};
+  pagosMesPrev.forEach(p => { pagosPrevPorHoja[p.hoja] = p; });
+  // Also load prev month pagos_suministros
+  const prevPagoIds = pagosMesPrev.map(p=>p.id);
+  let prevPsSuministros = [];
+  try {
+    if (prevPagoIds.length) {
+      prevPsSuministros = await sbGet('pagos_suministros', `pago_id=in.(${prevPagoIds.join(',')})&select=pago_id,suministro_id,importe,importe_propietario`);
+    }
+  } catch(e) {}
+  const prevPsSumMap = {}; // suministroId -> importe from prev month
+  prevPsSuministros.forEach(ps => { prevPsSumMap[ps.suministro_id] = ps; });
+
   // Load pagos_suministros for this month
   const pagoIds = pagosMes.map(p=>p.id);
   let pagosSuministros = [];
@@ -2642,9 +2662,13 @@ async function cargarListaServicios(filtro='') {
   
   for (const [srv, label] of Object.entries(serviciosMap)) {
     const campo = `monto_${srv}`;
-    // Get ALL vigente contracts that have this service with pct_inquilino > 0
     const todosConServicio = DB.contratos.filter(c => {
-      if (getEstado(c) !== 'vigente') return false;
+      const estado = getEstado(c);
+      if (estado !== 'vigente') {
+        // Allow contracts that expired within the selected month
+        if (!c.vigencia_hasta) return false;
+        if (c.vigencia_hasta.substring(0,7) !== mesKey) return false;
+      }
       // Only show contracts that started on or before the selected month
       if (c.vigencia_desde && c.vigencia_desde.substring(0,7) > mesKey) return false;
       const tieneSum = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv && ((s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0));
@@ -2810,6 +2834,27 @@ async function cargarListaServicios(filtro='') {
         const ids = g.items.map(({c}) => c.id).join(',');
         const sumIds = g.items.map(({sumId}) => sumId||'').join(',');
         const inputId = `srv-${srv}-g-${ids}-s${sumIds.replace(/,/g,'_')}`;
+        // Suggest previous month value for suministros without nro
+        let sugeridoVal = '';
+        if (!g.nro) {
+          // No nro — try prev month pagos_suministros first, then pagos.monto_xxx
+          for (const {c, sumId} of g.items) {
+            if (sumId && prevPsSumMap[sumId]) {
+              const pctRef = getPctRef(c, sumId);
+              const prevInq = prevPsSumMap[sumId].importe || 0;
+              const prevProp = prevPsSumMap[sumId].importe_propietario || 0;
+              const prevTotal = pctRef > 0 ? Math.round((prevInq || prevProp) * 100 / pctRef * 100) / 100 : 0;
+              if (prevTotal > 0) { sugeridoVal = prevTotal; break; }
+            } else {
+              const prevP = pagosPrevPorHoja[c.hoja];
+              if (prevP && prevP[campo] > 0) {
+                const pct = getPctRef(c, sumId);
+                sugeridoVal = pct > 0 ? Math.round(prevP[campo] * 100 / pct * 100) / 100 : prevP[campo];
+                break;
+              }
+            }
+          }
+        }
         let epeExtra = '';
         if (srv === 'epe' && g.items.length > 0) {
           const c0 = g.items[0].c;
@@ -2829,13 +2874,15 @@ async function cargarListaServicios(filtro='') {
               ${!pctOk ? `<div style="font-size:0.72rem;color:var(--accent);margin-top:2px">⚠ Los % suman ${totalPct}% — deben ser 100%</div>` : ''}
             </div>
             <div style="display:flex;gap:0.4rem;align-items:center">
-              <input type="text" id="${inputId}" data-hojas="${hojas}" data-srv="${srv}" data-sum-ids="${sumIds}" placeholder="$ importe cuota" data-dirty="0"
+              <input type="text" id="${inputId}" data-hojas="${hojas}" data-srv="${srv}" data-sum-ids="${sumIds}" 
+                value="${sugeridoVal}" placeholder="$ importe cuota" data-dirty="0"
                 style="width:140px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem"
                 ${!pctOk ? 'disabled title="Corregí los porcentajes primero"' : ''}
                 oninput="this.dataset.dirty='1'"
                 onkeydown="if(event.key==='Enter') guardarServicioItem('${inputId}')">
               ${pctOk ? `<button onclick="guardarServicioItem('${inputId}')"
                 style="background:var(--green);border:none;color:white;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.82rem;white-space:nowrap">✓</button>` : ''}
+              ${sugeridoVal && !g.nro ? `<span style="font-size:0.68rem;color:#aaa" title="Sugerido del mes anterior">📌</span>` : ''}
             </div>
           </div>
           ${epeExtra}
