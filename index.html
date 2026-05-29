@@ -7935,7 +7935,7 @@ function abrirImportarExcel() {
       <div id="excel-preview" style="display:none"></div>
       <div class="form-actions" style="margin-top:1rem">
         <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
-        <button class="btn btn-primary" onclick="procesarExcelTGIU()">📊 Procesar Excel</button>
+        <button id="btn-procesar-excel" class="btn btn-primary" onclick="procesarExcelTGIU()">📊 Procesar Excel</button>
       </div>
     </div>
   `;
@@ -7993,6 +7993,10 @@ async function procesarExcelTGIU() {
     // Show preview
     const conContrato = resultados.filter(r => !r.sinContrato);
     const sinContrato = resultados.filter(r => r.sinContrato);
+    window._excelImportData = { resultados: conContrato, mesKey, srv };
+
+    // Hide procesar button, show preview buttons
+    document.getElementById('btn-procesar-excel').style.display = 'none';
     const preview = document.getElementById('excel-preview');
     preview.style.display = 'block';
     preview.innerHTML = `
@@ -8023,14 +8027,10 @@ async function procesarExcelTGIU() {
         </table>
       </div>
       <div class="form-actions" style="margin-top:1rem">
-        <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button class="btn btn-green" onclick="confirmarImportarExcel(${JSON.stringify(conContrato).replace(/"/g,'&quot;')}, '${mesKey}', '${srv}')">✓ Confirmar e importar (${conContrato.length} registros)</button>
+        <button class="btn btn-secondary" onclick="abrirImportarExcel()">↩ Volver</button>
+        <button class="btn btn-green" onclick="confirmarImportarExcel()">✓ Confirmar e importar (${conContrato.length} registros)</button>
       </div>
     `;
-    // Store for confirm
-    window._excelImportData = { resultados: conContrato, mesKey, srv };
-    // Replace confirm button with proper handler
-    preview.querySelector('.btn-green').onclick = () => confirmarImportarExcel();
   } catch(e) {
     toast('Error al procesar el Excel: ' + e.message, 'error');
     console.error(e);
