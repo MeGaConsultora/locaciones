@@ -8044,7 +8044,7 @@ async function procesarExcelTGIU() {
       }
     }
 
-    // Show preview
+    // Show preview with checkboxes
     const conContrato = resultados.filter(r => !r.sinContrato);
     const sinContrato = resultados.filter(r => r.sinContrato);
     window._excelImportData = { resultados: conContrato, mesKey, srv };
@@ -8054,25 +8054,38 @@ async function procesarExcelTGIU() {
     const preview = document.getElementById('excel-preview');
     preview.style.display = 'block';
     preview.innerHTML = `
-      <div style="margin-bottom:0.75rem;font-size:0.85rem;color:#666">
-        <strong>${conContrato.length}</strong> registros con contrato · <strong>${sinContrato.length}</strong> sin contrato
+      <div style="margin-bottom:0.75rem;font-size:0.85rem;color:#666;display:flex;align-items:center;gap:1rem">
+        <span><strong>${conContrato.length}</strong> registros con contrato · <strong>${sinContrato.length}</strong> sin contrato</span>
+        <label style="font-size:0.82rem;cursor:pointer;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="excel-chk-all" checked onchange="document.querySelectorAll('.excel-chk-row').forEach(c=>c.checked=this.checked)">
+          Seleccionar todos
+        </label>
       </div>
       <div style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
         <table style="width:100%;border-collapse:collapse;font-size:0.82rem">
           <thead style="background:#f5f0e8;position:sticky;top:0">
-            <tr><th style="padding:6px 8px;text-align:left">N° Padrón</th><th style="padding:6px 8px;text-align:right">Importe</th><th style="padding:6px 8px;text-align:left">Contrato/s</th><th style="padding:6px 8px;text-align:right">A cargar</th></tr>
+            <tr>
+              <th style="padding:6px 8px;width:32px"></th>
+              <th style="padding:6px 8px;text-align:left">N° Padrón</th>
+              <th style="padding:6px 8px;text-align:right">Importe</th>
+              <th style="padding:6px 8px;text-align:left">Contrato/s</th>
+              <th style="padding:6px 8px;text-align:right">A cargar</th>
+            </tr>
           </thead>
           <tbody>
-            ${resultados.map(r => {
+            ${resultados.map((r, i) => {
               const nombreContratos = r.sinContrato ? '<span style="color:var(--accent)">Sin contrato</span>' :
                 r.contratos.map(x => x.c.titulo||x.c.hoja).join(', ');
               const aCargar = r.sinContrato ? '—' : r.contratos.map(x => {
                 const pct = x.s.pct_inquilino||0;
                 return `${x.c.titulo||x.c.hoja}: $${(Math.round(r.importe * pct / 100 * 100)/100).toLocaleString('es-AR')}`;
               }).join(' / ');
-              return `<tr style="border-bottom:1px solid #f0ece4;${r.sinContrato?'background:#fdecea':''}">
+              return `<tr style="border-bottom:1px solid #f0ece4;${r.sinContrato?'background:#fdecea;opacity:0.6':''}">
+                <td style="padding:5px 8px;text-align:center">
+                  ${!r.sinContrato ? `<input type="checkbox" class="excel-chk-row" data-idx="${i}" checked>` : ''}
+                </td>
                 <td style="padding:5px 8px">${r.nro}</td>
-                <td style="padding:5px 8px;text-align:right">$${r.importe.toLocaleString('es-AR')}</td>
+                <td style="padding:5px 8px;text-align:right">$${r.importe.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
                 <td style="padding:5px 8px">${nombreContratos}</td>
                 <td style="padding:5px 8px;text-align:right;font-size:0.78rem;color:#666">${aCargar}</td>
               </tr>`;
@@ -8082,7 +8095,7 @@ async function procesarExcelTGIU() {
       </div>
       <div class="form-actions" style="margin-top:1rem">
         <button class="btn btn-secondary" onclick="abrirImportarExcel()">↩ Volver</button>
-        <button class="btn btn-green" onclick="confirmarImportarExcel()">✓ Confirmar e importar (${conContrato.length} registros)</button>
+        <button class="btn btn-green" onclick="confirmarImportarExcel()">✓ Confirmar e importar seleccionados</button>
       </div>
     `;
   } catch(e) {
@@ -8094,11 +8107,15 @@ async function procesarExcelTGIU() {
 async function confirmarImportarExcel() {
   const { resultados, mesKey, srv } = window._excelImportData || {};
   if (!resultados?.length) return;
+  // Only import checked rows
+  const checkedIdxs = new Set([...document.querySelectorAll('.excel-chk-row:checked')].map(c => parseInt(c.dataset.idx)));
+  const seleccionados = resultados.filter((r, i) => checkedIdxs.has(i));
+  if (!seleccionados.length) { toast('Seleccioná al menos un registro', 'error'); return; }
   const mesStr = mesKey + '-01';
   let cargados = 0;
   toast('Importando...', 'info');
 
-  for (const r of resultados) {
+  for (const r of seleccionados) {
     try {
       for (const {c, s} of r.contratos) {
         const hojaEncoded = encodeURIComponent(c.hoja);
