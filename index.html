@@ -8012,7 +8012,12 @@ async function procesarExcelTGIU() {
       const nroRaw = String(row[0]||'').trim();
       const importeRaw = row[2];
       if (!nroRaw || !importeRaw) continue;
-      const importe = parseFloat(String(importeRaw).replace(/\./g,'').replace(',','.'));
+      // Parse Argentine format: $ 20.519,27 → 20519.27
+      const importeStr = String(importeRaw).replace(/\$/g,'').replace(/\s/g,'').trim();
+      // If has comma — Argentine format (dots=thousands, comma=decimal)
+      const importe = importeStr.includes(',')
+        ? parseFloat(importeStr.replace(/\./g,'').replace(',','.'))
+        : parseFloat(importeStr.replace(/,/g,''));  // no decimal comma — just remove thousand separators
       if (!nroRaw.match(/\d/) || isNaN(importe) || importe <= 0) continue;
       items.push({ nro: nroRaw, importe });
     }
