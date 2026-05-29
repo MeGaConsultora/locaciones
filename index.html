@@ -1510,6 +1510,7 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
            <button class="btn btn-secondary" style="font-size:0.78rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="revertirRescision(${c.id},'${c.hoja}')">↩ Revertir rescisión</button>`
       }
       <button class="btn btn-secondary" style="font-size:0.78rem;color:#6610f2;border-color:#6610f2;white-space:nowrap" onclick="regenerarMeses(${c.id},'${c.hoja}')">↺ Regenerar meses</button>
+      <button class="btn btn-secondary" style="font-size:0.78rem;color:#0d6efd;border-color:#0d6efd;white-space:nowrap" onclick="duplicarContrato(${c.id})">📋 Duplicar contrato</button>
       <button class="btn btn-secondary" style="font-size:0.78rem;color:#721c24;border-color:#721c24;white-space:nowrap" onclick="eliminarContrato(${c.id})">🗑 Eliminar</button>
     </div>
     <p style="font-size:0.78rem;color:#999;margin-bottom:0.75rem">💡 Clic en un mes para editarlo o registrar cobro</p>
@@ -5444,8 +5445,50 @@ function openEditContrato(id) {
   _abrirFormularioContrato(c, false);
 }
 
+async function duplicarContrato(id) {
+  const c = DB.contratos.find(x=>x.id===id);
+  if (!c) return;
+
+  // Copy all data except inquilino, garante, fechas, importe
+  const copia = {
+    id: null, hoja: '', titulo: '',
+    vigencia_desde: null, vigencia_hasta: null,
+    importe_inicial: c.importe_inicial || 0,
+    tipo_inmueble: c.tipo_inmueble,
+    modalidad_pago: c.modalidad_pago,
+    comision_porcentaje: c.comision_porcentaje,
+    periodicidad_actualizacion: c.periodicidad_actualizacion,
+    indice_actualizacion: c.indice_actualizacion,
+    gastos_inicio: c.gastos_inicio,
+    gastos_cuotas: c.gastos_cuotas,
+    gastos_pct_inquilino: c.gastos_pct_inquilino,
+    gastos_pct_propietario: c.gastos_pct_propietario,
+    dia_vencimiento: c.dia_vencimiento,
+    interes_punitorio: c.interes_punitorio,
+    nro_epe: c.nro_epe, nro_agua: c.nro_agua, nro_tgiu: c.nro_tgiu,
+    nro_seguro: c.nro_seguro, nro_internet: c.nro_internet, nro_expensas: c.nro_expensas,
+    servicios_inquilino: c.servicios_inquilino,
+    fecha_rescision: null,
+    _inmueble_id: c.inmueble_id,
+    _duplicadoDe: id  // track origin for copying suministros
+  };
+
+  // Copy propietarios but NOT inquilinos/garantes
+  const propietarios = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === id && x.rol === 'propietario');
+  copia._propietariosCopia = propietarios;
+
+  // Copy suministros
+  const suministros = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === id);
+  copia._suministrosCopia = suministros;
+
+  _abrirFormularioContrato(copia, true);
+  toast('Contrato duplicado — completá inquilino y fechas', 'info');
+}
+
 function _abrirFormularioContrato(c, esNuevo) {
-  const propietarios = esNuevo ? [] : DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'propietario');
+  const propietarios = esNuevo
+    ? (c._propietariosCopia || [])
+    : DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'propietario');
   const inquilinos = esNuevo ? [] : DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'inquilino');
 
   document.getElementById('modal-title').textContent = esNuevo ? 'Nuevo Contrato' : 'Editar Contrato';
@@ -5584,9 +5627,9 @@ function _abrirFormularioContrato(c, esNuevo) {
   } else {
     // Populate existing personas
     setTimeout(() => {
-      const propietarios = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'propietario');
-      const inquilinos = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'inquilino');
-      const garantes = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'garante');
+      const propietarios = c._propietariosCopia || DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'propietario');
+      const inquilinos = c._propietariosCopia ? [] : DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'inquilino');
+      const garantes = c._propietariosCopia ? [] : DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'garante');
       propietarios.forEach(cp => {
         const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
         if (p) mostrarPersonaEnLista('propietario', p, cp.pct_alquiler ?? 100);
@@ -5599,8 +5642,8 @@ function _abrirFormularioContrato(c, esNuevo) {
         const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
         if (p) mostrarPersonaEnLista('garante', p);
       });
-      // Populate suministros
-      const suministros = DB_SUMINISTROS.filter(x => parseInt(x.contrato_id) === parseInt(c.id));
+      // Populate suministros — use copy if duplicating, otherwise from DB
+      const suministros = c._suministrosCopia || DB_SUMINISTROS.filter(x => parseInt(x.contrato_id) === parseInt(c.id));
       suministros.forEach(s => agregarSuministroExistente(s));
     }, 50);
   }
