@@ -5469,17 +5469,10 @@ async function duplicarContrato(id) {
     nro_seguro: c.nro_seguro, nro_internet: c.nro_internet, nro_expensas: c.nro_expensas,
     servicios_inquilino: c.servicios_inquilino,
     fecha_rescision: null,
-    _inmueble_id: c.inmueble_id,
-    _duplicadoDe: id  // track origin for copying suministros
+    inmueble_id: c.inmueble_id,
+    _propietariosCopia: DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === id && x.rol === 'propietario'),
+    _suministrosCopia: DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === id)
   };
-
-  // Copy propietarios but NOT inquilinos/garantes
-  const propietarios = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === id && x.rol === 'propietario');
-  copia._propietariosCopia = propietarios;
-
-  // Copy suministros
-  const suministros = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === id);
-  copia._suministrosCopia = suministros;
 
   _abrirFormularioContrato(copia, true);
   toast('Contrato duplicado — completá inquilino y fechas', 'info');
