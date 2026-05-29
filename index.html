@@ -397,6 +397,7 @@
             <div class="submenu-items">
               <button onclick="abrirImportarPDF()">📄 PDF de Agua</button>
               <button onclick="abrirImportarExcel()">📊 Excel de TGIU</button>
+              <button onclick="abrirImportarEPE()">⚡ EPE (Bookmarklet)</button>
             </div>
           </div>
           <button onclick="selectInforme('numeracion-servicios')">🔢 Numeración de servicios</button>
@@ -7950,6 +7951,155 @@ async function procesarPDF() {
 // ============================================================
 // IMPORTAR EXCEL TGIU
 // ============================================================
+// ============================================================
+// IMPORTAR EPE DESDE BOOKMARKLET
+// ============================================================
+async function abrirImportarEPE() {
+  document.getElementById('informes-menu').style.display = 'none';
+  document.getElementById('modal-title').textContent = '⚡ Importar EPE';
+  document.getElementById('modal-subtitle').textContent = '';
+  document.getElementById('modal-overlay').dataset.contratoId = '';
+
+  // Check for pending data in epe_import_temp
+  const mesKey = TODAY.substring(0,7);
+  const datos = await sbGet('epe_import_temp', `mes_key=eq.${mesKey}&order=nro_cuenta.asc&limit=500`).catch(() => []);
+
+  document.getElementById('modal-body').innerHTML = `
+    <div style="padding:0.5rem 0">
+      <p style="font-size:0.88rem;color:#666;margin-bottom:1.2rem">
+        Usá el bookmarklet en la Oficina Virtual EPE para importar los importes, luego volvé aquí para procesarlos.
+      </p>
+      <div style="display:flex;gap:1rem;margin-bottom:1.2rem;align-items:flex-end">
+        <div class="form-group" style="margin:0">
+          <label>Mes</label>
+          <input type="month" id="epe-mes" value="${mesKey}" style="margin-top:4px" onchange="recargarDatosEPE()">
+        </div>
+        <button class="btn btn-secondary" style="font-size:0.82rem" onclick="recargarDatosEPE()">🔄 Actualizar</button>
+      </div>
+      <div id="epe-datos-wrap">
+        ${datos.length ? _renderEPEPreview(datos) : '<div style="text-align:center;color:#aaa;padding:2rem">No hay datos importados para este mes.<br><small>Ejecutá el bookmarklet en la Oficina Virtual EPE primero.</small></div>'}
+      </div>
+      <div class="form-actions" style="margin-top:1rem">
+        <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+        ${datos.length ? `<button class="btn btn-green" onclick="confirmarImportarEPE()">✓ Procesar importación</button>` : ''}
+      </div>
+    </div>
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
+  window._epeImportMes = mesKey;
+  window._epeImportDatos = datos;
+}
+
+function _renderEPEPreview(datos) {
+  const conContrato = datos.filter(d => {
+    const sums = DB_SUMINISTROS.filter(s => s.nro_cuenta === d.nro_cuenta && s.tipo === 'epe');
+    return sums.some(s => { const c = DB.contratos.find(x => x.id === parseInt(s.contrato_id)); return c && getEstado(c) === 'vigente'; });
+  });
+  const sinContrato = datos.filter(d => !conContrato.includes(d));
+  return `
+    <div style="margin-bottom:0.75rem;font-size:0.85rem;color:#666;display:flex;align-items:center;gap:1rem">
+      <span><strong>${conContrato.length}</strong> con contrato · <strong>${sinContrato.length}</strong> sin contrato</span>
+      <label style="font-size:0.82rem;cursor:pointer;display:flex;align-items:center;gap:4px">
+        <input type="checkbox" id="epe-chk-all" checked onchange="document.querySelectorAll('.epe-chk-row').forEach(c=>c.checked=this.checked)">
+        Seleccionar todos
+      </label>
+    </div>
+    <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+      <table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+        <thead style="background:#f5f0e8;position:sticky;top:0">
+          <tr>
+            <th style="padding:6px 8px;width:32px"></th>
+            <th style="padding:6px 8px;text-align:left">N° Cliente</th>
+            <th style="padding:6px 8px;text-align:left">Titular EPE</th>
+            <th style="padding:6px 8px;text-align:right">Importe</th>
+            <th style="padding:6px 8px;text-align:left">Contrato/s</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${datos.map((d, i) => {
+            const sums = DB_SUMINISTROS.filter(s => s.nro_cuenta === d.nro_cuenta && s.tipo === 'epe');
+            const contratos = sums.map(s => DB.contratos.find(x => x.id === parseInt(s.contrato_id))).filter(c => c && getEstado(c) === 'vigente');
+            const tieneContrato = contratos.length > 0;
+            return `<tr style="border-bottom:1px solid #f0ece4;${!tieneContrato?'background:#fdecea;opacity:0.6':''}">
+              <td style="padding:5px 8px;text-align:center">
+                ${tieneContrato ? `<input type="checkbox" class="epe-chk-row" data-idx="${i}" checked>` : ''}
+              </td>
+              <td style="padding:5px 8px;font-family:monospace">${d.nro_cuenta}</td>
+              <td style="padding:5px 8px;font-size:0.78rem;color:#666">${d.titular||''}</td>
+              <td style="padding:5px 8px;text-align:right;font-weight:600">$${(d.importe||0).toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+              <td style="padding:5px 8px;font-size:0.78rem">${tieneContrato ? contratos.map(c=>c.titulo||c.hoja).join(', ') : '<span style="color:var(--accent)">Sin contrato</span>'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+async function recargarDatosEPE() {
+  const mesKey = document.getElementById('epe-mes')?.value || TODAY.substring(0,7);
+  window._epeImportMes = mesKey;
+  const datos = await sbGet('epe_import_temp', `mes_key=eq.${mesKey}&order=nro_cuenta.asc&limit=500`).catch(() => []);
+  window._epeImportDatos = datos;
+  document.getElementById('epe-datos-wrap').innerHTML = datos.length
+    ? _renderEPEPreview(datos)
+    : '<div style="text-align:center;color:#aaa;padding:2rem">No hay datos para este mes.</div>';
+}
+
+async function confirmarImportarEPE() {
+  const datos = window._epeImportDatos || [];
+  const mesKey = window._epeImportMes || TODAY.substring(0,7);
+  const mesStr = mesKey + '-01';
+  const srv = 'epe';
+
+  const checkedIdxs = new Set([...document.querySelectorAll('.epe-chk-row:checked')].map(c => parseInt(c.dataset.idx)));
+  const seleccionados = datos.filter((d, i) => checkedIdxs.has(i));
+  if (!seleccionados.length) { toast('Seleccioná al menos un registro', 'error'); return; }
+
+  toast('Importando EPE...', 'info');
+  let cargados = 0;
+
+  for (const d of seleccionados) {
+    try {
+      const allSumsForNro = DB_SUMINISTROS.filter(s => s.nro_cuenta === d.nro_cuenta && s.tipo === srv && ((s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0));
+      const contratosSums = {};
+      allSumsForNro.forEach(s => { if (!contratosSums[s.contrato_id]) contratosSums[s.contrato_id] = []; contratosSums[s.contrato_id].push(s); });
+
+      for (const [contratoId, sums] of Object.entries(contratosSums)) {
+        const contrato = DB.contratos.find(c => c.id === parseInt(contratoId));
+        if (!contrato || getEstado(contrato) !== 'vigente') continue;
+        const hojaEncoded = encodeURIComponent(contrato.hoja);
+        const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesStr}&limit=1`);
+        if (!pagos.length) continue;
+        const p = pagos[0];
+
+        let totalMonto = 0;
+        for (const s of sums) {
+          const montoInq = Math.round(d.importe * (s.pct_inquilino||0) / 100 * 100) / 100;
+          const montoProp = Math.round(d.importe * (s.pct_propietario||0) / 100 * 100) / 100;
+          totalMonto += montoInq;
+          const existing = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&suministro_id=eq.${s.id}&limit=1`);
+          if (existing.length) {
+            await sbPatch('pagos_suministros', existing[0].id, { importe: montoInq, importe_propietario: montoProp });
+          } else {
+            await sbPost('pagos_suministros', { pago_id: p.id, suministro_id: s.id, importe: montoInq, importe_propietario: montoProp });
+          }
+        }
+
+        const allPs = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&select=suministro_id,importe`);
+        const totalSrv = allPs.reduce((t, ps) => { const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id); return cs?.tipo === srv ? t + (ps.importe||0) : t; }, 0);
+        const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
+        const newTotal = (p.importe_alquiler||0) + servicios.reduce((sv2, sv) => sv === srv ? sv2 + totalSrv : sv2 + (p['monto_'+sv]||0), 0);
+        await sbPatch('pagos', p.id, { ['monto_'+srv]: totalSrv, total: newTotal, saldo: Math.max(0, newTotal - ((p.total||0) - (p.saldo||0))) });
+      }
+      cargados++;
+    } catch(e) { console.error('EPE import error:', d.nro_cuenta, e.message); }
+  }
+
+  toast(`✓ ${cargados} cuentas EPE importadas`, 'success');
+  closeModal();
+  await loadAll();
+}
+
 function abrirImportarExcel() {
   document.getElementById('informes-menu').style.display = 'none';
   document.getElementById('modal-title').textContent = '📊 Importar Excel TGIU';
