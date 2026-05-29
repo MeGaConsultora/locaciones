@@ -5614,11 +5614,15 @@ function _abrirFormularioContrato(c, esNuevo) {
   `;
   document.getElementById('modal-overlay').dataset.contratoId = esNuevo ? '' : String(c.id);
   document.getElementById('modal-overlay').classList.add('open');
-  if (esNuevo) {
+  if (esNuevo && !c._propietariosCopia) {
     agregarPersonaRol('propietario');
     agregarPersonaRol('inquilino');
   } else {
-    // Populate existing personas
+    // Populate existing personas (or copied ones when duplicating)
+    if (esNuevo) {
+      // Duplicating — add empty inquilino slot
+      agregarPersonaRol('inquilino');
+    }
     setTimeout(() => {
       const propietarios = c._propietariosCopia || DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'propietario');
       const inquilinos = c._propietariosCopia ? [] : DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === 'inquilino');
