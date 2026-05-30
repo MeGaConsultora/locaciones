@@ -2436,9 +2436,16 @@ function filtrarContratosActualizar() {
   }
 
   const pct = parseFloat(document.getElementById('act-pct')?.value)||0;
+  const mesDesde = document.getElementById('act-desde')?.value || mesKey;
+  // Calculate previous month key
+  let [prevY, prevM] = mesDesde.split('-').map(Number);
+  prevM--; if (prevM < 1) { prevM = 12; prevY--; }
+  const mesPrevKey = `${prevY}-${String(prevM).padStart(2,'0')}`;
+
   lista.innerHTML = contratos.map(c => {
-    const ultimoPago = DB.pagos.filter(p => p.hoja===c.hoja && p.importe_alquiler>0).slice(-1)[0];
-    const alqActual = ultimoPago?.importe_alquiler || 0;
+    // Base: importe del mes anterior al "desde" (no el último proyectado)
+    const pagoPrev = DB.pagos.filter(p => p.hoja===c.hoja && p.mes?.startsWith(mesPrevKey) && p.importe_alquiler>0)[0];
+    const alqActual = pagoPrev?.importe_alquiler || DB.pagos.filter(p => p.hoja===c.hoja && p.importe_alquiler>0).sort((a,b)=>b.mes?.localeCompare(a.mes))[0]?.importe_alquiler || 0;
     const nuevo = pct > 0 ? Math.round(alqActual * (1 + pct/100)) : alqActual;
     return `<div style="background:var(--cream);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem;display:grid;grid-template-columns:auto 1fr auto auto auto;align-items:center;gap:1rem;flex-wrap:wrap">
       <input type="checkbox" class="act-chk" data-id="${c.id}" checked style="width:16px;height:16px;cursor:pointer" onchange="actualizarBotonConfirmar()">
@@ -2570,8 +2577,11 @@ function previsualizarConfirmacion() {
 
   const tabla = seleccionados.map(({c, importe}) => {
     const n = mesesPeriodo[c.periodicidad_actualizacion] || 1;
-    const ultimoPago = DB.pagos.filter(p => p.hoja===c.hoja && p.importe_alquiler>0).slice(-1)[0];
-    const actual = ultimoPago?.importe_alquiler || 0;
+    let [py, pm] = desde.split('-').map(Number);
+    pm--; if (pm < 1) { pm = 12; py--; }
+    const prevKey = `${py}-${String(pm).padStart(2,'0')}`;
+    const pagoPrev = DB.pagos.filter(p => p.hoja===c.hoja && p.mes?.startsWith(prevKey) && p.importe_alquiler>0)[0];
+    const actual = pagoPrev?.importe_alquiler || DB.pagos.filter(p => p.hoja===c.hoja && p.importe_alquiler>0).sort((a,b)=>b.mes?.localeCompare(a.mes))[0]?.importe_alquiler || 0;
     const rangMeses = getMesesRango(c, desde);
     return `<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:5px 8px;font-size:0.82rem">
