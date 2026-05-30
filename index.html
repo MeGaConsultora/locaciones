@@ -1736,10 +1736,8 @@ function renderGrilla(c) {
     const totalExtrasGral = extrasGral.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
     const totalExtrasMes = extrasMes.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
     const totalExtras = totalExtrasGral + totalExtrasMes;
-    // Real saldo includes unpaid extras
-    const extrasNoPagadas = extras.filter(e => e.a_cargo_de !== 'propietario' && !(e.pagado > 0));
-    const totalExtrasNoPagadas = extrasNoPagadas.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
-    const saldoReal = (p.saldo||0) + totalExtrasNoPagadas;
+    // saldo already reflects extras (recalcularFilaPago updates it when extras are added)
+    const saldoReal = (p.saldo||0);
     const extrasGralLabel = extrasGral.length > 0 ? extrasGral.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
     const extrasMesLabel = extrasMes.length > 0 ? extrasMes.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
     const rowClass = saldoReal > 0 ? (p.saldo > 0 ? getRowClass(p) : 'row-parcial') : getRowClass(p);
