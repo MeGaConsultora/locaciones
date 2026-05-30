@@ -8102,7 +8102,8 @@ async function confirmarImportarEPE() {
         const totalSrv = allPs.reduce((t, ps) => { const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id); return cs?.tipo === srv ? t + (ps.importe||0) : t; }, 0);
         const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
         const newTotal = (p.importe_alquiler||0) + servicios.reduce((sv2, sv) => sv === srv ? sv2 + totalSrv : sv2 + (p['monto_'+sv]||0), 0);
-        await sbPatch('pagos', p.id, { ['monto_'+srv]: totalSrv, total: newTotal, saldo: Math.max(0, newTotal - ((p.total||0) - (p.saldo||0))) });
+        const abonadoP = (p.total||0) - (p.saldo||0);
+        await sbPatch('pagos', p.id, { ['monto_'+srv]: totalSrv, total: Math.round(newTotal*100)/100, saldo: Math.round(Math.max(0, newTotal - abonadoP)*100)/100 });
       }
       cargados++;
     } catch(e) { console.error('EPE import error:', d.nro_cuenta, e.message); }
@@ -8324,8 +8325,10 @@ async function confirmarImportarExcel() {
             return cs?.tipo === srv ? t + (ps.importe||0) : t;
           }, 0);
           const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
-          const newTotal = (p2.importe_alquiler||0) + servicios.reduce((sv2, sv) => sv === srv ? sv2 + totalSrv : sv2 + (p2['monto_'+sv]||0), 0);
-          const patch = { total: newTotal, saldo: Math.max(0, newTotal - ((p2.total||0) - (p2.saldo||0))) };
+          const abonadoP2 = (p2.total||0) - (p2.saldo||0);
+          const freshP2 = (await sbGet('pagos', `id=eq.${p2.id}&limit=1`))[0] || p2;
+          const newTotal = (freshP2.importe_alquiler||0) + servicios.reduce((sv2, sv) => sv === srv ? sv2 + totalSrv : sv2 + (freshP2['monto_'+sv]||0), 0);
+          const patch = { total: Math.round(newTotal*100)/100, saldo: Math.round(Math.max(0, newTotal - abonadoP2)*100)/100 };
           patch['monto_'+srv] = totalSrv;
           await sbPatch('pagos', p2.id, patch);
         }
