@@ -2384,10 +2384,19 @@ async function proyectarPeriodo(hoja, desdeKey, importe, periodicidad, diaVenc, 
     }
     const fechaVenc = `${vencY}-${String(vencM).padStart(2,'0')}-${String(diaVenc).padStart(2,'0')}`;
 
+    // Si el pago ya tiene servicios cargados, recalcular total sumándolos al nuevo alquiler
+    const serviciosExistentes = (p.monto_epe||0) + (p.monto_agua||0) + (p.monto_tgiu||0) +
+      (p.monto_seguro||0) + (p.monto_internet||0) + (p.monto_expensas||0) + (p.monto_otros||0);
+    const nuevoTotal = importe + serviciosExistentes;
+    const yaAbonado = (p.total||0) - (p.saldo||0);
+    const nuevoSaldo = p.pagado === 'SI' ? 0 : Math.max(0, nuevoTotal - yaAbonado);
+    const nuevoPagado = p.pagado === 'SI' ? 'SI' : (yaAbonado > 0 ? 'PARCIAL' : (p.pagado || 'NO'));
+
     await sbPatch('pagos', p.id, {
       importe_alquiler: importe,
-      total: importe,
-      saldo: importe,
+      total: nuevoTotal,
+      saldo: nuevoSaldo,
+      pagado: nuevoPagado,
       fecha_pago_hasta: fechaVenc,
       es_proyectado: true
     });
@@ -2431,7 +2440,8 @@ function filtrarContratosActualizar() {
     const ultimoPago = DB.pagos.filter(p => p.hoja===c.hoja && p.importe_alquiler>0).slice(-1)[0];
     const alqActual = ultimoPago?.importe_alquiler || 0;
     const nuevo = pct > 0 ? Math.round(alqActual * (1 + pct/100)) : alqActual;
-    return `<div style="background:var(--cream);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem;display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:1rem;flex-wrap:wrap">
+    return `<div style="background:var(--cream);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem;display:grid;grid-template-columns:auto 1fr auto auto auto;align-items:center;gap:1rem;flex-wrap:wrap">
+      <input type="checkbox" class="act-chk" data-id="${c.id}" checked style="width:16px;height:16px;cursor:pointer" onchange="actualizarBotonConfirmar()">
       <div>
         <strong style="font-size:0.88rem">${c.titulo||c.hoja}</strong>
         <div style="font-size:0.75rem;color:#888">${c.periodicidad_actualizacion} · ${c.indice_actualizacion||'—'}</div>
@@ -2448,11 +2458,11 @@ function filtrarContratosActualizar() {
         value="${nuevo}" style="width:110px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem">
     </div>`;
   }).join('');
+  setTimeout(actualizarBotonConfirmar, 50);
 }
 
 async function abrirActualizacionAlquileres() {
   document.getElementById('informes-menu').style.display = 'none';
-  // Get unique periodicidades and indices from active contracts
   const periodicidades = [...new Set(DB.contratos.filter(c=>c.periodicidad_actualizacion&&c.periodicidad_actualizacion!=='Sin actualización'&&!c.fecha_rescision).map(c=>c.periodicidad_actualizacion))].sort();
   const indices = [...new Set(DB.contratos.filter(c=>c.indice_actualizacion&&!c.fecha_rescision).map(c=>c.indice_actualizacion))].sort();
 
@@ -2461,13 +2471,18 @@ async function abrirActualizacionAlquileres() {
   document.getElementById('modal-overlay').dataset.contratoId = '';
 
   document.getElementById('modal-body').innerHTML = `
-    <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem">
-      Seleccioná el mes de actualización, filtrá por periodicidad e índice, ingresá el % y proyectá.
+    <div style="background:#fff3cd;border:2px solid #ffc107;border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.83rem">
+      ⚠ <strong>Importante:</strong> Verificá bien el mes <strong>desde el que proyectar</strong> antes de confirmar.
     </div>
     <div class="form-grid" style="margin-bottom:1rem">
       <div class="form-group">
-        <label>Mes de actualización</label>
+        <label>Mes que actualiza</label>
         <input id="act-mes" type="month" value="${TODAY.substring(0,7)}" style="margin-top:4px" onchange="filtrarContratosActualizar()">
+      </div>
+      <div class="form-group">
+        <label>Proyectar <strong>desde</strong> el mes</label>
+        <input id="act-desde" type="month" value="${TODAY.substring(0,7)}" style="margin-top:4px;border:2px solid var(--accent)">
+        <div style="font-size:0.72rem;color:var(--accent);margin-top:3px">⚠ Normalmente igual al mes que actualiza</div>
       </div>
       <div class="form-group">
         <label>Índice</label>
@@ -2488,11 +2503,17 @@ async function abrirActualizacionAlquileres() {
         <input id="act-pct" type="number" step="0.01" placeholder="Ej: 8.5" style="margin-top:4px" oninput="previsualizarActualizacion()">
       </div>
     </div>
-    <div style="font-size:0.82rem;color:#888;margin-bottom:0.5rem"><span id="act-count">—</span> que actualizan ese mes</div>
-    <div id="act-lista" style="max-height:350px;overflow-y:auto"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+      <div style="font-size:0.82rem;color:#888"><span id="act-count">—</span> que actualizan ese mes</div>
+      <div style="display:flex;gap:0.75rem">
+        <button onclick="toggleSeleccionActualizar(true)" style="background:none;border:none;color:var(--accent);font-size:0.78rem;cursor:pointer;text-decoration:underline">✓ Todos</button>
+        <button onclick="toggleSeleccionActualizar(false)" style="background:none;border:none;color:var(--accent);font-size:0.78rem;cursor:pointer;text-decoration:underline">✗ Ninguno</button>
+      </div>
+    </div>
+    <div id="act-lista" style="max-height:320px;overflow-y:auto"></div>
     <div class="form-actions" style="margin-top:1rem">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="confirmarActualizacion()">✓ Actualizar y proyectar</button>
+      <button class="btn btn-primary" onclick="previsualizarConfirmacion()" id="btn-act-confirmar" disabled>✓ Revisar y confirmar</button>
     </div>
   `;
   document.getElementById('modal-overlay').classList.add('open');
@@ -2503,24 +2524,114 @@ function previsualizarActualizacion() {
   filtrarContratosActualizar();
 }
 
-async function confirmarActualizacion() {
-  const contratos = window._contratosActualizar || [];
-  if (!contratos.length) return;
+function toggleSeleccionActualizar(seleccionar) {
+  document.querySelectorAll('.act-chk').forEach(chk => chk.checked = seleccionar);
+  actualizarBotonConfirmar();
+}
+
+function actualizarBotonConfirmar() {
+  const seleccionados = document.querySelectorAll('.act-chk:checked').length;
+  const btn = document.getElementById('btn-act-confirmar');
+  if (btn) {
+    btn.disabled = seleccionados === 0;
+    btn.textContent = seleccionados > 0 ? `✓ Revisar y confirmar (${seleccionados})` : '✓ Revisar y confirmar';
+  }
+}
+
+function previsualizarConfirmacion() {
+  const desde = document.getElementById('act-desde')?.value;
+  if (!desde) { toast('Ingresá el mes desde el que proyectar', 'error'); return; }
+
+  const seleccionados = [];
+  document.querySelectorAll('.act-chk:checked').forEach(chk => {
+    const id = parseInt(chk.dataset.id);
+    const c = DB.contratos.find(x => x.id === id);
+    const importe = parseMonto(document.getElementById(`importe-${id}`)?.value) || 0;
+    if (c && importe) seleccionados.push({ c, importe });
+  });
+
+  if (!seleccionados.length) { toast('Seleccioná al menos un contrato', 'error'); return; }
+
+  const mesDesdeLabel = desde.replace('-', '/');
+  const mesesPeriodo = {'Mensual':1,'Bimestral':2,'Trimestral':3,'Cuatrimestral':4,'Semestral':6,'Anual':12};
+
+  // Helper: generate list of months for a contract starting from 'desde'
+  const getMesesRango = (c, desdeKey) => {
+    const n = mesesPeriodo[c.periodicidad_actualizacion] || 1;
+    const meses = [];
+    const mesesNombres = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    let [y, m] = desdeKey.split('-').map(Number);
+    for (let i = 0; i < n; i++) {
+      meses.push(mesesNombres[m-1] + ' ' + String(y).slice(2));
+      m++; if (m > 12) { m = 1; y++; }
+    }
+    return meses.join(', ');
+  };
+
+  const tabla = seleccionados.map(({c, importe}) => {
+    const n = mesesPeriodo[c.periodicidad_actualizacion] || 1;
+    const ultimoPago = DB.pagos.filter(p => p.hoja===c.hoja && p.importe_alquiler>0).slice(-1)[0];
+    const actual = ultimoPago?.importe_alquiler || 0;
+    const rangMeses = getMesesRango(c, desde);
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:5px 8px;font-size:0.82rem">
+        <div>${c.titulo||c.hoja}</div>
+        <div style="font-size:0.72rem;color:var(--accent);margin-top:2px">📅 ${rangMeses}</div>
+      </td>
+      <td style="padding:5px 8px;text-align:right;font-size:0.82rem">${formatMoney(actual)}</td>
+      <td style="padding:5px 8px;text-align:right;font-size:0.82rem;color:var(--green);font-weight:700">${formatMoney(importe)}</td>
+      <td style="padding:5px 8px;text-align:center;font-size:0.82rem">${n}</td>
+    </tr>`;
+  }).join('');
+
+  const datosStr = seleccionados.map(s => s.c.id + ':' + s.importe).join(',');
+
+  document.getElementById('modal-body').innerHTML = `
+    <div style="background:#ffeeba;border:2px solid #ffc107;border-radius:8px;padding:1rem;margin-bottom:1rem;font-size:0.88rem">
+      ⚠ <strong>Vas a actualizar ${seleccionados.length} contrato/s desde ${mesDesdeLabel}.</strong><br>
+      Esta acción modifica datos reales en Supabase. <strong>¿Estás seguro?</strong>
+    </div>
+    <div style="max-height:320px;overflow-y:auto;margin-bottom:1rem">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--cream);font-size:0.78rem;color:#888">
+            <th style="padding:5px 8px;text-align:left">Contrato / Meses</th>
+            <th style="padding:5px 8px;text-align:right">Alquiler actual</th>
+            <th style="padding:5px 8px;text-align:right">Nuevo importe</th>
+            <th style="padding:5px 8px;text-align:center">Cant.</th>
+          </tr>
+        </thead>
+        <tbody>${tabla}</tbody>
+      </table>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="abrirActualizacionAlquileres()">← Volver</button>
+      <button class="btn btn-primary" style="background:#e53935" onclick="ejecutarActualizacionDesdeStr('${datosStr}','${desde}')">
+        ✓ CONFIRMAR Y PROYECTAR
+      </button>
+    </div>
+  `;
+}
+
+async function ejecutarActualizacionDesdeStr(datosStr, desde) {
+  const seleccionados = datosStr.split(',').map(s => {
+    const [id, importe] = s.split(':');
+    return { id: parseInt(id), importe: parseFloat(importe) };
+  });
   let actualizados = 0;
-  for (const c of contratos) {
-    const input = document.getElementById(`importe-${c.id}`);
-    const nuevoImporte = parseMonto(input?.value)||0;
-    if (!nuevoImporte) continue;
-    const mesesPeriodo = {
-      'Mensual': 1, 'Bimestral': 2, 'Trimestral': 3,
-      'Cuatrimestral': 4, 'Semestral': 6, 'Anual': 12
-    }[c.periodicidad_actualizacion] || 12;
-    const n = await proyectarPeriodo(c.hoja, TODAY.substring(0,7), nuevoImporte, c.periodicidad_actualizacion, c.dia_vencimiento||10, c.modalidad_pago||'ADELANTADO');
+  for (const {id, importe} of seleccionados) {
+    const c = DB.contratos.find(x => x.id === id);
+    if (!c || !importe) continue;
+    const n = await proyectarPeriodo(c.hoja, desde, importe, c.periodicidad_actualizacion, c.dia_vencimiento||10, c.modalidad_pago||'ADELANTADO');
     actualizados += n;
   }
   toast(`${actualizados} meses actualizados ✓`);
   await loadAll();
   closeModal();
+}
+
+async function confirmarActualizacion() {
+  previsualizarConfirmacion();
 }
 
 // Add button to proyectar from contract detail
