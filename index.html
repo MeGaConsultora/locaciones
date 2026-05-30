@@ -3237,7 +3237,8 @@ async function guardarServicioItem(inputId) {
 
   // Extract sumId from inputId (format: srv-epe-g-CONTRATOID-sX or srv-epe-g-CONTRATOID-sX_Y)
   const sumMatch = inputId.match(/-s(\d+)/);
-  const sumId = sumMatch ? parseInt(sumMatch[1]) : null;
+  // Parse per-contract sumIds from data-sum-ids (e.g. "11_22_33_44"), one per hoja
+  const rawSumIds = (input.dataset.sumIds || '').split('_').map(x => parseInt(x)||null);
 
   // Check EPE cuota2 checkbox
   const c0 = DB.contratos.find(x => x.hoja === hojas[0]);
@@ -3245,7 +3246,9 @@ async function guardarServicioItem(inputId) {
   const mesNext = cuota2chk?.checked ? cuota2chk.dataset.next + '-01' : null;
 
   const _guardarEnMes = async (mesTarget) => {
-    for (const hoja of hojas) {
+    for (let hi = 0; hi < hojas.length; hi++) {
+      const hoja = hojas[hi];
+      const sumId = rawSumIds[hi] || null;
       try {
         const hojaEncoded = encodeURIComponent(hoja);
         const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesTarget}&limit=1`);
