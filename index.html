@@ -746,6 +746,14 @@ async function refreshAdminToken() {
   } catch(e) { console.error('Token refresh error:', e); return false; }
 }
 
+// Auto-refresh token every 10 minutes to prevent session expiry
+setInterval(async () => {
+  if (currentUser?.token && localStorage.getItem('sb_refresh_token')) {
+    const ok = await refreshAdminToken();
+    if (ok) console.log('Token renovado automáticamente');
+  }
+}, 10 * 60 * 1000);
+
 function esErrorJWT(status, texto) {
   return status === 401 || status === 403
     || (typeof texto === 'string' && (texto.includes('JWT expired') || texto.includes('PGRST303') || texto.includes('invalid claim')));
