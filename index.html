@@ -1716,8 +1716,9 @@ function renderGrilla(c) {
     // Calculate per-type totals from pagos_suministros (with fallback to pagos.monto_xxx)
     const getMonto = (tipo) => {
       const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id && s.tipo === tipo);
-      if (sums.length > 0) {
-        // Contrato usa contrato_suministros → no hacer fallback a monto_xxx viejo
+      const esMesNuevo = (p.mes||'') >= '2026-06-01';
+      if (sums.length > 0 && esMesNuevo) {
+        // Desde junio 2026: usar solo pagos_suministros, sin fallback a monto_xxx
         return sums.reduce((t, s) => {
           const entry = ps[s.id];
           if (entry === undefined) return t;
@@ -3637,11 +3638,12 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
             const disabledHint = `<div style="font-size:0.72rem;color:#aaa;margin-top:2px">Modificar desde Cargar servicios del mes</div>`;
             return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" ${onInput} style="background:#f5f5f5;color:#999;cursor:not-allowed" readonly title="Modificar desde Cargar servicios del mes">${disabledHint}</div>`;
           };
-          // Get value from pagos_suministros — if contract uses contrato_suministros, never fall back to monto_xxx
+          // Get value from pagos_suministros — desde jun 2026 no hacer fallback a monto_xxx
           const getSrvVal = (srv) => {
             const ps = window._pagosSuministros?.[p?.id] || {};
             const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === srv);
-            if (sums.length > 0) {
+            const esMesNuevo = mesKey >= '2026-06';
+            if (sums.length > 0 && esMesNuevo) {
               return sums.reduce((t, s) => t + (ps[s.id] !== undefined ? (ps[s.id]||0) : 0), 0);
             }
             return p?.['monto_'+srv] || '';
@@ -3804,8 +3806,9 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
   const ps = window._pagosSuministros?.[p?.id] || {};
   const getSrvMonto = (tipo) => {
     const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === tipo);
-    if (sums.length > 0) {
-      // Contrato usa contrato_suministros → no hacer fallback a monto_xxx viejo
+    const esMesNuevo = mesKey >= '2026-06';
+    if (sums.length > 0 && esMesNuevo) {
+      // Desde junio 2026: usar solo pagos_suministros, sin fallback a monto_xxx
       return sums.reduce((t, s) => {
         const entry = ps[s.id];
         if (entry === undefined) return t;
@@ -4045,8 +4048,9 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
       const ps = window._pagosSuministros?.[p?.id] || {};
       const getSrvMonto = (tipo) => {
         const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === tipo);
-        if (sums.length > 0) {
-          // Contrato usa contrato_suministros → no hacer fallback a monto_xxx viejo
+        const esMesNuevo = (p?.mes||'') >= '2026-06-01';
+        if (sums.length > 0 && esMesNuevo) {
+          // Desde junio 2026: usar solo pagos_suministros, sin fallback a monto_xxx
           return sums.reduce((t, s) => {
             const entry = ps[s.id];
             if (entry === undefined) return t;
