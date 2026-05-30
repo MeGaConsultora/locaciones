@@ -8444,6 +8444,7 @@ async function confirmarImportarPDF() {
   });
   
   if (!seleccionados.length) { toast('Seleccioná al menos una boleta', 'error'); return; }
+  try { window.DB_SUMINISTROS = await sbGet('contrato_suministros', 'select=*&limit=5000'); } catch(e) {}
   
   const btn = document.querySelector('#modal-body .btn-primary');
   if (btn) { btn.disabled = true; btn.textContent = 'Cargando...'; }
