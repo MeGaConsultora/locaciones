@@ -895,6 +895,7 @@ async function loadAll() {
     renderVencimientos();
     renderClientes();
     actualizarBadgeNotificaciones();
+    verificarAccesosVencidos();
   } catch(e) {
     document.getElementById('sync-status').textContent = '⚠ Error de conexión';
     toast('Error al conectar. Verificá tu conexión a internet.', 'error');
@@ -902,6 +903,28 @@ async function loadAll() {
     if (e.message && (e.message.includes('JWT') || e.message.includes('expired'))) {
       toast('Sesión expirada. Volvé a iniciar sesión.', 'error');
       setTimeout(doLogout, 2000);
+    }
+  }
+}
+
+async function verificarAccesosVencidos() {
+  // Contratos que vencieron (no rescindidos) y cuyo inquilino no tiene otro vigente
+  const vencidos = DB.contratos.filter(c => !c.fecha_rescision && c.vigencia_hasta && c.vigencia_hasta < TODAY);
+  for (const c of vencidos) {
+    const personas = DB_CONTRATO_PERSONAS.filter(p => parseInt(p.contrato_id) === c.id && p.rol === 'inquilino');
+    for (const cp of personas) {
+      const otrosVigentes = DB.contratos.filter(x =>
+        x.id !== c.id &&
+        !x.fecha_rescision &&
+        x.vigencia_hasta >= TODAY &&
+        DB_CONTRATO_PERSONAS.some(p2 => parseInt(p2.contrato_id) === x.id && p2.persona_id === cp.persona_id && p2.rol === 'inquilino')
+      );
+      if (otrosVigentes.length === 0) {
+        const usuarios = await sbGet('usuarios', `persona_id=eq.${cp.persona_id}&aprobado=eq.true&limit=1`);
+        if (usuarios.length > 0) {
+          await sbPatch('usuarios', usuarios[0].id, { aprobado: false });
+        }
+      }
     }
   }
 }
@@ -1993,14 +2016,30 @@ async function confirmarRescision(contratoId, hoja) {
   if (!fechaRescision) { toast('Seleccioná la fecha de rescisión','error'); return; }
 
   try {
-    // Update contrato with rescision date
     await sbPatch('contratos', contratoId, { fecha_rescision: fechaRescision });
 
-    // Mark future pagos as rescinded - keep the month of rescision, delete strictly posterior months
-    const mesRescision = fechaRescision.substring(0, 7); // YYYY-MM
+    const mesRescision = fechaRescision.substring(0, 7);
     const pagosContrato = DB.pagos.filter(p => p.hoja === hoja && p.mes && p.mes.substring(0,7) > mesRescision);
     for (const p of pagosContrato) {
       await sbDelete('pagos', p.id);
+    }
+
+    // Revocar acceso al inquilino si no tiene otro contrato vigente
+    const personas = DB_CONTRATO_PERSONAS.filter(p => parseInt(p.contrato_id) === contratoId && p.rol === 'inquilino');
+    for (const cp of personas) {
+      const otrosVigentes = DB.contratos.filter(x =>
+        x.id !== contratoId &&
+        !x.fecha_rescision &&
+        x.vigencia_hasta >= TODAY &&
+        DB_CONTRATO_PERSONAS.some(p2 => parseInt(p2.contrato_id) === x.id && p2.persona_id === cp.persona_id && p2.rol === 'inquilino')
+      );
+      if (otrosVigentes.length === 0) {
+        const usuarios = await sbGet('usuarios', `persona_id=eq.${cp.persona_id}&aprobado=eq.true&limit=1`);
+        if (usuarios.length > 0) {
+          await sbPatch('usuarios', usuarios[0].id, { aprobado: false });
+          toast(`Acceso revocado: ${usuarios[0].nombre || usuarios[0].email}`);
+        }
+      }
     }
 
     toast('Contrato rescindido ✓');
@@ -4383,20 +4422,27 @@ function recalcProp() {
   if (el) el.textContent = formatMoney(total);
 }
 
-async function guardarExtraGP(extraId) {
+async function guardarExtraGP(extraId, pagoId) {
   try {
     const concepto = document.getElementById(`gpe-concepto-${extraId}`)?.value||'';
     const importe = parseMonto(document.getElementById(`gpe-importe-${extraId}`)?.value);
     const cargo = document.getElementById(`gpe-cargo-${extraId}`)?.value||'inquilino';
     const tipo = document.getElementById(`gpe-tipo-${extraId}`)?.value||'debito';
     const propSel = document.getElementById(`gpe-prop-${extraId}`);
-    // Show/hide propietario selector
     if (propSel) propSel.style.display = cargo === 'propietario' ? 'block' : 'none';
     const propietarioPId = cargo === 'propietario' ? (parseInt(propSel?.value)||null) : null;
     await fetch(`${SB_URL}/rest/v1/pagos_extras?id=eq.${extraId}`, {
       method:'PATCH', headers:HEADERS,
       body:JSON.stringify({concepto, importe, a_cargo_de:cargo, tipo, propietario_persona_id: propietarioPId})
     });
+    // Recalcular total y saldo del pago
+    const pid = pagoId || (() => {
+      const hoja = window._gpHoja;
+      const mesKey = window._gpMesKey;
+      if (!hoja || !mesKey) return null;
+      return DB.pagos.find(p => p.hoja === hoja && p.mes && p.mes.startsWith(mesKey))?.id;
+    })();
+    if (pid) await recalcularFilaPago(pid);
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
