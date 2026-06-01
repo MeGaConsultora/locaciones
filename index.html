@@ -450,11 +450,6 @@
       <select class="filter-select" id="filter-tipo" onchange="renderContratos()">
         <option value="">Todos los tipos</option>
       </select>
-      <select class="filter-select" id="filter-pagado" onchange="onChangePagadoFiltro()" oninput="onChangePagadoFiltro()">
-        <option value="">Todos los pagos</option>
-        <option value="pendiente">⚠️ Con deuda</option>
-        <option value="pagado">✓ Al día</option>
-      </select>
       <button class="btn btn-primary" onclick="openNuevoContrato()">+ Nuevo contrato</button>
       <span class="results-count" id="count-contratos"></span>
     </div>
@@ -1330,8 +1325,6 @@ function renderContratos() {
   const q = document.getElementById('search-contratos').value.toLowerCase();
   const estado = document.getElementById('filter-estado').value;
   const tipo = document.getElementById('filter-tipo').value;
-  const pagadoFiltro = document.getElementById('filter-pagado')?.value || '';
-
   // Pendientes stats
   const todosPend = DB.pagos.filter(p => p.saldo && p.saldo > 0 && p.mes && p.mes.substring(0,7) <= TODAY.substring(0,7));
   const totalSaldo = todosPend.reduce((s,p) => s+(p.saldo||0), 0);
@@ -1351,14 +1344,6 @@ function renderContratos() {
     if (q && !c.titulo?.toLowerCase().includes(q) && !c.locador?.toLowerCase().includes(q) && !c.locatario?.toLowerCase().includes(q)) return false;
     if (estado && getEstado(c) !== estado) return false;
     if (tipo && normTipo(c.tipo_inmueble) !== tipo) return false;
-    if (pagadoFiltro === 'pendiente') {
-      const tiene = DB.pagos.some(p => p.hoja===c.hoja && p.saldo>0 && p.mes && p.mes.substring(0,7)<=TODAY.substring(0,7));
-      if (!tiene) return false;
-    }
-    if (pagadoFiltro === 'pagado') {
-      const tiene = DB.pagos.some(p => p.hoja===c.hoja && p.saldo>0 && p.mes && p.mes.substring(0,7)<=TODAY.substring(0,7));
-      if (tiene) return false;
-    }
     return true;
   });
 
