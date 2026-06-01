@@ -1211,7 +1211,7 @@ function calcularIntereses(alquiler, fechaVencStr, fechaPagoStr, interesdiario) 
 
 function formatMoney(n) {
   if (n == null || isNaN(n)) return '—';
-  return '$ ' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return '$\u00A0' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function normTipo(t) {
   if (!t || t==='nan') return 'Otro';
