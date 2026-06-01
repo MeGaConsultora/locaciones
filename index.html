@@ -3548,12 +3548,34 @@ async function guardarServicios() {
       const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
       const yaAbonado = (pago.total||0) - (pago.saldo||0);
       const patch = { total: newTotal, saldo: Math.max(0, newTotal - yaAbonado) };
-      if ('monto_epe'      in changes) patch.monto_epe = epe;
-      if ('monto_agua'     in changes) patch.monto_agua = agua;
-      if ('monto_tgiu'     in changes) patch.monto_tgiu = tgiu;
-      if ('monto_seguro'   in changes) patch.monto_seguro = seguro;
-      if ('monto_internet' in changes) patch.monto_internet = internet;
-      if ('monto_expensas' in changes) patch.monto_expensas = expensas;
+
+      // For each changed service, save to pagos_suministros if contract uses new system
+      for (const [campo, val] of Object.entries(changes)) {
+        const srv = campo.replace('monto_', '');
+        const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(cPago?.id) && s.tipo === srv);
+        const mesKey = pago.mes?.substring(0,7) || '';
+        const usaNuevoSistema = sums.length > 0 && mesKey >= '2026-06';
+        if (usaNuevoSistema) {
+          // Save in pagos_suministros, clear monto_xxx
+          const valPct = applyPct(val, srv);
+          for (const sum of sums) {
+            const pctInq = sum.pct_inquilino ?? 100;
+            const pctProp = sum.pct_propietario ?? 0;
+            const montoInq = Math.round(val * pctInq / 100 * 100) / 100;
+            const montoProp = Math.round(val * pctProp / 100 * 100) / 100;
+            const existing = await sbGet('pagos_suministros', `pago_id=eq.${pago.id}&suministro_id=eq.${sum.id}&limit=1`);
+            if (existing.length) {
+              await sbPatch('pagos_suministros', existing[0].id, { importe: montoInq, importe_propietario: montoProp });
+            } else {
+              await sbPost('pagos_suministros', { pago_id: pago.id, suministro_id: sum.id, importe: montoInq, importe_propietario: montoProp });
+            }
+          }
+          patch[campo] = 0; // clear legacy field
+        } else {
+          patch[campo] = applyPct(val, srv);
+        }
+      }
+
       await sbPatch('pagos', parseInt(pagoId), patch);
       guardados++;
     } catch(e) { console.error('Error saving pago:', e); }
