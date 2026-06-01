@@ -2273,10 +2273,8 @@ Ante cualquier duda, comunicate con nosotros.`;
           <button onclick="navigator.clipboard.writeText('${tempPass}').then(()=>toast('Contraseña copiada ✓'))" style="background:#ffc107;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:0.8rem;font-weight:600;white-space:nowrap">📋 Copiar</button>
         </div>
         <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-          <button class="btn btn-green" style="font-size:0.82rem" onclick="copiarMensajeAcceso()">📋 Copiar mensaje</button>
-          <button class="btn btn-secondary" style="font-size:0.82rem" onclick="navigator.clipboard.writeText('${tempPass}').then(()=>toast('Contraseña copiada ✓'))">🔑 Copiar contraseña</button>
-          <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none">💬 1er mensaje (texto)</a>
-          <a href="https://wa.me/?text=${encodeURIComponent(tempPass)}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none">🔑 2do mensaje (contraseña)</a>
+          <button class="btn btn-green" style="font-size:0.82rem;line-height:1.3" onclick="copiarMensajeAcceso()">📋 Copiar mensaje<br><span style="font-size:0.7rem;opacity:0.8">(luego copiar contraseña)</span></button>
+          <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none;line-height:1.3">💬 Enviar por WhatsApp<br><span style="font-size:0.7rem;opacity:0.8">(luego enviar contraseña)</span></a>
         </div>
       </div>
     `;
@@ -2379,10 +2377,8 @@ Ante cualquier duda, comunicate con nosotros.`;
           <button onclick="navigator.clipboard.writeText('${tempPass}').then(()=>toast('Contraseña copiada ✓'))" style="background:#ffc107;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:0.8rem;font-weight:600;white-space:nowrap">📋 Copiar</button>
         </div>
         <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-          <button class="btn btn-green" style="font-size:0.82rem" onclick="copiarMensajeAcceso()">📋 Copiar mensaje</button>
-          <button class="btn btn-secondary" style="font-size:0.82rem" onclick="navigator.clipboard.writeText('${tempPass}').then(()=>toast('Contraseña copiada ✓'))">🔑 Copiar contraseña</button>
-          <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none">💬 1er mensaje (texto)</a>
-          <a href="https://wa.me/?text=${encodeURIComponent(tempPass)}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none">🔑 2do mensaje (contraseña)</a>
+          <button class="btn btn-green" style="font-size:0.82rem;line-height:1.3" onclick="copiarMensajeAcceso()">📋 Copiar mensaje<br><span style="font-size:0.7rem;opacity:0.8">(luego copiar contraseña)</span></button>
+          <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none;line-height:1.3">💬 Enviar por WhatsApp<br><span style="font-size:0.7rem;opacity:0.8">(luego enviar contraseña)</span></a>
         </div>
       </div>
     `;
@@ -7907,10 +7903,8 @@ Ante cualquier duda, comunicate con nosotros.`;
         <button onclick="navigator.clipboard.writeText('${tempPass}').then(()=>toast('Contraseña copiada ✓'))" style="background:#ffc107;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:0.8rem;font-weight:600;white-space:nowrap">📋 Copiar</button>
       </div>
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-        <button class="btn btn-green" style="font-size:0.82rem" onclick="navigator.clipboard.writeText(${JSON.stringify(mensaje)});toast('Copiado ✓')">📋 Copiar mensaje</button>
-        <button class="btn btn-secondary" style="font-size:0.82rem" onclick="navigator.clipboard.writeText('${tempPass}').then(()=>toast('Contraseña copiada ✓'))">🔑 Copiar contraseña</button>
-        <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none">💬 1er mensaje (texto)</a>
-        <a href="https://wa.me/?text=${encodeURIComponent(tempPass)}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none">🔑 2do mensaje (contraseña)</a>
+        <button class="btn btn-green" style="font-size:0.82rem;line-height:1.3" onclick="navigator.clipboard.writeText(${JSON.stringify(mensaje)});toast('Copiado ✓')">📋 Copiar mensaje<br><span style="font-size:0.7rem;opacity:0.8">(luego copiar contraseña)</span></button>
+        <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none;line-height:1.3">💬 Enviar por WhatsApp<br><span style="font-size:0.7rem;opacity:0.8">(luego enviar contraseña)</span></a>
       </div>
     </div>
     <div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Cerrar</button></div>
