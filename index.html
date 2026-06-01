@@ -3133,7 +3133,7 @@ async function cargarListaServicios(filtro='') {
       </p>
       ${pctWarnings.length ? `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.75rem;font-size:0.82rem">
         ${pctWarnings.map(w => `<div style="margin-bottom:4px">⚠ ${w.msg} 
-          ${w.ids.map(id => `<button onclick="openModal2ForContrato(${id})" style="background:none;border:none;color:#856404;text-decoration:underline;cursor:pointer;font-size:0.82rem;padding:0">→ Editar</button>`).join(' ')}
+          ${w.ids.map(id => `<button onclick="abrirContratoDesdeServicios(${id})" style="background:none;border:none;color:#856404;text-decoration:underline;cursor:pointer;font-size:0.82rem;padding:0">→ Editar</button>`).join(' ')}
         </div>`).join('')}
       </div>` : ''}
       ${cargadosHtml}
