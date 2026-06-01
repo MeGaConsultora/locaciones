@@ -4033,14 +4033,26 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
       { id:'expensas', label:'Expensas', val: Math.max(0,expensas-(parseFloat(p.pagado_expensas)||0)) },
     ].filter(i => i.val > 0);
   } else {
+    // No per-item tracking — distribute ya-abonado (total-saldo) across items in sequence
+    const yaAbonadoGP = Math.max(0, (p.total||0) - (p.saldo||0));
+    const ordenGP = ['alquiler','epe','agua','tgiu','expensas','seguro','internet'];
+    const brutosGP = { alquiler: p.importe_alquiler||0, epe, agua, tgiu, seguro, internet, expensas };
+    let restGP = yaAbonadoGP;
+    const saldosGP = {};
+    for (const it of ordenGP) {
+      const bruto = brutosGP[it]||0;
+      const cubierto = Math.min(restGP, bruto);
+      saldosGP[it] = Math.max(0, bruto - cubierto);
+      restGP -= cubierto;
+    }
     items = [
-      { id:'alquiler', label:'Alquiler', val: p.importe_alquiler||0 },
-      { id:'epe',      label:'EPE',      val: epe },
-      { id:'agua',     label:'Agua',     val: agua },
-      { id:'tgiu',     label:'TGIU',     val: tgiu },
-      { id:'seguro',   label:'Seguro',   val: seguro },
-      { id:'internet', label:'Internet', val: internet },
-      { id:'expensas', label:'Expensas', val: expensas },
+      { id:'alquiler', label:'Alquiler', val: saldosGP['alquiler'] },
+      { id:'epe',      label:'EPE',      val: saldosGP['epe'] },
+      { id:'agua',     label:'Agua',     val: saldosGP['agua'] },
+      { id:'tgiu',     label:'TGIU',     val: saldosGP['tgiu'] },
+      { id:'seguro',   label:'Seguro',   val: saldosGP['seguro'] },
+      { id:'internet', label:'Internet', val: saldosGP['internet'] },
+      { id:'expensas', label:'Expensas', val: saldosGP['expensas'] },
     ].filter(i => i.val > 0);
   }
 
@@ -4058,8 +4070,17 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
   const honorariosCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
   const honorariosPagadoInq = honorariosCuotas.reduce((s,g) => s+(parseFloat(g.pagado_inquilino)||0), 0);
 
-  const paidSection = paidItems.length > 0 || honorariosPagadoInq > 0 ? `
+  // a-cuenta: payment without per-item breakdown
+  const yaAbonadoGP = !tieneItemsPagados ? Math.max(0, (p.total||0) - (p.saldo||0)) : 0;
+
+  const paidSection = paidItems.length > 0 || honorariosPagadoInq > 0 || yaAbonadoGP > 0 ? `
     <div style="margin-bottom:0.5rem;font-size:0.75rem;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Ya cobrado</div>
+    ${yaAbonadoGP > 0 ? `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:4px 0;border-bottom:1px solid #f5f0e8;background:#f9f9f9">
+        <span style="font-size:0.85rem;color:var(--green);flex:1">✓ Pago a cuenta — ${formatMoney(yaAbonadoGP)}</span>
+        <button onclick="revertirPagoACuenta('${p.id}','${_gpHoja}',${contratoId},'${mesKey}',${_gpComision||8})" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.75rem">↩</button>
+      </div>
+    ` : ''}
     ${paidItems.map(it => `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:4px 0;border-bottom:1px solid #f5f0e8;background:#f9f9f9">
         <span style="font-size:0.85rem;color:var(--green);flex:1">✓ ${it.label} — ${formatMoney(it.pagado)}${it.pagado < it.monto ? ' (parcial, debe ' + formatMoney(it.monto-it.pagado) + ')' : ''}</span>
@@ -4639,6 +4660,19 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       }, 150);
     }
   } catch(e) { toast('Error al guardar: '+e.message,'error'); }
+}
+
+async function revertirPagoACuenta(pagoId, hoja, contratoId, mesKey, comisionPct) {
+  const p = DB.pagos.find(x => x.id == pagoId);
+  if (!p) return;
+  const yaAbonado = Math.max(0, (p.total||0) - (p.saldo||0));
+  if (!confirm(`¿Revertir el pago a cuenta de ${formatMoney(yaAbonado)}?\n\nEl saldo volverá al total completo.`)) return;
+  try {
+    await sbPatch('pagos', parseInt(pagoId), { pagado: 'NO', saldo: p.total });
+    toast('Pago a cuenta revertido ✓');
+    await loadAll();
+    openGP(hoja, contratoId, mesKey, comisionPct);
+  } catch(e) { toast('Error: '+e.message, 'error'); }
 }
 
 async function revertirItem(pagoId, itemId, montoPagado, montoTotal, hoja, contratoId, mesKey, comisionPct) {
