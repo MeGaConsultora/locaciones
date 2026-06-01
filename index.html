@@ -1372,7 +1372,7 @@ function renderContratos() {
         // Gastos de inicio pendientes
         const gastosCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id);
         const gastosSaldoInq = gastosCuotas.reduce((s,g) => s + Math.max(0,(g.monto_inquilino||0)-(parseFloat(g.pagado_inquilino)||0)), 0);
-        const saldoTotalConGastos = saldoTotal + gastosSaldoInq;
+        const saldoTotalConGastos = saldoTotal;
         return `<tr onclick="openContrato(${c.id})">
           <td><strong>${c.titulo||c.hoja}</strong></td>
           <td>${c.locador||'—'}</td><td>${c.locatario||'—'}</td>
