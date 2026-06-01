@@ -2208,7 +2208,7 @@ async function abrirCrearAcceso(contratoId, hoja) {
     </div>
   ` : `
     <p style="font-size:0.85rem;color:#666;margin-bottom:1.2rem">
-      Creá el usuario para que el inquilino pueda acceder al portal. Después avisale por WhatsApp o email que entre con su email y use "¿Olvidaste tu contraseña?" para crear su clave.
+      Creá el usuario para que el inquilino pueda acceder al portal. Luego enviále el mensaje y la contraseña temporal.
     </p>
     <div class="form-grid">
       <div class="form-group">
@@ -2266,8 +2266,8 @@ Ante cualquier duda, comunicate con nosotros.`;
         <div style="font-weight:600;color:#155724;margin-bottom:0.5rem">✓ Acceso actualizado</div>
         <div style="background:white;border-radius:8px;padding:0.75rem;font-size:0.82rem;color:#333;margin-bottom:0.75rem;border:1px solid #c3e6cb">${mensaje}</div>
         <div style="display:flex;gap:0.5rem;justify-content:center;margin-bottom:0.75rem">
-          <button class="btn btn-green" style="font-size:0.82rem;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;gap:2px" onclick="copiarMensajeAcceso()"><span>📋 Copiar mensaje</span><span style="font-size:0.7rem;opacity:0.75">(luego copiar contraseña)</span></button>
-          <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;gap:2px">💬 <span>Enviar por WhatsApp</span><span style="font-size:0.7rem;opacity:0.75">(luego enviar contraseña)</span></a>
+          <button class="btn btn-green" style="font-size:0.82rem;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 8px" onclick="copiarMensajeAcceso()"><span>📋 Copiar mensaje</span><span style="font-size:0.7rem;opacity:0.75">(luego copiar contraseña)</span></button>
+          <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 8px"><span>💬 Enviar por WhatsApp</span><span style="font-size:0.7rem;opacity:0.75">(luego enviar contraseña)</span></a>
         </div>
         <div style="background:#fff8e1;border:1.5px solid #ffc107;border-radius:8px;padding:0.6rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
           <div>
@@ -2370,8 +2370,8 @@ Ante cualquier duda, comunicate con nosotros.`;
           ${mensaje}
         </div>
         <div style="display:flex;gap:0.5rem;justify-content:center;margin-bottom:0.75rem">
-          <button class="btn btn-green" style="font-size:0.82rem;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;gap:2px" onclick="copiarMensajeAcceso()"><span>📋 Copiar mensaje</span><span style="font-size:0.7rem;opacity:0.75">(luego copiar contraseña)</span></button>
-          <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;gap:2px">💬 <span>Enviar por WhatsApp</span><span style="font-size:0.7rem;opacity:0.75">(luego enviar contraseña)</span></a>
+          <button class="btn btn-green" style="font-size:0.82rem;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 8px" onclick="copiarMensajeAcceso()"><span>📋 Copiar mensaje</span><span style="font-size:0.7rem;opacity:0.75">(luego copiar contraseña)</span></button>
+          <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 8px"><span>💬 Enviar por WhatsApp</span><span style="font-size:0.7rem;opacity:0.75">(luego enviar contraseña)</span></a>
         </div>
         <div style="background:#fff8e1;border:1.5px solid #ffc107;border-radius:8px;padding:0.6rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
           <div>
@@ -7896,8 +7896,8 @@ Ante cualquier duda, comunicate con nosotros.`;
       <div style="font-weight:600;color:#155724;margin-bottom:0.5rem">Datos de acceso guardados</div>
       <div style="background:white;border-radius:8px;padding:0.75rem;font-size:0.82rem;color:#333;margin-bottom:0.75rem;border:1px solid #c3e6cb;white-space:pre-wrap">${mensaje}</div>
       <div style="display:flex;gap:0.5rem;justify-content:center;margin-bottom:0.75rem">
-        <button class="btn btn-green" style="font-size:0.82rem;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;gap:2px" onclick="navigator.clipboard.writeText(${JSON.stringify(mensaje)});toast('Copiado ✓')"><span>📋 Copiar mensaje</span><span style="font-size:0.7rem;opacity:0.75">(luego copiar contraseña)</span></button>
-        <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;gap:2px">💬 <span>Enviar por WhatsApp</span><span style="font-size:0.7rem;opacity:0.75">(luego enviar contraseña)</span></a>
+        <button class="btn btn-green" style="font-size:0.82rem;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 8px" onclick="navigator.clipboard.writeText(${JSON.stringify(mensaje)});toast('Copiado ✓')"><span>📋 Copiar mensaje</span><span style="font-size:0.7rem;opacity:0.75">(luego copiar contraseña)</span></button>
+        <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 8px"><span>💬 Enviar por WhatsApp</span><span style="font-size:0.7rem;opacity:0.75">(luego enviar contraseña)</span></a>
       </div>
       <div style="background:#fff8e1;border:1.5px solid #ffc107;border-radius:8px;padding:0.6rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
         <div>
