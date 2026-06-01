@@ -30,9 +30,20 @@
     justify-content:space-between; height:64px;
     position:sticky; top:0; z-index:200;
     box-shadow:0 2px 16px rgba(0,0,0,0.25);
+    gap:0.75rem;
   }
-  .logo { font-family:'DM Serif Display',serif; font-size:1.4rem; display:flex; align-items:center; gap:10px; }
+  .logo { font-family:'DM Serif Display',serif; font-size:1.4rem; display:flex; align-items:center; gap:10px; flex-shrink:0; }
   .logo-dot { width:8px; height:8px; background:var(--accent); border-radius:50%; }
+  @media (max-width:640px) {
+    header { padding:0.4rem 0.75rem; height:auto; min-height:56px; flex-wrap:wrap; gap:0.4rem; }
+    .logo { font-size:1rem; }
+    .logo-dot { width:6px; height:6px; }
+    .header-search { order:3; width:100%; }
+    .header-search input { width:100% !important; box-sizing:border-box; }
+    .sync-btn { font-size:0.75rem; padding:5px 8px; }
+    #user-name { display:none; }
+    #sync-status { display:none; }
+  }
   .sync-btn {
     background:rgba(255,255,255,0.12); border:none; color:var(--cream);
     padding:6px 14px; border-radius:6px; cursor:pointer;
