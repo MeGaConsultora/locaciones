@@ -6622,14 +6622,31 @@ function cargarItemsPago(impagos, pagoId, todosPagos) {
   if (!pago) return;
   const nroMes = todosPagos.findIndex(x => x.id == pagoId) + 1;
 
+  // Distribute already-paid amount (total - saldo) across items in sequence
+  const yaAbonado = (pago.total||0) - (pago.saldo||0);
+  const ordenAcred = ['alquiler','epe','agua','tgiu','expensas','seguro','internet'];
+  const brutos = {
+    alquiler: pago.importe_alquiler||0, epe: pago.monto_epe||0, agua: pago.monto_agua||0,
+    tgiu: pago.monto_tgiu||0, seguro: pago.monto_seguro||0, internet: pago.monto_internet||0,
+    expensas: pago.monto_expensas||0
+  };
+  let restanteAbonado = yaAbonado;
+  const saldosPorItem = {};
+  for (const item of ordenAcred) {
+    const bruto = brutos[item] || 0;
+    const cubierto = Math.min(restanteAbonado, bruto);
+    saldosPorItem[item] = Math.max(0, bruto - cubierto);
+    restanteAbonado -= cubierto;
+  }
+
   const items = [
-    { id:'alquiler', label:'Alquiler',  val: pago.importe_alquiler },
-    { id:'epe',      label:'EPE',       val: pago.monto_epe },
-    { id:'agua',     label:'Agua',      val: pago.monto_agua },
-    { id:'tgiu',     label:'TGIU',      val: pago.monto_tgiu },
-    { id:'seguro',   label:'Seguro',    val: pago.monto_seguro },
-    { id:'internet', label:'Internet',  val: pago.monto_internet },
-    { id:'expensas', label:'Expensas',  val: pago.monto_expensas },
+    { id:'alquiler', label:'Alquiler',  val: saldosPorItem['alquiler'] },
+    { id:'epe',      label:'EPE',       val: saldosPorItem['epe'] },
+    { id:'agua',     label:'Agua',      val: saldosPorItem['agua'] },
+    { id:'tgiu',     label:'TGIU',      val: saldosPorItem['tgiu'] },
+    { id:'seguro',   label:'Seguro',    val: saldosPorItem['seguro'] },
+    { id:'internet', label:'Internet',  val: saldosPorItem['internet'] },
+    { id:'expensas', label:'Expensas',  val: saldosPorItem['expensas'] },
     { id:'otros',    label:'Otros',     val: pago.monto_otros, concepto: pago.concepto_otros },
   ].filter(it => it.val && it.val > 0);
 
