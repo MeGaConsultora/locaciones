@@ -2852,7 +2852,8 @@ async function cargarListaServicios(filtro='') {
     const todosConServicio = DB.contratos.filter(c => {
       const estado = getEstado(c);
       if (estado !== 'vigente') {
-        // Allow contracts that expired within the selected month
+        // Allow contracts that expired (not rescinded) within the selected month
+        if (c.fecha_rescision) return false; // never show rescinded
         if (!c.vigencia_hasta) return false;
         if (c.vigencia_hasta.substring(0,7) !== mesKey) return false;
       }
