@@ -7728,7 +7728,7 @@ async function loadUsuarios() {
           ${!u.aprobado ? `<button class="btn btn-green" style="padding:4px 10px;font-size:0.75rem" onclick="aprobarUsuario('${u.id}')">✓ Aprobar</button>` : ''}
           ${u.aprobado && u.rol!=='admin' ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="toggleAdmin('${u.id}',true)">↑ Admin</button>` : ''}
           ${u.rol==='admin' && u.email !== currentUsuario?.email ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="toggleAdmin('${u.id}',false)">↓ Quitar admin</button>` : ''}
-          ${u.aprobado && u.rol==='inquilino' && u.temp_password ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;color:var(--green);border-color:var(--green)" onclick="reenviarAcceso('${u.email}','${u.nombre||''}','${u.temp_password}')">📤 Reenviar acceso</button>` : ''}
+          ${u.aprobado && u.rol==='inquilino' ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;color:var(--green);border-color:var(--green)" onclick="reenviarAcceso('${u.email}','${u.nombre||''}','${u.temp_password||''}')">📤 Reenviar acceso</button>` : ''}
           ${u.email !== currentUsuario?.email && u.rol!=='admin' ? `<button class="btn" style="padding:4px 10px;font-size:0.75rem;background:#f8d7da;color:#721c24" onclick="darDeBaja('${u.id}','${u.email}')">✕ Baja</button>` : u.email === currentUsuario?.email ? '<span style="font-size:0.75rem;color:#aaa">(vos)</span>' : '<span style="font-size:0.75rem;color:#aaa">Admin</span>'}
         </td>
       </tr>`;
@@ -7872,7 +7872,14 @@ async function guardarVinculacion(usuarioId) {
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
-function reenviarAcceso(email, nombre, tempPass) {
+async function reenviarAcceso(email, nombre, tempPass) {
+  // Always generate a new temp password
+  const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  tempPass = Array.from({length:8}, () => chars[Math.floor(Math.random()*chars.length)]).join('') + '!1';
+  const usuarios = await sbGet('usuarios', `email=eq.${encodeURIComponent(email)}&limit=1`);
+  if (usuarios.length) {
+    await sbPatch('usuarios', usuarios[0].id, { temp_password: tempPass });
+  }
   const nombreMostrar = (() => {
     if (!nombre) return '';
     if (nombre.includes(',')) return nombre.split(',')[1]?.trim().split(' ')[0] || nombre;
@@ -7892,8 +7899,11 @@ Ante cualquier duda, comunicate con nosotros.`;
   document.getElementById('modal-title').textContent = 'Reenviar acceso';
   document.getElementById('modal-subtitle').textContent = email;
   document.getElementById('modal-body').innerHTML = `
+    <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.75rem;font-size:0.82rem">
+      ⚠ <strong>Solo válido si el inquilino aún no cambió su contraseña.</strong> Si ya la cambió, deberá usar "¿Olvidaste tu contraseña?" en el portal.
+    </div>
     <div style="background:#f0fff4;border:1px solid var(--green);border-radius:10px;padding:1rem;margin-bottom:1rem">
-      <div style="font-weight:600;color:#155724;margin-bottom:0.5rem">Datos de acceso guardados</div>
+      <div style="font-weight:600;color:#155724;margin-bottom:0.5rem">Datos de acceso</div>
       <div style="background:white;border-radius:8px;padding:0.75rem;font-size:0.82rem;color:#333;margin-bottom:0.75rem;border:1px solid #c3e6cb;white-space:pre-wrap">${mensaje}</div>
       <div style="display:flex;gap:0.5rem;justify-content:center;margin-bottom:0.75rem">
         <button class="btn btn-green" style="font-size:0.82rem;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 8px" onclick="navigator.clipboard.writeText(${JSON.stringify(mensaje)});toast('Copiado ✓')"><span>📋 Copiar mensaje</span><span style="font-size:0.7rem;opacity:0.75">(luego copiar contraseña)</span></button>
