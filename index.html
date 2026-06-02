@@ -3947,6 +3947,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       </div>
       <div class="form-actions" style="justify-content:space-between">
         ${((p.total||0) > (p.saldo||0) || (p.pagado && p.pagado !== '0')) ? `<button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="revertirCobro('${hoja}',${contratoId},'${mesKey}',${comisionPct})">↩ Revertir cobro</button>` : '<div></div>'}
+        <button class="btn btn-secondary" onclick="verDetalleDeuda('${hoja}',${contratoId},'${mesKey}')" style="margin-right:0.5rem">📋 Detalle de deuda</button>
         <button class="btn btn-secondary" onclick="previsualizarReciboInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct})" style="margin-right:0.5rem">👁 Vista previa</button>
         <button class="btn btn-green" onclick="confirmarCobroInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct})">✓ Confirmar cobro + Imprimir recibo</button>
       </div>`}
@@ -4810,6 +4811,81 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
       }, 150);
     }
   } catch(e) { toast('Error: '+e.message,'error'); }
+}
+
+async function verDetalleDeuda(hoja, contratoId, mesKey) {
+  const mes = mesKey+'-01';
+  const hojaEncoded = encodeURIComponent(hoja);
+  const existing = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
+  if (!existing.length) { toast('No hay datos para este mes','error'); return; }
+  const p = existing[0];
+  const c = DB.contratos.find(x=>x.id===contratoId);
+  const extras = (await sbGet('pagos_extras', `pago_id=eq.${p.id}&select=*`)).filter(e => e.a_cargo_de !== 'propietario');
+  const ps = {};
+  const psRows = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&select=*`);
+  psRows.forEach(r => ps[r.suministro_id] = r.importe);
+  const getSrv = tipo => {
+    const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id)===contratoId && s.tipo===tipo);
+    if (sums.length && mesKey >= '2026-06') return sums.reduce((t,s)=>t+(ps[s.id]||0),0);
+    return p['monto_'+tipo]||0;
+  };
+  const items = [
+    { label:'Alquiler', monto: p.importe_alquiler||0 },
+    { label:'EPE', monto: getSrv('epe') },
+    { label:'Agua', monto: getSrv('agua') },
+    { label:'TGIU', monto: getSrv('tgiu') },
+    { label:'Seguro', monto: getSrv('seguro') },
+    { label:'Internet', monto: getSrv('internet') },
+    { label:'Expensas', monto: getSrv('expensas') },
+    ...extras.map(e => ({ label: e.concepto||'Extra', monto: parseFloat(e.importe)||0 }))
+  ].filter(i => i.monto > 0);
+
+  const yaAbonado = (p.total||0) - (p.saldo||0);
+  const saldo = p.saldo||0;
+  const mesLabel = new Date(mes+'T12:00:00').toLocaleString('es-AR',{month:'long',year:'numeric'});
+  const inquilinos = DB_CONTRATO_PERSONAS.filter(cp=>parseInt(cp.contrato_id)===contratoId&&cp.rol==='inquilino')
+    .map(cp=>DB_PERSONAS?.find(x=>x.id===cp.persona_id)||DB.contratos.find(x=>x.id===contratoId))
+    .filter(Boolean);
+  const nombreInq = inquilinos.map(p=>p.apellido?(p.apellido+', '+p.nombre):p.titulo||hoja).join(' y ') || hoja;
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <style>
+    body{font-family:'Helvetica Neue',Arial,sans-serif;margin:0;padding:20px;color:#333;font-size:13px}
+    .header{text-align:center;margin-bottom:20px;border-bottom:2px solid #333;padding-bottom:12px}
+    .header h2{margin:0 0 4px;font-size:18px;text-transform:uppercase;letter-spacing:1px}
+    .header p{margin:2px 0;font-size:12px;color:#555}
+    .titulo{text-align:center;font-size:15px;font-weight:700;margin:12px 0;text-transform:uppercase;letter-spacing:1px}
+    table{width:100%;border-collapse:collapse;margin:12px 0}
+    td{padding:6px 8px;border-bottom:1px solid #eee}
+    td:last-child{text-align:right;font-weight:600}
+    .total-row td{border-top:2px solid #333;font-weight:700;font-size:14px;padding-top:10px}
+    .saldo-row td{font-size:15px;font-weight:700;color:#c0392b}
+    .pagado-row td{color:#27ae60}
+    .footer{margin-top:20px;font-size:11px;color:#888;text-align:center}
+    @media print{body{padding:10px}.no-print{display:none}}
+  </style></head><body>
+  <div class="header">
+    <h2>MeGa Consultora</h2>
+    <p>Administración de Propiedades</p>
+  </div>
+  <div class="titulo">Detalle de Deuda — ${mesLabel}</div>
+  <p style="margin:4px 0"><strong>Inquilino/s:</strong> ${nombreInq}</p>
+  <p style="margin:4px 0"><strong>Inmueble:</strong> ${c?.titulo||hoja}</p>
+  <table>
+    ${items.map(i=>`<tr><td>${i.label}</td><td>${formatMoney(i.monto)}</td></tr>`).join('')}
+    ${yaAbonado>0?`<tr class="pagado-row"><td>Ya abonado</td><td>− ${formatMoney(yaAbonado)}</td></tr>`:''}
+    <tr class="saldo-row"><td>SALDO PENDIENTE</td><td>${formatMoney(saldo)}</td></tr>
+  </table>
+  <div class="footer">Emitido el ${new Date().toLocaleDateString('es-AR')} · MeGa Consultora Alquileres</div>
+  <div class="no-print" style="margin-top:20px;text-align:center;display:flex;gap:12px;justify-content:center">
+    <button onclick="window.print()" style="background:#2d6a4f;color:white;border:none;padding:10px 24px;border-radius:6px;font-size:14px;cursor:pointer">🖨 Imprimir / Guardar PDF</button>
+    <button onclick="window.close()" style="background:#eee;color:#333;border:none;padding:10px 24px;border-radius:6px;font-size:14px;cursor:pointer">Cerrar</button>
+  </div>
+  </body></html>`;
+
+  const win = window.open('','_blank','width=600,height=700');
+  win.document.write(html);
+  win.document.close();
 }
 
 async function previsualizarReciboInquilino(hoja, contratoId, mesKey, comisionPct) {
