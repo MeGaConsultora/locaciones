@@ -6859,6 +6859,7 @@ async function confirmarPago(pagoId, hoja, nroMes) {
     const hojaEncoded = encodeURIComponent(hoja);
     const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc&limit=500`);
     const pagoActual = pagos.find(p => p.id == pagoId);
+    const excedente = Math.round(Math.max(0, totalAbonado - (pagoActual.saldo||0)) * 100) / 100;
     const nuevoSaldo = Math.round(Math.max(0, (pagoActual.saldo||0) - totalAbonado) * 100) / 100;
 
     // Actualizar saldo en Supabase
@@ -6870,6 +6871,24 @@ async function confirmarPago(pagoId, hoja, nroMes) {
     });
 
     toast('Pago registrado ✓');
+
+    // Aviso si hay excedente
+    if (excedente > 0) {
+      // Check if there's a next month
+      const siguientePago = pagos.find(p => p.mes > pagoActual.mes && p.hoja === hoja);
+      if (siguientePago) {
+        // Apply as pago a cuenta for next month
+        const nuevoSaldoSig = Math.round(Math.max(0, (siguientePago.saldo||0) - excedente) * 100) / 100;
+        await sbPatch('pagos', siguientePago.id, {
+          saldo: nuevoSaldoSig,
+          pagado: nuevoSaldoSig === 0 ? 'SI' : 'PARCIAL'
+        });
+        toast(`Excedente de ${formatMoney(excedente)} aplicado como pago a cuenta de ${siguientePago.mes?.substring(0,7)} ✓`);
+      } else {
+        // Last month - show credit notice
+        toast(`⚠ Saldo a favor del inquilino: ${formatMoney(excedente)} — No hay mes siguiente para acreditar`);
+      }
+    }
 
     // Save gastos pagado if applicable
     const gastosChk = document.getElementById('chk-gastos-inicio');
