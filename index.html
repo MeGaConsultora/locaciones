@@ -3948,7 +3948,6 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       <div class="form-actions" style="justify-content:space-between">
         ${((p.total||0) > (p.saldo||0) || (p.pagado && p.pagado !== '0')) ? `<button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="revertirCobro('${hoja}',${contratoId},'${mesKey}',${comisionPct})">↩ Revertir cobro</button>` : '<div></div>'}
         <button class="btn btn-secondary" onclick="verDetalleDeuda('${hoja}',${contratoId},'${mesKey}')" style="margin-right:0.5rem">📋 Detalle de deuda</button>
-        <button class="btn btn-secondary" onclick="previsualizarReciboInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct})" style="margin-right:0.5rem">👁 Vista previa</button>
         <button class="btn btn-green" onclick="confirmarCobroInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct})">✓ Confirmar cobro + Imprimir recibo</button>
       </div>`}
     </div>
@@ -4848,7 +4847,12 @@ async function verDetalleDeuda(hoja, contratoId, mesKey) {
     .filter(Boolean);
   const nombreInq = inquilinos.map(p=>p.apellido?(p.apellido+', '+p.nombre):p.titulo||hoja).join(' y ') || hoja;
 
+  // Get inmueble address
+  const inm = DB_INMUEBLES?.find(x => x.id === c?.inmueble_id);
+  const inmDir = inm ? [inm.calle, inm.numero, inm.piso, inm.dpto].filter(Boolean).join(' ') + (inm.localidad ? ' — '+inm.localidad : '') : (c?.titulo||hoja);
+
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Detalle de Deuda</title>
   <style>
     body{font-family:'Helvetica Neue',Arial,sans-serif;margin:0;padding:20px;color:#333;font-size:13px}
     .header{text-align:center;margin-bottom:20px;border-bottom:2px solid #333;padding-bottom:12px}
@@ -4858,11 +4862,15 @@ async function verDetalleDeuda(hoja, contratoId, mesKey) {
     table{width:100%;border-collapse:collapse;margin:12px 0}
     td{padding:6px 8px;border-bottom:1px solid #eee}
     td:last-child{text-align:right;font-weight:600}
-    .total-row td{border-top:2px solid #333;font-weight:700;font-size:14px;padding-top:10px}
     .saldo-row td{font-size:15px;font-weight:700;color:#c0392b}
     .pagado-row td{color:#27ae60}
     .footer{margin-top:20px;font-size:11px;color:#888;text-align:center}
-    @media print{body{padding:10px}.no-print{display:none}}
+    @media print{
+      @page{margin:1cm}
+      body{padding:0}
+      .no-print{display:none !important}
+      .footer{display:none}
+    }
   </style></head><body>
   <div class="header">
     <h2>MeGa Consultora</h2>
@@ -4870,13 +4878,12 @@ async function verDetalleDeuda(hoja, contratoId, mesKey) {
   </div>
   <div class="titulo">Detalle de Deuda — ${mesLabel}</div>
   <p style="margin:4px 0"><strong>Inquilino/s:</strong> ${nombreInq}</p>
-  <p style="margin:4px 0"><strong>Inmueble:</strong> ${c?.titulo||hoja}</p>
+  <p style="margin:4px 0"><strong>Inmueble:</strong> ${inmDir}</p>
   <table>
     ${items.map(i=>`<tr><td>${i.label}</td><td>${formatMoney(i.monto)}</td></tr>`).join('')}
     ${yaAbonado>0?`<tr class="pagado-row"><td>Ya abonado</td><td>− ${formatMoney(yaAbonado)}</td></tr>`:''}
     <tr class="saldo-row"><td>SALDO PENDIENTE</td><td>${formatMoney(saldo)}</td></tr>
   </table>
-  <div class="footer">Emitido el ${new Date().toLocaleDateString('es-AR')} · MeGa Consultora Alquileres</div>
   <div class="no-print" style="margin-top:20px;text-align:center;display:flex;gap:12px;justify-content:center">
     <button onclick="window.print()" style="background:#2d6a4f;color:white;border:none;padding:10px 24px;border-radius:6px;font-size:14px;cursor:pointer">🖨 Imprimir / Guardar PDF</button>
     <button onclick="window.close()" style="background:#eee;color:#333;border:none;padding:10px 24px;border-radius:6px;font-size:14px;cursor:pointer">Cerrar</button>
