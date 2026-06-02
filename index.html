@@ -1891,12 +1891,29 @@ async function recalcularFilaPago(pagoId) {
   if (!p) return;
   const extras = extrasActuales[pagoId]||[];
   const total = calcularTotal(p, extras);
-  // Recalc saldo: if previously fully paid keep saldo=0, else saldo=total unpaid portion
-  const yaAbonado = p.total > 0 ? (p.total - (p.saldo||0)) : 0;
-  const nuevoSaldo = Math.round(Math.max(0, total - yaAbonado) * 100) / 100;
-  await sbPatch('pagos', pagoId, { total, saldo: nuevoSaldo });
+  // Abonado is immutable once confirmed — saldo = total - abonado
+  const abonado = (p.total||0) - (p.saldo||0);
+  const nuevoSaldo = Math.round((total - abonado) * 100) / 100;
+  const excedente = nuevoSaldo < 0 ? Math.abs(nuevoSaldo) : 0;
+  const saldoFinal = Math.max(0, nuevoSaldo);
+  const nuevoPagado = saldoFinal <= 0 ? 'SI' : (abonado > 0 ? 'PARCIAL' : (p.pagado||'NO'));
+  await sbPatch('pagos', pagoId, { total, saldo: saldoFinal, pagado: nuevoPagado });
   p.total = total;
-  p.saldo = nuevoSaldo;
+  p.saldo = saldoFinal;
+
+  // Si hay excedente, aplicarlo al mes siguiente o notificar
+  if (excedente > 0) {
+    const todosLosPagos = await sbGet('pagos', `hoja=eq.${encodeURIComponent(p.hoja)}&order=mes.asc`);
+    const siguiente = todosLosPagos.find(x => x.mes > p.mes);
+    if (siguiente) {
+      const nuevoSaldoSig = Math.round(Math.max(0, (siguiente.saldo||0) - excedente) * 100) / 100;
+      const pagadoSig = nuevoSaldoSig === 0 ? 'SI' : (((siguiente.total||0) - nuevoSaldoSig) > 0 ? 'PARCIAL' : 'NO');
+      await sbPatch('pagos', siguiente.id, { saldo: nuevoSaldoSig, pagado: pagadoSig });
+      toast(`Excedente de ${formatMoney(excedente)} aplicado al mes siguiente ✓`);
+    } else {
+      toast(`⚠ Saldo a favor del inquilino: ${formatMoney(excedente)} — No hay mes siguiente para acreditar`);
+    }
+  }
   // Update DOM
   const totalEl = document.getElementById(`total-${pagoId}`);
   if (totalEl) totalEl.innerHTML = `<strong>${formatMoney(total)}</strong>`;
