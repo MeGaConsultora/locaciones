@@ -3342,7 +3342,8 @@ async function guardarExtraGralItem(inputId) {
       const importe = Math.round(importeTotal * pct / 100 * 100) / 100;
       const aCargoDe = (s.pct_propietario ?? 0) > 0 ? 'propietario' : 'inquilino';
       const propPerId = aCargoDe === 'propietario' ? (s.descuenta_persona_id || s.propietario_persona_id || null) : null;
-      const yaExiste = extrasExistentes.find(e => parseInt(e.suministro_id) === parseInt(s.id));
+      const yaExiste = extrasExistentes.find(e => parseInt(e.suministro_id) === parseInt(s.id) && e.a_cargo_de !== 'propietario');
+      const yaExisteProp = extrasExistentes.find(e => parseInt(e.suministro_id) === parseInt(s.id) && e.a_cargo_de === 'propietario');
 
       if (yaExiste) {
         if (!importeTotal) {
@@ -3356,6 +3357,24 @@ async function guardarExtraGralItem(inputId) {
           suministro_id: s.id, a_cargo_de: aCargoDe,
           propietario_persona_id: propPerId
         });
+      }
+
+      // Si el suministro tiene propietario_persona_id y el importe es a cargo del inquilino,
+      // crear también una entrada de crédito para el propietario
+      if (s.propietario_persona_id && aCargoDe === 'inquilino' && importe > 0) {
+        if (yaExisteProp) {
+          if (!importeTotal) {
+            await sbDelete('pagos_extras', yaExisteProp.id);
+          } else {
+            await sbPatch('pagos_extras', yaExisteProp.id, { importe, concepto, a_cargo_de: 'propietario', propietario_persona_id: s.propietario_persona_id });
+          }
+        } else if (importeTotal) {
+          await sbPost('pagos_extras', {
+            pago_id: pagoId, concepto, importe,
+            suministro_id: s.id, a_cargo_de: 'propietario',
+            propietario_persona_id: s.propietario_persona_id, tipo: 'credito'
+          });
+        }
       }
       guardados++;
     }
