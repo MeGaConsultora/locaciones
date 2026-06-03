@@ -1894,15 +1894,17 @@ async function recalcularFilaPago(pagoId) {
   // Abonado is immutable once confirmed — saldo = total - abonado
   const abonado = (p.total||0) - (p.saldo||0);
   const nuevoSaldo = Math.round((total - abonado) * 100) / 100;
-  const excedente = nuevoSaldo < 0 ? Math.abs(nuevoSaldo) : 0;
-  const saldoFinal = Math.max(0, nuevoSaldo);
+  // Recalcular saldo: abonado es inmutable, saldo = total - abonado
+  const saldoRecalc = Math.round((total - abonado) * 100) / 100;
+  const saldoFinal = Math.max(0, saldoRecalc);
   const nuevoPagado = saldoFinal <= 0 ? 'SI' : (abonado > 0 ? 'PARCIAL' : (p.pagado||'NO'));
   await sbPatch('pagos', pagoId, { total, saldo: saldoFinal, pagado: nuevoPagado });
   p.total = total;
   p.saldo = saldoFinal;
 
-  // Si hay excedente, aplicarlo al mes siguiente o notificar
-  if (excedente > 0) {
+  // Si hay excedente (pagó más de lo que debía), aplicar al mes siguiente
+  if (saldoRecalc < 0) {
+    const excedente = Math.abs(saldoRecalc);
     const todosLosPagos = await sbGet('pagos', `hoja=eq.${encodeURIComponent(p.hoja)}&order=mes.asc`);
     const siguiente = todosLosPagos.find(x => x.mes > p.mes);
     if (siguiente) {
