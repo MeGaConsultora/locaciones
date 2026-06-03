@@ -6374,7 +6374,20 @@ async function guardarContrato() {
   if (!titulo) { toast('El título es obligatorio','error'); return; }
   // Check for duplicate (only for new contracts)
   const existe = DB.contratos.find(c => c.titulo?.toLowerCase() === titulo.toLowerCase() || c.hoja?.toLowerCase() === titulo.toLowerCase());
-  if (existe) { toast('Ya existe un contrato con ese nombre','error'); return; }
+  if (existe) {
+    // Check if it was created recently (within 3 minutes) — likely an incomplete save
+    const creadoHace = existe.created_at ? (Date.now() - new Date(existe.created_at).getTime()) / 1000 / 60 : 999;
+    if (creadoHace < 3) {
+      // Offer to complete it
+      if (!confirm(`Ya existe un contrato con ese nombre (creado hace menos de 3 minutos, posiblemente incompleto).\n\n¿Querés completar/actualizar ese contrato con los datos actuales?`)) return;
+      window._contratoIdEditar = existe.id;
+      window._volverAContrato = false;
+      // Fall through to update flow
+    } else {
+      toast('Ya existe un contrato con ese nombre','error');
+      return;
+    }
+  }
   if (!validarPctAlGuardar(null)) return;
 
   // Collect personas from form
@@ -6442,13 +6455,25 @@ async function guardarContrato() {
   };
 
   try {
-    const r = await sbPost('contratos', body);
-    const nuevoContrato = Array.isArray(r) ? r[0] : r;
-    if (!nuevoContrato?.id) { toast('Error: no se recibió el ID del contrato nuevo','error'); return; }
+    let nuevoContrato;
+    if (window._contratoIdEditar) {
+      // Update incomplete contract
+      const contratoId = window._contratoIdEditar;
+      window._contratoIdEditar = null;
+      await sbPatch('contratos', contratoId, body);
+      nuevoContrato = { id: contratoId };
+    } else {
+      const r = await sbPost('contratos', body);
+      nuevoContrato = Array.isArray(r) ? r[0] : r;
+      if (!nuevoContrato?.id) { toast('Error: no se recibió el ID del contrato nuevo','error'); return; }
+    }
     toast('Contrato guardado ✓');
 
     // Save contrato_personas relationships
     if (nuevoContrato && (propIds.length > 0 || inqIds.length > 0)) {
+      // Delete existing contrato_personas first to avoid duplicates
+      const cpExistentes = await sbGet('contrato_personas', `contrato_id=eq.${nuevoContrato.id}`);
+      for (const cp of cpExistentes) await sbDelete('contrato_personas', cp.id);
       for (let i=0; i<propIds.length; i++) {
         await sbPost('contrato_personas', {contrato_id: nuevoContrato.id, persona_id: propIds[i], rol: 'propietario', orden: i+1, pct_alquiler: propPcts[i] ?? 100});
       }
