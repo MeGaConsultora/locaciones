@@ -3854,7 +3854,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
   }
 
   const extrasInq = extrasDelMes.filter(e => e.a_cargo_de !== 'propietario');
-  const extrasProp = extrasDelMes.filter(e => e.a_cargo_de === 'propietario');
+  const extrasProp = extrasDelMes.filter(e => e.a_cargo_de === 'propietario' || e.propietario_persona_id);
   const alq = p?.importe_alquiler||0;
   const comisionMonto = alq * (comisionPct/100);
 
@@ -4201,7 +4201,7 @@ function cambiarPropietarioGP(personaId) {
   const contratoId = window._gpContratoId;
   const comisionPct = window._gpComision || 8;
   const c = DB.contratos.find(x => x.id === contratoId);
-  const extrasProp = (extrasActuales[p?.id]||[]).filter(e => e.a_cargo_de === 'propietario');
+  const extrasProp = (extrasActuales[p?.id]||[]).filter(e => e.a_cargo_de === 'propietario' || e.propietario_persona_id);
   document.getElementById('gp-prop-items').innerHTML = generarItemsPropietario(p, extrasProp, comisionPct, c, personaId);
   recalcProp();
 }
@@ -9138,7 +9138,7 @@ async function generarRecibosSeleccionados() {
     pagoIds.push(pagoId);
     let extras = [];
     try { extras = await sbGet('pagos_extras', `pago_id=eq.${pagoId}&order=id.asc`); } catch(e) {}
-    const extrasProp = extras.filter(e => e.a_cargo_de === 'propietario');
+    const extrasProp = extras.filter(e => e.a_cargo_de === 'propietario' || e.propietario_persona_id);
     const comisionPct = c.comision_porcentaje || 8;
     const reciboHtml = generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes);
     if (idx > 0) allHtml += '<div style="page-break-before:always"></div>';
