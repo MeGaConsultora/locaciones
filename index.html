@@ -1667,7 +1667,7 @@ function getRowClass(p) {
   const esFuturo = p.mes.substring(0,7) > TODAY.substring(0,7);
   if (esFuturo) return 'row-futuro';
   if (!p.total || p.total === 0) return '';
-  const abonado = (p.total||0) - (p.saldo||0);
+  const abonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
   if (p.saldo <= 0) return 'row-pagado';
   if (abonado > 0) return 'row-parcial';
   return 'row-vencido';
@@ -1679,7 +1679,7 @@ function getEstadoLabel(p) {
   const esFuturo = p.mes.substring(0,7) > TODAY.substring(0,7);
   if (esFuturo) return '<span class="badge badge-blue">Futuro</span>';
   if (!p.total || p.total === 0) return '<span class="badge badge-gray">Sin datos</span>';
-  const abonado = (p.total||0) - (p.saldo||0);
+  const abonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
   if (p.saldo <= 0) return '<span class="badge badge-green">✓ Pagado</span>';
   if (abonado > 0) return '<span class="badge badge-yellow">Parcial</span>';
   return '<span class="badge badge-red">Pendiente</span>';
@@ -1760,6 +1760,7 @@ function renderGrilla(c) {
     const totalExtras = totalExtrasGral + totalExtrasMes;
     // saldo already reflects extras (recalcularFilaPago updates it when extras are added)
     const saldoReal = (p.saldo||0);
+    const excedente = (p.pagado_importe||0) > (p.total||0) ? Math.round(((p.pagado_importe||0) - (p.total||0)) * 100) / 100 : 0;
     const extrasGralLabel = extrasGral.length > 0 ? extrasGral.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
     const extrasMesLabel = extrasMes.length > 0 ? extrasMes.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
     const rowClass = saldoReal > 0 ? (p.saldo > 0 ? getRowClass(p) : 'row-parcial') : getRowClass(p);
@@ -1781,8 +1782,8 @@ function renderGrilla(c) {
 
       <td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasGralLabel}">${totalExtrasGral > 0 ? formatMoney(totalExtrasGral) : '—'}</td>
       <td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasMesLabel}">${totalExtrasMes > 0 ? formatMoney(totalExtrasMes) : '—'}</td>
-      <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>      <td class="num" id="abonado-${p.id}">${(() => { const ab = (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
-      <td class="num" id="saldo-${p.id}">${saldoReal>0?`<span class="saldo-pendiente">${formatMoney(saldoReal)}</span>`:'<span class="saldo-ok">✓</span>'}</td>
+      <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>      <td class="num" id="abonado-${p.id}">${(() => { const ab = p.pagado_importe || (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
+      <td class="num" id="saldo-${p.id}">${(()=>{const _exc=(p.pagado_importe||0)-(p.total||0);return _exc>0?`<span style="color:var(--green);font-weight:700">+${formatMoney(_exc)}</span>`:saldoReal>0?`<span class="saldo-pendiente">${formatMoney(saldoReal)}</span>`:'<span class="saldo-ok">✓</span>';})()}</td>
       <td id="estado-${p.id}">${getEstadoLabel(p)}</td>
       <td onclick="event.stopPropagation()">
         <div class="grid-actions">
@@ -1882,7 +1883,11 @@ async function editarMesConSolapa(hoja, contratoId, mesPreseleccionado, solapa) 
 }
 
 function calcularTotal(p, extras) {
-  const totalExtras = (extras||[]).reduce((s,e) => s + (e.a_cargo_de === 'propietario' ? 0 : (parseFloat(e.importe)||0)), 0);
+  const totalExtras = (extras||[]).reduce((s,e) => {
+    if (e.a_cargo_de === 'propietario') return s;
+    const importe = parseFloat(e.importe)||0;
+    return (e.tipo === 'descuento' || e.tipo === 'credito') ? s - importe : s + importe;
+  }, 0);
   return (p.importe_alquiler||0)+(p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0)+totalExtras;
 }
 
@@ -1891,20 +1896,18 @@ async function recalcularFilaPago(pagoId) {
   if (!p) return;
   const extras = extrasActuales[pagoId]||[];
   const total = calcularTotal(p, extras);
-  // Abonado is immutable once confirmed — saldo = total - abonado
-  const abonado = (p.total||0) - (p.saldo||0);
-  const nuevoSaldo = Math.round((total - abonado) * 100) / 100;
-  // Recalcular saldo: abonado es inmutable, saldo = total - abonado
-  const saldoRecalc = Math.round((total - abonado) * 100) / 100;
-  const saldoFinal = Math.max(0, saldoRecalc);
-  const nuevoPagado = saldoFinal <= 0 ? 'SI' : (abonado > 0 ? 'PARCIAL' : (p.pagado||'NO'));
+  // pagado_importe es inmutable — saldo = total - pagado_importe
+  const pagadoImporte = p.pagado_importe || 0;
+  const nuevoSaldo = Math.round((total - pagadoImporte) * 100) / 100;
+  const saldoFinal = Math.max(0, nuevoSaldo);
+  const nuevoPagado = saldoFinal <= 0 ? 'SI' : (pagadoImporte > 0 ? 'PARCIAL' : (p.pagado||'NO'));
   await sbPatch('pagos', pagoId, { total, saldo: saldoFinal, pagado: nuevoPagado });
   p.total = total;
   p.saldo = saldoFinal;
 
   // Si hay excedente (pagó más de lo que debía), aplicar al mes siguiente
-  if (saldoRecalc < 0) {
-    const excedente = Math.abs(saldoRecalc);
+  if (nuevoSaldo < 0) {
+    const excedente = Math.abs(nuevoSaldo);
     const todosLosPagos = await sbGet('pagos', `hoja=eq.${encodeURIComponent(p.hoja)}&order=mes.asc`);
     const siguiente = todosLosPagos.find(x => x.mes > p.mes);
     if (siguiente) {
@@ -1920,7 +1923,7 @@ async function recalcularFilaPago(pagoId) {
   const totalEl = document.getElementById(`total-${pagoId}`);
   if (totalEl) totalEl.innerHTML = `<strong>${formatMoney(total)}</strong>`;
   const saldoEl = document.getElementById(`saldo-${pagoId}`);
-  if (saldoEl) saldoEl.innerHTML = nuevoSaldo>0?`<span class="saldo-pendiente">${formatMoney(nuevoSaldo)}</span>`:'<span class="saldo-ok">✓</span>';
+  if (saldoEl) saldoEl.innerHTML = saldoFinal>0?`<span class="saldo-pendiente">${formatMoney(saldoFinal)}</span>`:'<span class="saldo-ok">✓</span>';
   const estadoEl = document.getElementById(`estado-${pagoId}`);
   if (estadoEl) estadoEl.innerHTML = getEstadoLabel(p);
 }
@@ -2456,7 +2459,7 @@ async function proyectarPeriodo(hoja, desdeKey, importe, periodicidad, diaVenc, 
     const serviciosExistentes = (p.monto_epe||0) + (p.monto_agua||0) + (p.monto_tgiu||0) +
       (p.monto_seguro||0) + (p.monto_internet||0) + (p.monto_expensas||0) + (p.monto_otros||0);
     const nuevoTotal = importe + serviciosExistentes;
-    const yaAbonado = (p.total||0) - (p.saldo||0);
+    const yaAbonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
     const nuevoSaldo = p.pagado === 'SI' ? 0 : Math.max(0, nuevoTotal - yaAbonado);
     const nuevoPagado = p.pagado === 'SI' ? 'SI' : (yaAbonado > 0 ? 'PARCIAL' : (p.pagado || 'NO'));
 
@@ -3367,6 +3370,22 @@ async function guardarExtraGralItem(inputId) {
       const imp = Math.round(importeTotal * pct / 100 * 100) / 100;
       return `${pct}% = $${imp.toLocaleString('es-AR',{minimumFractionDigits:2})}`;
     }).join(' · ');
+    // Recalcular total y saldo del pago
+    const pagoActualizado = await sbGet('pagos', `id=eq.${pagoId}&limit=1`);
+    if (pagoActualizado.length) {
+      const pag = pagoActualizado[0];
+      const todosExtras = await sbGet('pagos_extras', `pago_id=eq.${pagoId}`);
+      const extrasTotal = todosExtras
+        .filter(e => e.a_cargo_de !== 'propietario')
+        .reduce((s,e) => s + ((e.tipo==='credito' ? -1 : 1) * (parseFloat(e.importe)||0)), 0);
+      const servicios = ['epe','agua','tgiu','seguro','internet','expensas']
+        .reduce((t,s) => t + (pag['monto_'+s]||0), 0);
+      const newTotal = (pag.importe_alquiler||0) + servicios + extrasTotal;
+      const pagadoImporte = pag.pagado_importe || 0;
+      const newSaldo = Math.max(0, newTotal - pagadoImporte);
+      const newPagado = newSaldo <= 0 ? 'SI' : (pagadoImporte > 0 ? 'PARCIAL' : (pag.pagado||'NO'));
+      await sbPatch('pagos', pagoId, { total: newTotal, saldo: newSaldo, pagado: newPagado });
+    }
     toast(`Guardado ✓ — ${breakdown}`);
     const mesActual = document.getElementById('srv-mes')?.value;
     const filtroActual = document.getElementById('srv-buscar')?.value || '';
@@ -3471,9 +3490,14 @@ async function guardarServicioItem(inputId) {
           totalTipo += otherPs.length ? (parseFloat(otherPs[0].importe)||0) : 0;
         }
 
+        // Include extras in total calculation
+        const extrasDelPago = await sbGet('pagos_extras', `pago_id=eq.${pago.id}`);
+        const extrasTotal = extrasDelPago
+          .filter(e => e.a_cargo_de !== 'propietario')
+          .reduce((s,e) => s + ((e.tipo==='credito' ? -1 : 1) * (parseFloat(e.importe)||0)), 0);
         const newTotal = (pago.importe_alquiler||0) + totalTipo +
-          ['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0);
-        const yaAbonado = (pago.total||0) - (pago.saldo||0);
+          ['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0) + extrasTotal;
+        const yaAbonado = pago.pagado_importe || (pago.total||0) - (pago.saldo||0);
         await sbPatch('pagos', pago.id, {
           ['monto_'+srv]: totalTipo,
           total: newTotal,
@@ -3579,7 +3603,7 @@ async function guardarServicios() {
       const internet= 'monto_internet' in changes ? applyPct(changes.monto_internet, 'internet')  : (pago.monto_internet ?? 0);
       const expensas= 'monto_expensas' in changes ? applyPct(changes.monto_expensas, 'expensas')  : (pago.monto_expensas ?? 0);
       const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
-      const yaAbonado = (pago.total||0) - (pago.saldo||0);
+      const yaAbonado = pago.pagado_importe || (pago.total||0) - (pago.saldo||0);
       const patch = { total: newTotal, saldo: Math.max(0, newTotal - yaAbonado) };
 
       // For each changed service, save to pagos_suministros if contract uses new system
@@ -4041,7 +4065,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
 
   // Legacy: pago fully paid but pagado_ fields are null — reconstruct from montos
   if (!tieneItemsPagados && (p.pagado === 'SI' || p.saldo === 0)) {
-    const totalPagado = (p.total||0) - (p.saldo||0);
+    const totalPagado = p.pagado_importe || (p.total||0) - (p.saldo||0);
     if (totalPagado > 0) {
       const orden = ['alquiler','epe','agua','tgiu','expensas','seguro','internet'];
       let restante = totalPagado;
@@ -4104,7 +4128,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
   const honorariosPagadoInq = honorariosCuotas.reduce((s,g) => s+(parseFloat(g.pagado_inquilino)||0), 0);
 
   // a-cuenta: payment without per-item breakdown
-  const yaAbonadoGP = !tieneItemsPagados ? Math.max(0, (p.total||0) - (p.saldo||0)) : 0;
+  const yaAbonadoGP = !tieneItemsPagados ? Math.max(0, p.pagado_importe || (p.total||0) - (p.saldo||0)) : 0;
 
   const paidSection = paidItems.length > 0 || honorariosPagadoInq > 0 || yaAbonadoGP > 0 ? `
     <div style="margin-bottom:0.5rem;font-size:0.75rem;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Ya cobrado</div>
@@ -4644,18 +4668,16 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
     let pagoId;
     if (existing.length > 0) {
       pagoId = existing[0].id;
-      // Use pagado field directly if available, otherwise derive from saldo
-      const pagadoVal = parseFloat(existing[0].pagado) || 0;
-      const totalAnterior = existing[0].total||0;
-      const saldoActual = existing[0].saldo||0;
-      const yaAbonado = pagadoVal > 0 ? pagadoVal : Math.max(0, totalAnterior - saldoActual);
-      const nuevoSaldo = Math.round(Math.max(0, total - yaAbonado) * 100) / 100;
+      // pagado_importe is immutable — saldo = total - pagado_importe
+      const pagadoImporte = existing[0].pagado_importe || 0;
+      const nuevoSaldo = Math.round(Math.max(0, total - pagadoImporte) * 100) / 100;
+      const nuevoPagado = nuevoSaldo <= 0 ? 'SI' : (pagadoImporte > 0 ? 'PARCIAL' : (existing[0].pagado||'NO'));
       const internetVal = applyFieldPct('gp-internet');
       const expensasVal = applyFieldPct('gp-expensas');
       await sbPatch('pagos', pagoId, {
         importe_alquiler:alq, monto_epe:epe, monto_agua:agua,
         monto_tgiu:tgiu, monto_seguro:seguro, monto_internet:internetVal, monto_expensas:expensasVal, total,
-        comision_8:comision, fecha_pago_hasta:vence, saldo:nuevoSaldo
+        comision_8:comision, fecha_pago_hasta:vence, saldo:nuevoSaldo, pagado:nuevoPagado
       });
       // Sync pagos_suministros
       await _syncPagosSuministros(pagoId, contratoId, {epe, agua, tgiu, seguro, internet:internetVal, expensas:expensasVal});
@@ -4698,10 +4720,10 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
 async function revertirPagoACuenta(pagoId, hoja, contratoId, mesKey, comisionPct) {
   const p = DB.pagos.find(x => x.id == pagoId);
   if (!p) return;
-  const yaAbonado = Math.max(0, (p.total||0) - (p.saldo||0));
+  const yaAbonado = Math.max(0, p.pagado_importe || (p.total||0) - (p.saldo||0));
   if (!confirm(`¿Revertir el pago a cuenta de ${formatMoney(yaAbonado)}?\n\nEl saldo volverá al total completo.`)) return;
   try {
-    await sbPatch('pagos', parseInt(pagoId), { pagado: 'NO', saldo: p.total });
+    await sbPatch('pagos', parseInt(pagoId), { pagado_importe: 0, pagado: 'NO', saldo: p.total });
     toast('Pago a cuenta revertido ✓');
     await loadAll();
     openGP(hoja, contratoId, mesKey, comisionPct);
@@ -4712,6 +4734,12 @@ async function revertirItem(pagoId, itemId, montoPagado, montoTotal, hoja, contr
   if (!confirm(`¿Revertir el pago de ${itemId} ($${formatMoney(montoPagado)})?`)) return;
   try {
     const patch = { [`pagado_${itemId}`]: 0 };
+    // Also reduce pagado_importe
+    const pagoRev = DB.pagos.find(x => x.id == pagoId);
+    if (pagoRev) {
+      patch.pagado_importe = Math.max(0, (pagoRev.pagado_importe||0) - montoPagado);
+      patch.saldo = Math.min(pagoRev.total, (pagoRev.saldo||0) + montoPagado);
+    }
     // Recalculate saldo: add back the pagado amount
     const existing = await sbGet('pagos', `id=eq.${pagoId}&limit=1`);
     if (!existing.length) return;
@@ -4778,6 +4806,7 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
     } catch(e) {}
 
     await sbPatch('pagos', p.id, {
+      pagado_importe: 0,
       saldo: p.total,
       pagado: '0',
       pago_nro: null,
@@ -4858,7 +4887,7 @@ async function verDetalleDeuda(hoja, contratoId, mesKey) {
     ...extras.map(e => ({ label: e.concepto||'Extra', monto: parseFloat(e.importe)||0 }))
   ].filter(i => i.monto > 0);
 
-  const yaAbonado = (p.total||0) - (p.saldo||0);
+  const yaAbonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
   const saldo = p.saldo||0;
   const mesLabel = new Date(mes+'T12:00:00').toLocaleString('es-AR',{month:'long',year:'numeric'});
   const inquilinos = DB_CONTRATO_PERSONAS.filter(cp=>parseInt(cp.contrato_id)===contratoId&&cp.rol==='inquilino')
@@ -4994,7 +5023,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   if (acuenta > 0) { totalCobrado += acuenta; itemsRecibo.push({label: acuentaConcepto, monto: acuenta}); }
 
   // Validate payment does not exceed total (excluding honorarios which is tracked separately)
-  const yaAbonado = (p.total||0) - (p.saldo||0);
+  const yaAbonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
   const maxPagable = (p.total||0) - yaAbonado;
   const totalSinHonorarios = totalCobrado - honorariosCobrado;
   if (totalSinHonorarios > maxPagable + 0.01) {
@@ -5076,7 +5105,9 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   const nroMes = pagosActuales.findIndex(x=>x.id===p.id)+1;
   const fechaMovimiento = document.getElementById('gp-fecha-pago')?.value || TODAY;
 
+  const nuevoPagadoImporte = Math.round(((p.pagado_importe||0) + montoRegular) * 100) / 100;
   await sbPatch('pagos', p.id, {
+    pagado_importe: nuevoPagadoImporte,
     saldo: nuevoSaldo,
     pagado: nuevoSaldo===0 ? 'SI' : 'PARCIAL',
     pago_nro: String(nroMes),
@@ -5695,7 +5726,7 @@ async function imprimirHistorial(contratoId) {
 
   const filasResumen = pagos.map(p => {
     const pend = p.saldo && p.saldo > 0;
-    const abonado = (p.total||0) - (p.saldo||0);
+    const abonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
     return `<tr class="${pend?'impago':'pagado'}">
       <td><strong>${fmtMes(p.mes)}</strong></td>
       <td>${fmtFecha(p.fecha_pago_hasta)}</td>
@@ -6593,7 +6624,7 @@ async function actualizarContrato(id) {
               const internet = updates.monto_internet ?? p.monto_internet ?? 0;
               const expensas = updates.monto_expensas ?? p.monto_expensas ?? 0;
               const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
-              const yaAbonado = (p.total||0) - (p.saldo||0);
+              const yaAbonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
               updates.total = newTotal;
               updates.saldo = Math.max(0, newTotal - yaAbonado);
               await sbPatch('pagos', p.id, updates);
@@ -6773,7 +6804,7 @@ function cargarItemsPago(impagos, pagoId, todosPagos) {
   const nroMes = todosPagos.findIndex(x => x.id == pagoId) + 1;
 
   // Distribute already-paid amount (total - saldo) across items in sequence
-  const yaAbonado = (pago.total||0) - (pago.saldo||0);
+  const yaAbonado = pago.pagado_importe || (pago.total||0) - (pago.saldo||0);
   const ordenAcred = ['alquiler','epe','agua','tgiu','expensas','seguro','internet'];
   const brutos = {
     alquiler: pago.importe_alquiler||0, epe: pago.monto_epe||0, agua: pago.monto_agua||0,
@@ -6878,11 +6909,15 @@ async function confirmarPago(pagoId, hoja, nroMes) {
     const hojaEncoded = encodeURIComponent(hoja);
     const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc&limit=500`);
     const pagoActual = pagos.find(p => p.id == pagoId);
-    const excedente = Math.round(Math.max(0, totalAbonado - (pagoActual.saldo||0)) * 100) / 100;
-    const nuevoSaldo = Math.round(Math.max(0, (pagoActual.saldo||0) - totalAbonado) * 100) / 100;
+    // pagado_importe acumula lo cobrado (puede haber cobros parciales previos)
+    const pagadoAnterior = pagoActual.pagado_importe || 0;
+    const nuevoPagadoImporte = Math.round((pagadoAnterior + totalAbonado) * 100) / 100;
+    const nuevoSaldo = Math.round(Math.max(0, (pagoActual.total||0) - nuevoPagadoImporte) * 100) / 100;
+    const excedente = Math.round(Math.max(0, nuevoPagadoImporte - (pagoActual.total||0)) * 100) / 100;
 
     // Actualizar saldo en Supabase
     await sbPatch('pagos', pagoId, {
+      pagado_importe: nuevoPagadoImporte,
       saldo: nuevoSaldo,
       pagado: nuevoSaldo === 0 ? 'SI' : 'PARCIAL',
       pago_nro: String(nroMes),
@@ -8495,7 +8530,7 @@ async function confirmarImportarEPE() {
         const totalSrv = allPs.reduce((t, ps) => { const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id); return cs?.tipo === srv ? t + (ps.importe||0) : t; }, 0);
         const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
         const newTotal = (p.importe_alquiler||0) + servicios.reduce((sv2, sv) => sv === srv ? sv2 + totalSrv : sv2 + (p['monto_'+sv]||0), 0);
-        const abonadoP = (p.total||0) - (p.saldo||0);
+        const abonadoP = p.pagado_importe || (p.total||0) - (p.saldo||0);
         await sbPatch('pagos', p.id, { ['monto_'+srv]: totalSrv, total: Math.round(newTotal*100)/100, saldo: Math.round(Math.max(0, newTotal - abonadoP)*100)/100 });
       }
       cargados++;
