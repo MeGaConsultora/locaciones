@@ -4735,14 +4735,20 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
         // New system: sync pagos_suministros
         await _syncPagosSuministros(pagoId, contratoId, {epe, agua, tgiu, seguro, internet:internetVal, expensas:expensasVal});
       } else {
-        // Old system: only update monto_xxx if form field has value, otherwise preserve existing
-        const existingPago = existing[0];
-        if (epe > 0) patchData.monto_epe = epe; else if ((existingPago.monto_epe||0) > 0) patchData.monto_epe = existingPago.monto_epe;
-        if (agua > 0) patchData.monto_agua = agua; else if ((existingPago.monto_agua||0) > 0) patchData.monto_agua = existingPago.monto_agua;
-        if (tgiu > 0) patchData.monto_tgiu = tgiu; else if ((existingPago.monto_tgiu||0) > 0) patchData.monto_tgiu = existingPago.monto_tgiu;
-        if (seguro > 0) patchData.monto_seguro = seguro; else if ((existingPago.monto_seguro||0) > 0) patchData.monto_seguro = existingPago.monto_seguro;
-        if (internetVal > 0) patchData.monto_internet = internetVal; else if ((existingPago.monto_internet||0) > 0) patchData.monto_internet = existingPago.monto_internet;
-        if (expensasVal > 0) patchData.monto_expensas = expensasVal; else if ((existingPago.monto_expensas||0) > 0) patchData.monto_expensas = existingPago.monto_expensas;
+        // Old system: only update monto_xxx from form fields that are actually editable (enabled)
+        // Disabled fields (modified from Cargar servicios) are never touched here
+        const epeEl = document.getElementById('gp-epe');
+        const aguaEl = document.getElementById('gp-agua');
+        const tgiuEl = document.getElementById('gp-tgiu');
+        const seguroEl = document.getElementById('gp-seguro');
+        const internetEl = document.getElementById('gp-internet');
+        const expensasEl = document.getElementById('gp-expensas');
+        if (epeEl && !epeEl.disabled && epe > 0) patchData.monto_epe = epe;
+        if (aguaEl && !aguaEl.disabled && agua > 0) patchData.monto_agua = agua;
+        if (tgiuEl && !tgiuEl.disabled && tgiu > 0) patchData.monto_tgiu = tgiu;
+        if (seguroEl && !seguroEl.disabled && seguro > 0) patchData.monto_seguro = seguro;
+        if (internetEl && !internetEl.disabled && internetVal > 0) patchData.monto_internet = internetVal;
+        if (expensasEl && !expensasEl.disabled && expensasVal > 0) patchData.monto_expensas = expensasVal;
       }
       await sbPatch('pagos', pagoId, patchData);
       // Update in-memory DB.pagos with saved values
@@ -4780,7 +4786,6 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       }
       setTimeout(async () => {
         await cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, 's1');
-        await loadAll();
       }, 150);
     }
   } catch(e) { toast('Error al guardar: '+e.message,'error'); }
