@@ -3747,7 +3747,20 @@ async function verBoleta(pagoId, srv) {
     pdfs = await sbGet('pagos_pdf', `pago_id=eq.${pagoId}${srv ? '&servicio=eq.'+srv : ''}&order=servicio.asc`);
   } catch(e) {}
   if (!pdfs.length) { toast('No hay boleta PDF disponible para este mes', 'error'); return; }
-  const pdfRec = pdfs[0]; // Use first if no srv specified
+
+  // If multiple PDFs and no srv specified, show selector
+  let pdfRec = pdfs[0];
+  if (pdfs.length > 1 && !srv) {
+    const labels = { epe: '⚡ EPE', agua: '💧 Agua', tgiu: '🏛️ TGIU', seguro: '🔒 Seguro', internet: '🌐 Internet', expensas: '🏢 Expensas' };
+    const btns = pdfs.map(r => `<button onclick="verBoleta(${pagoId},'${r.servicio}');this.closest('.modal-overlay-inner')?.remove()" style="padding:8px 16px;margin:4px;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:0.9rem">${labels[r.servicio]||r.servicio}</button>`).join('');
+    const div = document.createElement('div');
+    div.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999';
+    div.className = 'modal-overlay-inner';
+    div.innerHTML = `<div style="background:white;border-radius:12px;padding:1.5rem;text-align:center;min-width:200px"><div style="font-weight:600;margin-bottom:1rem">¿Qué boleta querés ver?</div>${btns}<br><button onclick="this.closest('.modal-overlay-inner').remove()" style="margin-top:8px;padding:6px 16px;border:none;background:#eee;border-radius:6px;cursor:pointer">Cancelar</button></div>`;
+    div.onclick = e => { if (e.target === div) div.remove(); };
+    document.body.appendChild(div);
+    return;
+  }
 
   // Get signed URL from Supabase Storage (valid 1 hour)
   try {
