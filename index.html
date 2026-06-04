@@ -1889,7 +1889,8 @@ function calcularTotal(p, extras) {
     const importe = parseFloat(e.importe)||0;
     return (e.tipo === 'descuento' || e.tipo === 'credito') ? s - importe : s + importe;
   }, 0);
-  return (p.importe_alquiler||0)+(p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0)+totalExtras;
+  const raw = (p.importe_alquiler||0)+(p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0)+totalExtras;
+  return Math.round(raw * 100) / 100;
 }
 
 async function recalcularFilaPago(pagoId) {
