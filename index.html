@@ -3128,7 +3128,11 @@ async function cargarListaServicios(filtro='') {
         if (sumId && psSumMap[sumId] !== undefined) {
           const inq = psSumMap[sumId] || 0;
           const pct = getPctRef(c, sumId);
-          if ((inq > 0 || psSumMap[sumId] !== undefined) && pct > 0) { totalBoleta = Math.round(inq * 100 / pct * 100) / 100; break; }
+          if (inq > 0 && pct > 0) { totalBoleta = Math.round(inq * 100 / pct * 100) / 100; break; }
+          // Fallback to monto_xxx if pagos_suministros is 0
+          const p = pagosPorHoja[c.hoja];
+          const monto = p?.[campo] || 0;
+          if (monto > 0 && pct > 0) { totalBoleta = Math.round(monto * 100 / pct * 100) / 100; break; }
         } else {
           const p = pagosPorHoja[c.hoja];
           const monto = p?.[campo] || 0;
