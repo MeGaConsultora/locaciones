@@ -4700,12 +4700,16 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
 
   const hojaEncoded = encodeURIComponent(hoja);
   const existingPre = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`).catch(()=>[]);
-  const usaSuministros = mesKey >= '2026-06';
   let serviciosTotal = epe+agua+tgiu+seguro+internet+expensas;
-  if (usaSuministros && existingPre.length) {
-    // Use existing pagos_suministros values instead of form fields
+  let usaSuministros = false;
+  if (mesKey >= '2026-06' && existingPre.length) {
+    // Check if pagos_suministros has actual values (not all zero)
     const psRows = await sbGet('pagos_suministros', `pago_id=eq.${existingPre[0].id}`).catch(()=>[]);
-    serviciosTotal = psRows.reduce((t,r) => t + (r.importe||0), 0);
+    const psTotal = psRows.reduce((t,r) => t + (r.importe||0), 0);
+    if (psTotal > 0) {
+      usaSuministros = true;
+      serviciosTotal = psTotal;
+    }
   }
   const total = alq + serviciosTotal + extrasInqTotal;
 
@@ -4721,7 +4725,6 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       const internetVal = applyFieldPct('gp-internet');
       const expensasVal = applyFieldPct('gp-expensas');
       // Only update monto_xxx fields if they are editable (not using pagos_suministros)
-      const usaSuministros = mesKey >= '2026-06';
       const patchData = {
         importe_alquiler:alq, total,
         comision_8:comision, fecha_pago_hasta:vence, saldo:nuevoSaldo, pagado:nuevoPagado
