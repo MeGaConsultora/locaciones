@@ -4698,11 +4698,19 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
   const internet = parseFloat(document.getElementById('gp-internet')?.value)||0;
   const expensas = parseFloat(document.getElementById('gp-expensas')?.value)||0;
 
-  const total = alq+epe+agua+tgiu+seguro+internet+expensas+extrasInqTotal;
+  const hojaEncoded = encodeURIComponent(hoja);
+  const existingPre = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`).catch(()=>[]);
+  const usaSuministros = mesKey >= '2026-06';
+  let serviciosTotal = epe+agua+tgiu+seguro+internet+expensas;
+  if (usaSuministros && existingPre.length) {
+    // Use existing pagos_suministros values instead of form fields
+    const psRows = await sbGet('pagos_suministros', `pago_id=eq.${existingPre[0].id}`).catch(()=>[]);
+    serviciosTotal = psRows.reduce((t,r) => t + (r.importe||0), 0);
+  }
+  const total = alq + serviciosTotal + extrasInqTotal;
 
   try {
-    const hojaEncoded = encodeURIComponent(hoja);
-    const existing = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
+    const existing = existingPre.length ? existingPre : await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
     let pagoId;
     if (existing.length > 0) {
       pagoId = existing[0].id;
@@ -4712,13 +4720,25 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       const nuevoPagado = nuevoSaldo <= 0 ? 'SI' : (pagadoImporte > 0 ? 'PARCIAL' : (existing[0].pagado||'NO'));
       const internetVal = applyFieldPct('gp-internet');
       const expensasVal = applyFieldPct('gp-expensas');
-      await sbPatch('pagos', pagoId, {
-        importe_alquiler:alq, monto_epe:epe, monto_agua:agua,
-        monto_tgiu:tgiu, monto_seguro:seguro, monto_internet:internetVal, monto_expensas:expensasVal, total,
+      // Only update monto_xxx fields if they are editable (not using pagos_suministros)
+      const usaSuministros = mesKey >= '2026-06';
+      const patchData = {
+        importe_alquiler:alq, total,
         comision_8:comision, fecha_pago_hasta:vence, saldo:nuevoSaldo, pagado:nuevoPagado
-      });
+      };
+      if (!usaSuministros) {
+        patchData.monto_epe = epe;
+        patchData.monto_agua = agua;
+        patchData.monto_tgiu = tgiu;
+        patchData.monto_seguro = seguro;
+        patchData.monto_internet = internetVal;
+        patchData.monto_expensas = expensasVal;
+      }
+      await sbPatch('pagos', pagoId, patchData);
       // Sync pagos_suministros
-      await _syncPagosSuministros(pagoId, contratoId, {epe, agua, tgiu, seguro, internet:internetVal, expensas:expensasVal});
+      if (usaSuministros) {
+        await _syncPagosSuministros(pagoId, contratoId, {epe, agua, tgiu, seguro, internet:internetVal, expensas:expensasVal});
+      }
     } else {
       const internetNew = applyFieldPct('gp-internet');
       const expensasNew = applyFieldPct('gp-expensas');
