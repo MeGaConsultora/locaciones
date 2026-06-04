@@ -4716,7 +4716,7 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       const extrasDelPago = await sbGet('pagos_extras', `pago_id=eq.${existingForExtras[0].id}&order=id.asc`);
       extrasInqTotal = extrasDelPago
         .filter(e => e.a_cargo_de !== 'propietario')
-        .reduce((s,e) => s + ((e.tipo==='credito' ? -1 : 1) * (e.importe||0)), 0);
+        .reduce((s,e) => s + ((e.tipo==='credito' || e.tipo==='descuento' ? -1 : 1) * (e.importe||0)), 0);
     }
   } catch(e) {}
   
@@ -4762,7 +4762,7 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
     // New pago - use form values
     serviciosTotal = epe+agua+tgiu+seguro+internet+expensas;
   }
-  const total = alq + serviciosTotal + extrasInqTotal;
+  const total = Math.round((alq + serviciosTotal + extrasInqTotal) * 100) / 100;
 
   try {
     const existing = existingPre.length ? existingPre : await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
@@ -4807,6 +4807,12 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       if (idxDB >= 0) Object.assign(DB.pagos[idxDB], patchData);
       const idxPA = pagosActuales.findIndex(x => x.id === pagoId);
       if (idxPA >= 0) Object.assign(pagosActuales[idxPA], patchData);
+      // Recargar extras frescos y recalcular total/saldo (fuente de verdad única)
+      try {
+        const extrasFresc = await sbGet('pagos_extras', `pago_id=eq.${pagoId}&order=id.asc`);
+        extrasActuales[pagoId] = extrasFresc;
+      } catch(e) {}
+      await recalcularFilaPago(pagoId);
     } else {
       const internetNew = applyFieldPct('gp-internet');
       const expensasNew = applyFieldPct('gp-expensas');
