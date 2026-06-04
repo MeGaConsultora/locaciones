@@ -4745,13 +4745,18 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
         if (expensasVal > 0) patchData.monto_expensas = expensasVal; else if ((existingPago.monto_expensas||0) > 0) patchData.monto_expensas = existingPago.monto_expensas;
       }
       await sbPatch('pagos', pagoId, patchData);
-      // Update in-memory DB.pagos with actual saved values
+      // Update in-memory DB.pagos with actual saved values and re-render row
       const pagoActualizado = await sbGet('pagos', `id=eq.${pagoId}&limit=1`);
       if (pagoActualizado.length) {
         const idxDB = DB.pagos.findIndex(x => x.id === pagoId);
         if (idxDB >= 0) DB.pagos[idxDB] = { ...DB.pagos[idxDB], ...pagoActualizado[0] };
         const idxPA = pagosActuales.findIndex(x => x.id === pagoId);
         if (idxPA >= 0) pagosActuales[idxPA] = { ...pagosActuales[idxPA], ...pagoActualizado[0] };
+        // Re-render contract grid
+        if (typeof openContrato === 'function' && contratoId) {
+          await loadAll();
+          openContrato(contratoId);
+        }
       }
     } else {
       const internetNew = applyFieldPct('gp-internet');
