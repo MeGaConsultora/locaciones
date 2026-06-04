@@ -1740,12 +1740,13 @@ function renderGrilla(c) {
       const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id && s.tipo === tipo);
       const esMesNuevo = (p.mes||'') >= '2026-06-01';
       if (sums.length > 0 && esMesNuevo) {
-        // Desde junio 2026: usar solo pagos_suministros, sin fallback a monto_xxx
-        return sums.reduce((t, s) => {
+        const psTotal = sums.reduce((t, s) => {
           const entry = ps[s.id];
           if (entry === undefined) return t;
           return t + (typeof entry === 'object' ? (entry.inq||0) : (entry||0));
         }, 0);
+        // Only use pagos_suministros if it has actual values, otherwise fallback to monto_xxx
+        if (psTotal > 0) return psTotal;
       }
       return p['monto_'+tipo] || 0;
     };
