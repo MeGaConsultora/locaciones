@@ -3915,14 +3915,23 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
             const disabledHint = `<div style="font-size:0.72rem;color:#aaa;margin-top:2px">Modificar desde Cargar servicios del mes</div>`;
             return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" ${onInput} style="background:#f5f5f5;color:#999;cursor:not-allowed" readonly title="Modificar desde Cargar servicios del mes">${disabledHint}</div>`;
           };
-          // Get value from pagos_suministros — desde jun 2026 no hacer fallback a monto_xxx
+          // Get value from pagos_suministros — fallback to monto_xxx if no suministros data
           const getSrvVal = (srv) => {
             const ps = window._pagosSuministros?.[p?.id] || {};
             const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === srv);
             const esMesNuevo = mesKey >= '2026-06';
             if (sums.length > 0 && esMesNuevo) {
-              return sums.reduce((t, s) => t + (ps[s.id] !== undefined ? (ps[s.id]||0) : 0), 0);
+              // _pagosSuministros stores {suministro_id: {inq, prop}} structure
+              const psTotal = sums.reduce((t, s) => {
+                const entry = ps[s.id];
+                if (entry === undefined) return t;
+                // Handle both numeric and {inq, prop} formats
+                const val = (typeof entry === 'object') ? (entry.inq||0) : (entry||0);
+                return t + val;
+              }, 0);
+              if (psTotal > 0) return psTotal;
             }
+            // Fallback to monto_xxx from pagos table
             return p?.['monto_'+srv] || '';
           };
           const servs = (c?.servicios_inquilino||'').toLowerCase();
@@ -4700,16 +4709,42 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
 
   const hojaEncoded = encodeURIComponent(hoja);
   const existingPre = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`).catch(()=>[]);
-  let serviciosTotal = epe+agua+tgiu+seguro+internet+expensas;
+  
+  // Calculate servicios total from actual data, not disabled form fields
+  let serviciosTotal = 0;
   let usaSuministros = false;
-  if (mesKey >= '2026-06' && existingPre.length) {
-    // Check if pagos_suministros has actual values (not all zero)
-    const psRows = await sbGet('pagos_suministros', `pago_id=eq.${existingPre[0].id}`).catch(()=>[]);
-    const psTotal = psRows.reduce((t,r) => t + (r.importe||0), 0);
-    if (psTotal > 0) {
-      usaSuministros = true;
-      serviciosTotal = psTotal;
+  if (existingPre.length) {
+    const pagoExistente = existingPre[0];
+    if (mesKey >= '2026-06') {
+      const psRows = await sbGet('pagos_suministros', `pago_id=eq.${pagoExistente.id}`).catch(()=>[]);
+      const psTotal = psRows.reduce((t,r) => t + (r.importe||0), 0);
+      if (psTotal > 0) {
+        usaSuministros = true;
+        serviciosTotal = psTotal;
+      }
     }
+    if (!usaSuministros) {
+      // Use existing monto_xxx values from Supabase (not disabled form fields)
+      serviciosTotal = (pagoExistente.monto_epe||0) + (pagoExistente.monto_agua||0) +
+        (pagoExistente.monto_tgiu||0) + (pagoExistente.monto_seguro||0) +
+        (pagoExistente.monto_internet||0) + (pagoExistente.monto_expensas||0);
+      // Override with enabled form field values if any
+      const epeEl = document.getElementById('gp-epe');
+      const aguaEl = document.getElementById('gp-agua');
+      const tgiuEl = document.getElementById('gp-tgiu');
+      const seguroEl = document.getElementById('gp-seguro');
+      const internetEl = document.getElementById('gp-internet');
+      const expensasEl = document.getElementById('gp-expensas');
+      if (epeEl && !epeEl.disabled) serviciosTotal = serviciosTotal - (pagoExistente.monto_epe||0) + epe;
+      if (aguaEl && !aguaEl.disabled) serviciosTotal = serviciosTotal - (pagoExistente.monto_agua||0) + agua;
+      if (tgiuEl && !tgiuEl.disabled) serviciosTotal = serviciosTotal - (pagoExistente.monto_tgiu||0) + tgiu;
+      if (seguroEl && !seguroEl.disabled) serviciosTotal = serviciosTotal - (pagoExistente.monto_seguro||0) + seguro;
+      if (internetEl && !internetEl.disabled) serviciosTotal = serviciosTotal - (pagoExistente.monto_internet||0) + internet;
+      if (expensasEl && !expensasEl.disabled) serviciosTotal = serviciosTotal - (pagoExistente.monto_expensas||0) + expensas;
+    }
+  } else {
+    // New pago - use form values
+    serviciosTotal = epe+agua+tgiu+seguro+internet+expensas;
   }
   const total = alq + serviciosTotal + extrasInqTotal;
 
