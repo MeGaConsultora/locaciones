@@ -1894,7 +1894,23 @@ function calcularTotal(p, extras) {
 }
 
 async function recalcularFilaPago(pagoId) {
-  const p = pagosActuales.find(x=>x.id===pagoId);
+  // Leer valores frescos de Supabase para evitar usar datos en memoria con redondeos incorrectos
+  let p = null;
+  try {
+    const rows = await sbGet('pagos', `id=eq.${pagoId}&select=*&limit=1`);
+    if (rows.length) {
+      p = rows[0];
+      // Actualizar en memoria también
+      const idxPA = pagosActuales.findIndex(x => x.id === pagoId);
+      if (idxPA >= 0) Object.assign(pagosActuales[idxPA], p);
+      const idxDB = DB.pagos.findIndex(x => x.id === pagoId);
+      if (idxDB >= 0) Object.assign(DB.pagos[idxDB], p);
+    } else {
+      p = pagosActuales.find(x => x.id === pagoId);
+    }
+  } catch(e) {
+    p = pagosActuales.find(x => x.id === pagoId);
+  }
   if (!p) return;
   const extras = extrasActuales[pagoId]||[];
   const total = calcularTotal(p, extras);
@@ -4697,7 +4713,7 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
     if (!el) return 0;
     const val = parseFloat(el.value)||0;
     const pct = parseFloat(el.dataset.pct)||100;
-    return Math.round(val * pct / 100);
+    return Math.round(val * pct / 100 * 100) / 100;
   };
   const epe = applyFieldPct('gp-epe');
   const agua = applyFieldPct('gp-agua');
