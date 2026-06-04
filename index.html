@@ -4736,12 +4736,12 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       const seguroEl = document.getElementById('gp-seguro');
       const internetEl = document.getElementById('gp-internet');
       const expensasEl = document.getElementById('gp-expensas');
-      if (epeEl && !epeEl.disabled) serviciosTotal = serviciosTotal - (pagoExistente.monto_epe||0) + epe;
-      if (aguaEl && !aguaEl.disabled) serviciosTotal = serviciosTotal - (pagoExistente.monto_agua||0) + agua;
-      if (tgiuEl && !tgiuEl.disabled) serviciosTotal = serviciosTotal - (pagoExistente.monto_tgiu||0) + tgiu;
-      if (seguroEl && !seguroEl.disabled) serviciosTotal = serviciosTotal - (pagoExistente.monto_seguro||0) + seguro;
-      if (internetEl && !internetEl.disabled) serviciosTotal = serviciosTotal - (pagoExistente.monto_internet||0) + internet;
-      if (expensasEl && !expensasEl.disabled) serviciosTotal = serviciosTotal - (pagoExistente.monto_expensas||0) + expensas;
+      if (epeEl && !epeEl.readOnly) serviciosTotal = serviciosTotal - (pagoExistente.monto_epe||0) + epe;
+      if (aguaEl && !aguaEl.readOnly) serviciosTotal = serviciosTotal - (pagoExistente.monto_agua||0) + agua;
+      if (tgiuEl && !tgiuEl.readOnly) serviciosTotal = serviciosTotal - (pagoExistente.monto_tgiu||0) + tgiu;
+      if (seguroEl && !seguroEl.readOnly) serviciosTotal = serviciosTotal - (pagoExistente.monto_seguro||0) + seguro;
+      if (internetEl && !internetEl.readOnly) serviciosTotal = serviciosTotal - (pagoExistente.monto_internet||0) + internet;
+      if (expensasEl && !expensasEl.readOnly) serviciosTotal = serviciosTotal - (pagoExistente.monto_expensas||0) + expensas;
     }
   } else {
     // New pago - use form values
@@ -4779,12 +4779,12 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
         const seguroEl = document.getElementById('gp-seguro');
         const internetEl = document.getElementById('gp-internet');
         const expensasEl = document.getElementById('gp-expensas');
-        if (epeEl && !epeEl.disabled && epe > 0) patchData.monto_epe = epe;
-        if (aguaEl && !aguaEl.disabled && agua > 0) patchData.monto_agua = agua;
-        if (tgiuEl && !tgiuEl.disabled && tgiu > 0) patchData.monto_tgiu = tgiu;
-        if (seguroEl && !seguroEl.disabled && seguro > 0) patchData.monto_seguro = seguro;
-        if (internetEl && !internetEl.disabled && internetVal > 0) patchData.monto_internet = internetVal;
-        if (expensasEl && !expensasEl.disabled && expensasVal > 0) patchData.monto_expensas = expensasVal;
+        if (epeEl && !epeEl.readOnly && epe > 0) patchData.monto_epe = epe;
+        if (aguaEl && !aguaEl.readOnly && agua > 0) patchData.monto_agua = agua;
+        if (tgiuEl && !tgiuEl.readOnly && tgiu > 0) patchData.monto_tgiu = tgiu;
+        if (seguroEl && !seguroEl.readOnly && seguro > 0) patchData.monto_seguro = seguro;
+        if (internetEl && !internetEl.readOnly && internetVal > 0) patchData.monto_internet = internetVal;
+        if (expensasEl && !expensasEl.readOnly && expensasVal > 0) patchData.monto_expensas = expensasVal;
       }
       await sbPatch('pagos', pagoId, patchData);
       // Update in-memory DB.pagos with saved values
