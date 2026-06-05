@@ -8723,17 +8723,14 @@ async function recargarDatosEPE() {
   const wrap = document.getElementById('epe-datos-wrap');
   if (!wrap) return;
 
-  wrap.innerHTML = '<div style="text-align:center;color:#aaa;padding:2rem">⏳ Buscando boletas en Storage...</div>';
+  wrap.innerHTML = '<div style="text-align:center;color:#aaa;padding:2rem">⏳ Buscando boletas...</div>';
 
-  // Buscar PDFs subidos por el bot en pagos_pdf para este mes
   try {
-    const mesStr = mesKey + '-01';
-    // Obtener todos los pagos del mes con PDFs EPE
+    // Obtener PDFs EPE del mes desde pagos_pdf (el bot ya guardó importe_extraido)
     const pdfs = await sbGet('pagos_pdf',
-      `servicio=eq.epe&select=id,pago_id,pdf_path,suministro_id&order=id.asc`
+      `servicio=eq.epe&select=id,pago_id,pdf_path,suministro_id,importe_extraido&order=id.asc`
     ).catch(() => []);
 
-    // Filtrar los que corresponden al mes seleccionado por el path (epe/YYYY-MM/...)
     const pdfsDelMes = pdfs.filter(r => r.pdf_path && r.pdf_path.includes(`epe/${mesKey}/`));
 
     if (!pdfsDelMes.length) {
@@ -8748,66 +8745,23 @@ async function recargarDatosEPE() {
       return;
     }
 
-    wrap.innerHTML = `<div style="text-align:center;color:#aaa;padding:1rem">⏳ Encontradas ${pdfsDelMes.length} boletas — extrayendo importes con IA...</div>`;
-
-    // Parsear cada PDF con Claude API
-    const datos = [];
-    for (const pdfRec of pdfsDelMes) {
-      try {
-        // Obtener URL firmada del PDF
-        const signResp = await fetch(
-          `${SB_URL}/storage/v1/object/sign/servicios/${pdfRec.pdf_path}`,
-          { method: 'POST', headers: { 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ expiresIn: 300 }) }
-        );
-        const signData = await signResp.json();
-        const pdfUrl = signData.signedURL ? `${SB_URL}/storage/v1${signData.signedURL}` : null;
-        if (!pdfUrl) continue;
-
-        // Descargar PDF como base64
-        const pdfResp = await fetch(pdfUrl);
-        const pdfBuffer = await pdfResp.arrayBuffer();
-        const pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(pdfBuffer)));
-
-        // Extraer nro_cuenta del path (ej: epe/2026-06/xxx_2026-06_5591553.pdf → 5591553)
-        const nroMatch = pdfRec.pdf_path.match(/_(\d{5,9})\.pdf$/);
-        const nroCuenta = nroMatch ? nroMatch[1] : null;
-
-        // Llamar a Claude API para extraer el importe
-        const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 200,
-            messages: [{
-              role: 'user',
-              content: [
-                { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
-                { type: 'text', text: 'De esta boleta EPE extraé SOLAMENTE: número de cliente (sin ceros iniciales) e importe de Cuota 1. Respondé SOLO con JSON: {"nro_cliente":"XXXXX","importe":NNNN.NN}' }
-              ]
-            }]
-          })
-        });
-        const claudeData = await claudeResp.json();
-        const txt = claudeData.content?.[0]?.text || '';
-        let parsed = {};
-        try { parsed = JSON.parse(txt.replace(/```json|```/g,'')); } catch(e) {}
-
-        const sum = DB_SUMINISTROS.find(s => s.id === pdfRec.suministro_id);
-        datos.push({
-          pdf_id: pdfRec.id,
-          pago_id: pdfRec.pago_id,
-          suministro_id: pdfRec.suministro_id,
-          nro_cuenta: parsed.nro_cliente || nroCuenta || sum?.nro_cuenta || '?',
-          importe: parsed.importe || null,
-          titular: sum ? (DB.contratos.find(c => c.id === parseInt(sum.contrato_id))?.titulo || '') : '',
-          pdf_path: pdfRec.pdf_path,
-        });
-      } catch(e) {
-        console.error('Error procesando PDF:', pdfRec.pdf_path, e);
-      }
-    }
+    // Construir datos desde pagos_pdf — importe ya extraído por el bot
+    const datos = pdfsDelMes.map(pdfRec => {
+      const nroMatch = pdfRec.pdf_path.match(/_(\d{5,9})\.pdf$/);
+      const nroCuenta = nroMatch ? nroMatch[1] : null;
+      const sum = DB_SUMINISTROS.find(s => s.id === pdfRec.suministro_id);
+      const pago = DB.pagos?.find(p => p.id === pdfRec.pago_id);
+      const contrato = pago ? DB.contratos.find(c => c.hoja === pago.hoja) : null;
+      return {
+        pdf_id: pdfRec.id,
+        pago_id: pdfRec.pago_id,
+        suministro_id: pdfRec.suministro_id,
+        nro_cuenta: sum?.nro_cuenta || nroCuenta || '?',
+        importe: pdfRec.importe_extraido || null,
+        titular: contrato?.titulo || contrato?.hoja || '',
+        pdf_path: pdfRec.pdf_path,
+      };
+    });
 
     window._epeImportDatos = datos;
     wrap.innerHTML = _renderEPEPreview(datos);
