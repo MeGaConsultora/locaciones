@@ -5704,13 +5704,8 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
     <div class="recibo-mitad recibo-original">
-      <div class="recibo-label">▶ ORIGINAL</div>
-      <div style="display:flex;width:100%;height:calc(100% - 26px)">
-        <div class="recibo-inner" style="flex:1;min-width:0;padding:6px 12px 10px" id="rp1">${reciboHtml}</div>
-        <div style="width:26px;min-width:26px;background:#1a1a2e;display:flex;align-items:center;justify-content:flex-end;padding-right:2px">
-          <span style="writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;font-size:14px;font-weight:900;color:white;letter-spacing:0;text-transform:uppercase;font-family:Arial,sans-serif">${propietarioNombre}</span>
-        </div>
-      </div>
+      <div class="recibo-label">▶ ORIGINAL &nbsp;·&nbsp; <span style="font-size:0.85rem;letter-spacing:0.05em">${propietarioNombre}</span></div>
+      <div class="recibo-inner" id="rp1">${reciboHtml}</div>
     </div>
     <div class="separador"></div>
     <div class="recibo-mitad"><div class="recibo-label">▶ DUPLICADO</div><div class="recibo-inner" id="rp2">${reciboHtml}</div></div>
