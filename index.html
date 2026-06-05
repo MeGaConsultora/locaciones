@@ -4462,21 +4462,7 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
 
           if (seRinde) {
             const mesKey = p.mes?.substring(0,7) || '';
-            let totalRendidoInq = montoInqSum;
-            if (nro) {
-              const otrosContratos = DB.contratos.filter(x => x.id !== c?.id && DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(x.id) && s.tipo === srv.key && s.nro_cuenta === nro) && getEstado(x) === 'vigente');
-              for (const oc of otrosContratos) {
-                const ocPago = DB.pagos.find(pg => pg.hoja === oc.hoja && pg.mes && pg.mes.startsWith(mesKey));
-                if (ocPago) {
-                  const ocPs = window._pagosSuministros?.[ocPago.id] || {};
-                  const ocSums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === oc.id && s.tipo === srv.key && s.nro_cuenta === nro);
-                  for (const os of ocSums) {
-                    const entry = ocPs[os.id];
-                    totalRendidoInq += entry !== undefined ? (typeof entry === 'object' ? (entry.inq||0) : (entry||0)) : (ocPago['monto_'+srv.key] || 0);
-                  }
-                }
-              }
-            }
+            const totalRendidoInq = montoInqSum;
             html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
               <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
                 <input type="checkbox" id="prop-chk-srv-${srv.key}-${sum?.id||0}" value="${totalRendidoInq}" data-signo="1" checked onchange="recalcProp()" style="width:15px;height:15px">
