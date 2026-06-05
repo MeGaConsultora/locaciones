@@ -8670,41 +8670,50 @@ async function abrirImportarEPE() {
 function _renderEPEPreview(datos) {
   const conImporte = datos.filter(d => d.importe);
   const sinImporte = datos.filter(d => !d.importe);
+  const conContrato = datos.filter(d => {
+    const sum = d.suministro_id ? DB_SUMINISTROS.find(s => s.id === d.suministro_id) : null;
+    return sum && DB.contratos.find(c => c.id === parseInt(sum.contrato_id) && getEstado(c) === 'vigente');
+  });
   return `
-    <div style="margin-bottom:0.75rem;font-size:0.85rem;color:#666;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
-      <span><strong>${datos.length}</strong> boletas · <strong>${conImporte.length}</strong> con importe · <strong>${sinImporte.length}</strong> sin importe</span>
-      <label style="font-size:0.82rem;cursor:pointer;display:flex;align-items:center;gap:4px">
-        <input type="checkbox" id="epe-chk-all" checked onchange="document.querySelectorAll('.epe-chk-row').forEach(c=>c.checked=this.checked)">
-        Seleccionar todos
-      </label>
+    <div style="background:#f0f4ff;border-radius:10px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem">
+      ${datos.length} boletas procesadas ·
+      <span style="color:var(--green)">${conContrato.length} con contrato</span> ·
+      <span style="color:#aaa">${sinImporte.length} sin importe</span>
     </div>
-    <div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
-      <table style="width:100%;border-collapse:collapse;font-size:0.82rem">
-        <thead style="background:#f5f0e8;position:sticky;top:0">
-          <tr>
-            <th style="padding:6px 8px;width:32px"></th>
-            <th style="padding:6px 8px;text-align:left">N° Cliente</th>
-            <th style="padding:6px 8px;text-align:left">Contrato</th>
-            <th style="padding:6px 8px;text-align:right">Importe</th>
-          </tr>
-        </thead>
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">
+      <button onclick="document.querySelectorAll('.epe-chk-row:not([disabled])').forEach(c=>c.checked=true)" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer">✓ Seleccionar todos</button>
+      <button onclick="document.querySelectorAll('.epe-chk-row:not([disabled])').forEach(c=>c.checked=false)" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer">✗ Deseleccionar todos</button>
+    </div>
+    <div style="overflow-x:auto;max-height:380px;overflow-y:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:0.83rem">
+        <thead><tr style="background:var(--ink2);color:white;position:sticky;top:0">
+          <th style="padding:6px 8px;text-align:center">✓</th>
+          <th style="padding:6px 8px;text-align:left">N° Cliente</th>
+          <th style="padding:6px 8px;text-align:left">Contrato</th>
+          <th style="padding:6px 8px;text-align:right">Boleta</th>
+          <th style="padding:6px 8px;text-align:right">Cargado</th>
+          <th style="padding:6px 8px;text-align:right">A cargar</th>
+        </tr></thead>
         <tbody>
           ${datos.map((d, i) => {
+            const sum = d.suministro_id ? DB_SUMINISTROS.find(s => s.id === d.suministro_id) : null;
+            const contrato = sum ? DB.contratos.find(c => c.id === parseInt(sum.contrato_id) && getEstado(c) === 'vigente') : null;
             const tieneImporte = d.importe && d.importe > 0;
-            const pago = DB.pagos?.find(p => p.id === d.pago_id);
-            const contrato = pago ? DB.contratos.find(x => x.hoja === pago.hoja) : null;
-            return `<tr style="border-bottom:1px solid #f0ece4;${!tieneImporte?'background:#fff8e8':''}">
-              <td style="padding:5px 8px;text-align:center">
-                <input type="checkbox" class="epe-chk-row" data-idx="${i}" ${tieneImporte ? 'checked' : ''}>
+            const pct = sum ? (sum.pct_inquilino || 100) : 100;
+            const aCargar = tieneImporte ? Math.round(d.importe * pct / 100 * 100) / 100 : 0;
+            const cargado = d.importe_cargado || null;
+            // Diferencia: resaltar si cargado != aCargar (con tolerancia de $1)
+            const hayDiferencia = cargado !== null && tieneImporte && Math.abs(cargado - aCargar) > 1;
+            const rowColor = !contrato ? '#fff8f8' : hayDiferencia ? '#fff3cd' : !tieneImporte ? '#f5f5f5' : '';
+            return `<tr style="border-bottom:1px solid #eee;background:${rowColor}">
+              <td style="padding:6px 8px;text-align:center">
+                <input type="checkbox" class="epe-chk-row" data-idx="${i}" ${contrato && tieneImporte ? 'checked' : ''} ${!contrato ? 'disabled' : ''} style="width:15px;height:15px">
               </td>
-              <td style="padding:5px 8px;font-family:monospace">${d.nro_cuenta}</td>
-              <td style="padding:5px 8px;font-size:0.78rem;color:#666">${d.titular || contrato?.titulo || contrato?.hoja || '—'}</td>
-              <td style="padding:5px 8px;text-align:right">
-                ${tieneImporte
-                  ? '<input type="text" class="epe-importe-input" data-idx="' + i + '" value="' + d.importe.toLocaleString('es-AR',{minimumFractionDigits:2}) + '" style="width:100px;text-align:right;border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:0.82rem" onchange="window._epeImportDatos[' + i + '].importe=parseMonto(this.value)">'
-                  : '<span style="color:#aaa;font-size:0.78rem">No extraído</span>'
-                }
-              </td>
+              <td style="padding:6px 8px;font-weight:600">${d.nro_cuenta || '—'}</td>
+              <td style="padding:6px 8px">${contrato ? (contrato.titulo || contrato.hoja) : '<span style="color:var(--accent)">Sin contrato</span>'}</td>
+              <td style="padding:6px 8px;text-align:right">${tieneImporte ? formatMoney(d.importe) : '<span style="color:#aaa">—</span>'}</td>
+              <td style="padding:6px 8px;text-align:right;${hayDiferencia ? 'color:var(--accent);font-weight:600' : 'color:#888'}">${cargado !== null ? formatMoney(cargado) : '—'}</td>
+              <td style="padding:6px 8px;text-align:right;color:var(--green)">${aCargar ? formatMoney(aCargar) : '—'}</td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -8713,7 +8722,7 @@ function _renderEPEPreview(datos) {
     <div class="form-actions" style="margin-top:1rem">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-secondary" onclick="recargarDatosEPE()">🔄 Recargar</button>
-      <button class="btn btn-green" onclick="confirmarImportarEPE()">✓ Procesar importación</button>
+      <button class="btn btn-green" onclick="confirmarImportarEPE()">✓ Cargar seleccionados</button>
     </div>`;
 }
 
@@ -8746,18 +8755,31 @@ async function recargarDatosEPE() {
     }
 
     // Construir datos desde pagos_pdf — importe ya extraído por el bot
+    const pagoIds = [...new Set(pdfsDelMes.map(r => r.pago_id).filter(Boolean))];
+    // Cargar pagos_suministros del mes para comparar con importe extraído
+    let psSuministros = [];
+    if (pagoIds.length) {
+      psSuministros = await sbGet('pagos_suministros',
+        `pago_id=in.(${pagoIds.join(',')})&select=pago_id,suministro_id,importe`
+      ).catch(() => []);
+    }
+
     const datos = pdfsDelMes.map(pdfRec => {
       const nroMatch = pdfRec.pdf_path.match(/_(\d{5,9})\.pdf$/);
       const nroCuenta = nroMatch ? nroMatch[1] : null;
       const sum = DB_SUMINISTROS.find(s => s.id === pdfRec.suministro_id);
       const pago = DB.pagos?.find(p => p.id === pdfRec.pago_id);
       const contrato = pago ? DB.contratos.find(c => c.hoja === pago.hoja) : null;
+      // Importe actualmente cargado en pagos_suministros
+      const psRow = psSuministros.find(ps => ps.pago_id === pdfRec.pago_id && ps.suministro_id === pdfRec.suministro_id);
+      const importeCargado = psRow?.importe || null;
       return {
         pdf_id: pdfRec.id,
         pago_id: pdfRec.pago_id,
         suministro_id: pdfRec.suministro_id,
         nro_cuenta: sum?.nro_cuenta || nroCuenta || '?',
         importe: pdfRec.importe_extraido || null,
+        importe_cargado: importeCargado,
         titular: contrato?.titulo || contrato?.hoja || '',
         pdf_path: pdfRec.pdf_path,
       };
