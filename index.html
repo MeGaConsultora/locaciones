@@ -6835,39 +6835,8 @@ async function actualizarContrato(id) {
     const nuevoImporte = parseMonto(document.getElementById('f-importe-inicial')?.value);
     if (reimportar && nuevoImporte > 0) {
       const cActualizado = { ...DB.contratos.find(x=>x.id===id), ...body };
-      const periodicidad = cActualizado.periodicidad_actualizacion;
-      const mesesPeriodo = { 'Mensual':1,'Bimestral':2,'Trimestral':3,'Cuatrimestral':4,'Semestral':6,'Anual':12 }[periodicidad] || 12;
-
-      // Calcular el inicio del período actual:
-      // Buscar el último mes proyectado y retroceder (mesesPeriodo - 1) meses
-      const hojaEncoded = encodeURIComponent(cActualizado.hoja || cActualizado.titulo);
-      const pagosContrato = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.desc&limit=1`);
-      const ultimoMesStr = pagosContrato[0]?.mes?.substring(0,7);
-
-      let desdeKey;
-      if (ultimoMesStr) {
-        // Buscar el primer mes del período actual:
-        // Es el mes más reciente que tiene importe_alquiler > 0,
-        // alineado al inicio de un período según periodicidad desde vigencia_desde
-        const vigDesdeKey = (cActualizado.vigencia_desde || TODAY).substring(0,7);
-        let [vy, vm] = vigDesdeKey.split('-').map(Number);
-        let periodoDesde = vigDesdeKey;
-        // Avanzar período a período hasta encontrar el que contiene el último mes proyectado
-        while (true) {
-          let [ny, nm] = [vy, vm];
-          nm += mesesPeriodo;
-          while (nm > 12) { nm -= 12; ny++; }
-          const siguientePeriodo = `${ny}-${String(nm).padStart(2,'0')}`;
-          if (siguientePeriodo > ultimoMesStr) break;
-          periodoDesde = siguientePeriodo;
-          vy = ny; vm = nm;
-        }
-        desdeKey = periodoDesde;
-      } else {
-        desdeKey = (cActualizado.vigencia_desde || TODAY).substring(0,7);
-      }
-
-      await proyectarPeriodo(cActualizado.hoja||cActualizado.titulo, desdeKey, nuevoImporte, periodicidad, cActualizado.dia_vencimiento||10, cActualizado.modalidad_pago||'ADELANTADO');
+      const desdeKey = (cActualizado.vigencia_desde || TODAY).substring(0,7);
+      await proyectarPeriodo(cActualizado.hoja||cActualizado.titulo, desdeKey, nuevoImporte, cActualizado.periodicidad_actualizacion, cActualizado.dia_vencimiento||10, cActualizado.modalidad_pago||'ADELANTADO');
       toast('Período re-proyectado ✓');
     }
     
