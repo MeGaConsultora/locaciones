@@ -406,8 +406,8 @@
           <div class="submenu-wrap submenu-nivel3">
             <div class="submenu-header">📥 Importar ▸</div>
             <div class="submenu-items">
-              <button onclick="abrirImportarPDF()">📄 Importar PDF</button>
-              <button onclick="abrirImportarExcel()">📊 Excel de TGIU</button>
+              <button onclick="abrirImportarAgua()">💧 Agua</button>
+              <button onclick="abrirImportarExcel()">🏛️ TGIU</button>
               <button onclick="abrirImportarEPE()">⚡ EPE</button>
             </div>
           </div>
@@ -8591,21 +8591,65 @@ async function procesarPDF() {
 // ============================================================
 // IMPORTAR EPE DESDE BOOKMARKLET
 // ============================================================
+function abrirImportarAgua() {
+  document.getElementById('informes-menu').style.display = 'none';
+  document.getElementById('modal-title').textContent = '💧 Importar PDF Agua';
+  document.getElementById('modal-subtitle').textContent = '';
+  document.getElementById('modal-overlay').dataset.contratoId = '';
+  document.getElementById('modal-body').innerHTML = `
+    <div style="padding:0.5rem 0">
+      <p style="font-size:0.88rem;color:#666;margin-bottom:1.2rem">
+        Subí el PDF con las boletas de Agua. El sistema extrae automáticamente el N° de cuenta e importe por página.
+      </p>
+      <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.2rem">
+        <div class="form-group" style="margin:0;flex:1;min-width:200px">
+          <label>Mes al que corresponden</label>
+          <input type="month" id="pdf-mes" value="${TODAY.substring(0,7)}" style="margin-top:4px">
+        </div>
+        <input type="hidden" id="pdf-servicio" value="agua">
+      </div>
+      <div class="form-group" style="margin-bottom:1.2rem">
+        <label>Archivo PDF</label>
+        <input type="file" id="pdf-file" accept=".pdf" style="margin-top:4px;width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px">
+      </div>
+      <div id="pdf-procesando" style="display:none;text-align:center;padding:2rem;color:#888">
+        <div style="font-size:2rem;margin-bottom:0.5rem">⏳</div>
+        Procesando páginas del PDF...
+      </div>
+      <div id="pdf-resultados" style="display:none"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-main-pdf">🔍 Procesar PDF</button>
+    </div>
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
+  window._pdfMode = 'procesar';
+  if (!window._pdfArchivosSubidos) window._pdfArchivosSubidos = new Set();
+  const pdfBtn = document.getElementById('btn-main-pdf');
+  if (pdfBtn) {
+    const newBtn = pdfBtn.cloneNode(true);
+    pdfBtn.parentNode.replaceChild(newBtn, pdfBtn);
+    document.getElementById('btn-main-pdf').addEventListener('click', function() {
+      if (window._pdfMode === 'procesar') procesarPDF();
+      else confirmarImportarPDF();
+    });
+  }
+}
+
 async function abrirImportarEPE() {
   document.getElementById('informes-menu').style.display = 'none';
   document.getElementById('modal-title').textContent = '⚡ Importar EPE';
   document.getElementById('modal-subtitle').textContent = '';
   document.getElementById('modal-overlay').dataset.contratoId = '';
 
-  // Check for pending data in epe_import_temp
   const mesKey = TODAY.substring(0,7);
-  const datos = await sbGet('epe_import_temp', `mes_key=eq.${mesKey}&order=nro_cuenta.asc&limit=500`).catch(() => []);
 
   document.getElementById('modal-body').innerHTML = `
     <div style="padding:0.5rem 0">
-      <p style="font-size:0.88rem;color:#666;margin-bottom:1.2rem">
-        Usá el bookmarklet en la Oficina Virtual EPE para importar los importes, luego volvé aquí para procesarlos.
-      </p>
+      <div style="background:#f5f0e8;border-radius:8px;padding:0.8rem 1rem;margin-bottom:1.2rem;font-size:0.85rem;color:#666;line-height:1.5">
+        <strong>Antes de importar:</strong> ejecutá <code style="background:#e8e0d0;padding:2px 6px;border-radius:4px">EPE Bot.bat</code> en la PC servidor para descargar y subir las boletas del mes al sistema.
+      </div>
       <div style="display:flex;gap:1rem;margin-bottom:1.2rem;align-items:flex-end">
         <div class="form-group" style="margin:0">
           <label>Mes</label>
@@ -8614,63 +8658,61 @@ async function abrirImportarEPE() {
         <button class="btn btn-secondary" style="font-size:0.82rem" onclick="recargarDatosEPE()">🔄 Actualizar</button>
       </div>
       <div id="epe-datos-wrap">
-        ${datos.length ? _renderEPEPreview(datos) : '<div style="text-align:center;color:#aaa;padding:2rem">No hay datos importados para este mes.<br><small>Ejecutá la extensión en la Oficina Virtual EPE primero.</small></div>'}
-      </div>
-      <div class="form-actions" style="margin-top:1rem">
-        <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+        <div style="text-align:center;color:#aaa;padding:2rem">Cargando...</div>
       </div>
     </div>
   `;
   document.getElementById('modal-overlay').classList.add('open');
   window._epeImportMes = mesKey;
-  window._epeImportDatos = datos;
+  await recargarDatosEPE();
 }
 
 function _renderEPEPreview(datos) {
-  const conContrato = datos.filter(d => {
-    const sums = DB_SUMINISTROS.filter(s => s.nro_cuenta === d.nro_cuenta && s.tipo === 'epe');
-    return sums.some(s => { const c = DB.contratos.find(x => x.id === parseInt(s.contrato_id)); return c && getEstado(c) === 'vigente'; });
-  });
-  const sinContrato = datos.filter(d => !conContrato.includes(d));
+  const conImporte = datos.filter(d => d.importe);
+  const sinImporte = datos.filter(d => !d.importe);
   return `
-    <div style="margin-bottom:0.75rem;font-size:0.85rem;color:#666;display:flex;align-items:center;gap:1rem">
-      <span><strong>${conContrato.length}</strong> con contrato · <strong>${sinContrato.length}</strong> sin contrato</span>
+    <div style="margin-bottom:0.75rem;font-size:0.85rem;color:#666;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <span><strong>${datos.length}</strong> boletas · <strong>${conImporte.length}</strong> con importe · <strong>${sinImporte.length}</strong> sin importe</span>
       <label style="font-size:0.82rem;cursor:pointer;display:flex;align-items:center;gap:4px">
         <input type="checkbox" id="epe-chk-all" checked onchange="document.querySelectorAll('.epe-chk-row').forEach(c=>c.checked=this.checked)">
         Seleccionar todos
       </label>
     </div>
-    <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+    <div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
       <table style="width:100%;border-collapse:collapse;font-size:0.82rem">
         <thead style="background:#f5f0e8;position:sticky;top:0">
           <tr>
             <th style="padding:6px 8px;width:32px"></th>
             <th style="padding:6px 8px;text-align:left">N° Cliente</th>
-            <th style="padding:6px 8px;text-align:left">Titular EPE</th>
+            <th style="padding:6px 8px;text-align:left">Contrato</th>
             <th style="padding:6px 8px;text-align:right">Importe</th>
-            <th style="padding:6px 8px;text-align:left">Contrato/s</th>
           </tr>
         </thead>
         <tbody>
           ${datos.map((d, i) => {
-            const sums = DB_SUMINISTROS.filter(s => s.nro_cuenta === d.nro_cuenta && s.tipo === 'epe');
-            const contratos = sums.map(s => DB.contratos.find(x => x.id === parseInt(s.contrato_id))).filter(c => c && getEstado(c) === 'vigente');
-            const tieneContrato = contratos.length > 0;
-            return `<tr style="border-bottom:1px solid #f0ece4;${!tieneContrato?'background:#fdecea;opacity:0.6':''}">
+            const tieneImporte = d.importe && d.importe > 0;
+            const pago = DB.pagos?.find(p => p.id === d.pago_id);
+            const contrato = pago ? DB.contratos.find(x => x.hoja === pago.hoja) : null;
+            return `<tr style="border-bottom:1px solid #f0ece4;${!tieneImporte?'background:#fff8e8':''}">
               <td style="padding:5px 8px;text-align:center">
-                ${tieneContrato ? `<input type="checkbox" class="epe-chk-row" data-idx="${i}" checked>` : ''}
+                <input type="checkbox" class="epe-chk-row" data-idx="${i}" ${tieneImporte ? 'checked' : ''}>
               </td>
               <td style="padding:5px 8px;font-family:monospace">${d.nro_cuenta}</td>
-              <td style="padding:5px 8px;font-size:0.78rem;color:#666">${d.titular||''}</td>
-              <td style="padding:5px 8px;text-align:right;font-weight:600">$${(d.importe||0).toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
-              <td style="padding:5px 8px;font-size:0.78rem">${tieneContrato ? contratos.map(c=>c.titulo||c.hoja).join(', ') : '<span style="color:var(--accent)">Sin contrato</span>'}</td>
+              <td style="padding:5px 8px;font-size:0.78rem;color:#666">${d.titular || contrato?.titulo || contrato?.hoja || '—'}</td>
+              <td style="padding:5px 8px;text-align:right">
+                ${tieneImporte
+                  ? '<input type="text" class="epe-importe-input" data-idx="' + i + '" value="' + d.importe.toLocaleString('es-AR',{minimumFractionDigits:2}) + '" style="width:100px;text-align:right;border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:0.82rem" onchange="window._epeImportDatos[' + i + '].importe=parseMonto(this.value)">'
+                  : '<span style="color:#aaa;font-size:0.78rem">No extraído</span>'
+                }
+              </td>
             </tr>`;
           }).join('')}
         </tbody>
       </table>
     </div>
     <div class="form-actions" style="margin-top:1rem">
-      <button class="btn btn-secondary" onclick="recargarDatosEPE()">🔄 Actualizar</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-secondary" onclick="recargarDatosEPE()">🔄 Recargar</button>
       <button class="btn btn-green" onclick="confirmarImportarEPE()">✓ Procesar importación</button>
     </div>`;
 }
@@ -8678,11 +8720,101 @@ function _renderEPEPreview(datos) {
 async function recargarDatosEPE() {
   const mesKey = document.getElementById('epe-mes')?.value || TODAY.substring(0,7);
   window._epeImportMes = mesKey;
-  const datos = await sbGet('epe_import_temp', `mes_key=eq.${mesKey}&order=nro_cuenta.asc&limit=500`).catch(() => []);
-  window._epeImportDatos = datos;
-  document.getElementById('epe-datos-wrap').innerHTML = datos.length
-    ? _renderEPEPreview(datos)
-    : '<div style="text-align:center;color:#aaa;padding:2rem">No hay datos para este mes.</div>';
+  const wrap = document.getElementById('epe-datos-wrap');
+  if (!wrap) return;
+
+  wrap.innerHTML = '<div style="text-align:center;color:#aaa;padding:2rem">⏳ Buscando boletas en Storage...</div>';
+
+  // Buscar PDFs subidos por el bot en pagos_pdf para este mes
+  try {
+    const mesStr = mesKey + '-01';
+    // Obtener todos los pagos del mes con PDFs EPE
+    const pdfs = await sbGet('pagos_pdf',
+      `servicio=eq.epe&select=id,pago_id,pdf_path,suministro_id&order=id.asc`
+    ).catch(() => []);
+
+    // Filtrar los que corresponden al mes seleccionado por el path (epe/YYYY-MM/...)
+    const pdfsDelMes = pdfs.filter(r => r.pdf_path && r.pdf_path.includes(`epe/${mesKey}/`));
+
+    if (!pdfsDelMes.length) {
+      wrap.innerHTML = `
+        <div style="text-align:center;color:#aaa;padding:2rem">
+          No se encontraron boletas EPE para <strong>${mesKey}</strong>.<br>
+          <small>Ejecutá <code>EPE Bot.bat</code> en la PC servidor primero.</small>
+        </div>
+        <div class="form-actions" style="margin-top:1rem">
+          <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+        </div>`;
+      return;
+    }
+
+    wrap.innerHTML = `<div style="text-align:center;color:#aaa;padding:1rem">⏳ Encontradas ${pdfsDelMes.length} boletas — extrayendo importes con IA...</div>`;
+
+    // Parsear cada PDF con Claude API
+    const datos = [];
+    for (const pdfRec of pdfsDelMes) {
+      try {
+        // Obtener URL firmada del PDF
+        const signResp = await fetch(
+          `${SB_URL}/storage/v1/object/sign/servicios/${pdfRec.pdf_path}`,
+          { method: 'POST', headers: { 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ expiresIn: 300 }) }
+        );
+        const signData = await signResp.json();
+        const pdfUrl = signData.signedURL ? `${SB_URL}/storage/v1${signData.signedURL}` : null;
+        if (!pdfUrl) continue;
+
+        // Descargar PDF como base64
+        const pdfResp = await fetch(pdfUrl);
+        const pdfBuffer = await pdfResp.arrayBuffer();
+        const pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(pdfBuffer)));
+
+        // Extraer nro_cuenta del path (ej: epe/2026-06/xxx_2026-06_5591553.pdf → 5591553)
+        const nroMatch = pdfRec.pdf_path.match(/_(\d{5,9})\.pdf$/);
+        const nroCuenta = nroMatch ? nroMatch[1] : null;
+
+        // Llamar a Claude API para extraer el importe
+        const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 200,
+            messages: [{
+              role: 'user',
+              content: [
+                { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+                { type: 'text', text: 'De esta boleta EPE extraé SOLAMENTE: número de cliente (sin ceros iniciales) e importe de Cuota 1. Respondé SOLO con JSON: {"nro_cliente":"XXXXX","importe":NNNN.NN}' }
+              ]
+            }]
+          })
+        });
+        const claudeData = await claudeResp.json();
+        const txt = claudeData.content?.[0]?.text || '';
+        let parsed = {};
+        try { parsed = JSON.parse(txt.replace(/```json|```/g,'')); } catch(e) {}
+
+        const sum = DB_SUMINISTROS.find(s => s.id === pdfRec.suministro_id);
+        datos.push({
+          pdf_id: pdfRec.id,
+          pago_id: pdfRec.pago_id,
+          suministro_id: pdfRec.suministro_id,
+          nro_cuenta: parsed.nro_cliente || nroCuenta || sum?.nro_cuenta || '?',
+          importe: parsed.importe || null,
+          titular: sum ? (DB.contratos.find(c => c.id === parseInt(sum.contrato_id))?.titulo || '') : '',
+          pdf_path: pdfRec.pdf_path,
+        });
+      } catch(e) {
+        console.error('Error procesando PDF:', pdfRec.pdf_path, e);
+      }
+    }
+
+    window._epeImportDatos = datos;
+    wrap.innerHTML = _renderEPEPreview(datos);
+
+  } catch(e) {
+    wrap.innerHTML = `<div style="text-align:center;color:var(--accent);padding:2rem">Error: ${e.message}</div>`;
+  }
 }
 
 async function confirmarImportarEPE() {
@@ -8745,7 +8877,7 @@ async function confirmarImportarEPE() {
 
 function abrirImportarExcel() {
   document.getElementById('informes-menu').style.display = 'none';
-  document.getElementById('modal-title').textContent = '📊 Importar Excel TGIU';
+  document.getElementById('modal-title').textContent = '🏛️ Importar Excel TGIU';
   document.getElementById('modal-subtitle').textContent = '';
   document.getElementById('modal-overlay').dataset.contratoId = '';
   document.getElementById('modal-body').innerHTML = `
@@ -8753,21 +8885,11 @@ function abrirImportarExcel() {
       <p style="font-size:0.88rem;color:#666;margin-bottom:1.2rem">
         Subí el Excel con el listado de TGIU. Columna A: N° de padrón, Columna C: importe.
       </p>
+      <input type="hidden" id="excel-servicio" value="tgiu">
       <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.2rem">
         <div class="form-group" style="margin:0;flex:1;min-width:200px">
           <label>Mes al que corresponden</label>
           <input type="month" id="excel-mes" value="${TODAY.substring(0,7)}" style="margin-top:4px">
-        </div>
-        <div class="form-group" style="margin:0;flex:2;min-width:250px">
-          <label>Tipo de servicio</label>
-          <select id="excel-servicio" style="margin-top:4px;padding:8px;border:1.5px solid var(--border);border-radius:8px;width:100%">
-            <option value="tgiu">TGIU</option>
-            <option value="epe">EPE</option>
-            <option value="agua">Agua</option>
-            <option value="seguro">Seguro</option>
-            <option value="internet">Internet</option>
-            <option value="expensas">Expensas</option>
-          </select>
         </div>
       </div>
       <div class="form-group" style="margin-bottom:1.2rem">
