@@ -6650,21 +6650,11 @@ async function guardarContrato() {
     // Save suministros
     if (nuevoContrato?.id) await guardarSuministros(nuevoContrato.id);
 
-    // If proyectar is checked, run projection for all months using periodicidad
+    // If proyectar is checked, run projection for first period only
     if (reimportarChk && nuevoContrato && importeInicial > 0 && body.periodicidad_actualizacion && body.periodicidad_actualizacion !== 'Sin actualización') {
       const diaVenc = body.dia_vencimiento || 10;
-      let desdeKey = vigDesde.substring(0,7);
-      const hastaKey = vigHasta.substring(0,7);
-      let importe = importeInicial;
-      while (desdeKey <= hastaKey) {
-        await proyectarPeriodo(titulo, desdeKey, importe, body.periodicidad_actualizacion, diaVenc, body.modalidad_pago || 'VENCIDO');
-        // Advance desdeKey by mesesPeriodo
-        const mesesPeriodo = {'Mensual':1,'Bimestral':2,'Trimestral':3,'Cuatrimestral':4,'Semestral':6,'Anual':12}[body.periodicidad_actualizacion] || 12;
-        let [py, pm] = desdeKey.split('-').map(Number);
-        pm += mesesPeriodo;
-        while (pm > 12) { pm -= 12; py++; }
-        desdeKey = `${py}-${String(pm).padStart(2,'0')}`;
-      }
+      const desdeKey = vigDesde.substring(0,7);
+      await proyectarPeriodo(titulo, desdeKey, importeInicial, body.periodicidad_actualizacion, diaVenc, body.modalidad_pago || 'VENCIDO');
     }
 
     closeModal();
@@ -6845,9 +6835,27 @@ async function actualizarContrato(id) {
     const nuevoImporte = parseMonto(document.getElementById('f-importe-inicial')?.value);
     if (reimportar && nuevoImporte > 0) {
       const cActualizado = { ...DB.contratos.find(x=>x.id===id), ...body };
-      // Start from vigencia_desde, not TODAY
-      const desdeKey = (cActualizado.vigencia_desde || TODAY).substring(0,7);
-      await proyectarPeriodo(cActualizado.hoja||cActualizado.titulo, desdeKey, nuevoImporte, cActualizado.periodicidad_actualizacion, cActualizado.dia_vencimiento||10, cActualizado.modalidad_pago||'ADELANTADO');
+      const periodicidad = cActualizado.periodicidad_actualizacion;
+      const mesesPeriodo = { 'Mensual':1,'Bimestral':2,'Trimestral':3,'Cuatrimestral':4,'Semestral':6,'Anual':12 }[periodicidad] || 12;
+
+      // Calcular el inicio del período actual:
+      // Buscar el último mes proyectado y retroceder (mesesPeriodo - 1) meses
+      const hojaEncoded = encodeURIComponent(cActualizado.hoja || cActualizado.titulo);
+      const pagosContrato = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.desc&limit=1`);
+      const ultimoMesStr = pagosContrato[0]?.mes?.substring(0,7);
+
+      let desdeKey;
+      if (ultimoMesStr) {
+        // El período actual empieza (mesesPeriodo - 1) meses antes del último mes
+        let [uy, um] = ultimoMesStr.split('-').map(Number);
+        um -= (mesesPeriodo - 1);
+        while (um <= 0) { um += 12; uy--; }
+        desdeKey = `${uy}-${String(um).padStart(2,'0')}`;
+      } else {
+        desdeKey = (cActualizado.vigencia_desde || TODAY).substring(0,7);
+      }
+
+      await proyectarPeriodo(cActualizado.hoja||cActualizado.titulo, desdeKey, nuevoImporte, periodicidad, cActualizado.dia_vencimiento||10, cActualizado.modalidad_pago||'ADELANTADO');
       toast('Período re-proyectado ✓');
     }
     
