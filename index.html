@@ -5650,6 +5650,10 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
   const [fy,fm,fd] = TODAY.split('-');
   const fechaHoy = `${fd}/${fm}/${fy}`;
 
+  const inm = c?.inmueble_id ? DB_INMUEBLES?.find(x => x.id === c.inmueble_id) : null;
+  const inmuebleDir = inm ? formatDireccion(inm) : (c?.titulo || '—');
+  const propietarioNombre = c?.locador || '';
+
   const ventana = window.open('', '_blank', 'width=780,height=600');
   const reciboHtml = `
     <div style="font-family:'DM Sans',Arial,sans-serif;width:100%;max-width:680px;margin:0 auto;padding:24px;border:2px solid #1a1a2e;border-radius:8px">
@@ -5660,7 +5664,7 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;font-size:0.85rem">
         <div><span style="font-size:0.7rem;text-transform:uppercase;color:#888;display:block">Propietario</span>${c?.locador||'—'}</div>
         <div><span style="font-size:0.7rem;text-transform:uppercase;color:#888;display:block">Período</span>${fechaMes}</div>
-        <div><span style="font-size:0.7rem;text-transform:uppercase;color:#888;display:block">Inmueble</span>${c?.titulo||'—'}</div>
+        <div><span style="font-size:0.7rem;text-transform:uppercase;color:#888;display:block">Inmueble</span>${inmuebleDir}</div>
         <div><span style="font-size:0.7rem;text-transform:uppercase;color:#888;display:block">Inquilino</span>${c?.locatario||'—'}</div>
       </div>
       <table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:0.85rem">
@@ -5686,7 +5690,7 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
       .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; font-family:'DM Sans',sans-serif; font-weight:600; }
       .recibo-mitad { background:white; width:190mm; height:141mm; overflow:hidden; position:relative; }
       .recibo-mitad.recibo-original { border-bottom: 2px dashed #bbb; }
-      .recibo-label { padding:3px 18px 0; font-size:0.62rem; color:#aaa; text-transform:uppercase; letter-spacing:.1em; }
+      .recibo-label { padding:4px 18px; font-size:0.7rem; color:#1a1a2e; text-transform:uppercase; letter-spacing:.08em; font-weight:700; background:#f0ece4; border-bottom:1px solid #ddd; white-space:nowrap; overflow:hidden; }
       .recibo-inner { padding:6px 18px 10px; }
       .separador { display:none; }
       @page { size: A4 portrait; margin: 0; }
@@ -5699,9 +5703,15 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     </style>
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
-    <div class="recibo-mitad recibo-original"><div class="recibo-label">Original</div><div class="recibo-inner" id="rp1">${reciboHtml}</div></div>
+    <div class="recibo-mitad recibo-original" style="position:relative">
+      <div class="recibo-label">▶ ORIGINAL</div>
+      <div class="recibo-inner" id="rp1">${reciboHtml}</div>
+      <div style="position:absolute;right:0;top:22px;bottom:0;width:14px;background:#1a1a2e;display:flex;align-items:center;justify-content:center;overflow:hidden;z-index:10">
+        <div style="transform:rotate(90deg);white-space:nowrap;font-size:9px;font-weight:700;color:white;letter-spacing:0.06em;text-transform:uppercase">${propietarioNombre}</div>
+      </div>
+    </div>
     <div class="separador"></div>
-    <div class="recibo-mitad"><div class="recibo-label">Duplicado</div><div class="recibo-inner" id="rp2">${reciboHtml}</div></div>
+    <div class="recibo-mitad"><div class="recibo-label">▶ DUPLICADO</div><div class="recibo-inner" id="rp2">${reciboHtml}</div></div>
     <script>
       function ajustarEscala(mitad, printPx) {
         const inner = mitad.querySelector('.recibo-inner');
@@ -7136,16 +7146,13 @@ function imprimirRecibo(data) {
   const fechaPago = data.fechaPago ? (() => { const [y,m,d]=data.fechaPago.split('-'); return `${d}/${m}/${y}`; })() : '';
   const previewBanner = data.esPreview ? `<div style="background:#fff3cd;border:2px dashed #ffc107;border-radius:6px;padding:8px 14px;margin-bottom:10px;text-align:center;font-weight:700;font-size:0.85rem;color:#856404;letter-spacing:0.05em">⚠ VISTA PREVIA — No es un recibo oficial</div>` : '';
 
-  // Obtener dirección real del inmueble
-  const inm = data.contrato?.inmueble_id ? DB_INMUEBLES?.find(x => x.id === data.contrato.inmueble_id) : null;
-  const inmuebleDir = inm ? formatDireccion(inm) : (data.contrato?.titulo || '—');
-  // Nombre propietario para banda lateral
-  const propietarioNombre = data.contrato?.locador || '';
+  const inmInq = data.contrato?.inmueble_id ? DB_INMUEBLES?.find(x => x.id === data.contrato.inmueble_id) : null;
+  const inmuebleDirInq = inmInq ? formatDireccion(inmInq) : (data.contrato?.titulo || '—');
 
-  const reciboBase = (conBanda) => `
-    <div style="font-family:'DM Sans',Arial,sans-serif;width:100%;padding:0;border:1.5px solid #1a1a2e;border-radius:4px;position:relative;overflow:hidden">
+  const recibo = `
+    <div style="font-family:'DM Sans',Arial,sans-serif;width:100%;padding:0;border:1.5px solid #1a1a2e;border-radius:4px">
       ${previewBanner}
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;border-bottom:1.5px solid #1a1a2e;padding:10px 28px 8px 14px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;border-bottom:1.5px solid #1a1a2e;padding:10px 14px 8px">
         <div>
           <div style="font-size:1.1rem;font-weight:700;color:#1a1a2e">MeGa Consultora</div>
           <div style="font-size:0.72rem;color:#666;margin-top:1px">Gestión Inmobiliaria</div>
@@ -7155,13 +7162,11 @@ function imprimirRecibo(data) {
           <div style="font-size:1.3rem;font-weight:700;color:#c8483a">${String(data.nroMes).padStart(4,'0')}</div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;font-size:0.78rem;padding:0 28px 0 14px">
-        <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Contrato</span><strong>${data.contrato?.titulo||'—'}</strong></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;font-size:0.78rem;padding:0 14px">
+        <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Locatario</span><strong>${data.contrato?.locatario||'—'}</strong></div>
         <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Período</span><strong>${fechaMes}</strong></div>
-        <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Locador</span>${data.contrato?.locador||'—'}</div>
-        <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Locatario</span>${data.contrato?.locatario||'—'}</div>
         <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Fecha de pago</span>${fechaPago}</div>
-        <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Inmueble</span>${inmuebleDir}</div>
+        <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Inmueble</span>${inmuebleDirInq}</div>
       </div>
       <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:0.78rem">
         <thead><tr style="background:#1a1a2e;color:white">
@@ -7191,8 +7196,7 @@ function imprimirRecibo(data) {
       </div>
     </div>
   `;
-  const recibo = reciboBase(true);
-  const reciboSinBanda = reciboBase(false);
+
 
   const ventana = window.open('', 'Recibo Nº '+String(data.nroMes).padStart(4,'0'));
   ventana.document.write(`<!DOCTYPE html><html><head>
@@ -7220,16 +7224,9 @@ function imprimirRecibo(data) {
       }</style>
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
-    <div class="recibo-mitad recibo-original" style="position:relative">
-      <div class="recibo-label">▶ ORIGINAL</div>
-      <div class="recibo-inner" id="ri1">${recibo}</div>
-      <!-- Banda propietario solo en original -->
-      <div style="position:absolute;right:0;top:0;bottom:0;width:18px;background:#1a1a2e;display:flex;align-items:center;justify-content:center;overflow:hidden;z-index:10">
-        <div style="transform:rotate(90deg);white-space:nowrap;font-size:7.5px;font-weight:700;color:white;letter-spacing:0.08em;text-transform:uppercase">${propietarioNombre}</div>
-      </div>
-    </div>
+    <div class="recibo-mitad recibo-original"><div class="recibo-label">Original</div><div class="recibo-inner" id="ri1">${recibo}</div></div>
     <div class="separador"></div>
-    <div class="recibo-mitad"><div class="recibo-label">▶ DUPLICADO</div><div class="recibo-inner" id="ri2">${reciboSinBanda}</div></div>
+    <div class="recibo-mitad"><div class="recibo-label">Duplicado</div><div class="recibo-inner" id="ri2">${recibo}</div></div>
     <script>
       function ajustarEscala(mitad, printPx) {
         const inner = mitad.querySelector('.recibo-inner');
