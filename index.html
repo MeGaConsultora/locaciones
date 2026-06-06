@@ -1664,12 +1664,16 @@ async function recargarGrilla(c) {
       if (wrap && masBtn) {
         const extras = [...wrap.querySelectorAll('.contrato-btn-extra')];
         const ajustar = () => {
-          const mainW = [...wrap.querySelectorAll('.contrato-btn-main')].reduce((s,b)=>s+b.offsetWidth+8,0);
-          const hayEspacio = (wrap.parentElement?.offsetWidth||wrap.offsetWidth) > mainW + 20;
+          // Mostrar todos temporalmente para medir
+          extras.forEach(b => { b.style.display = ''; });
+          masBtn.style.display = 'none';
+          const totalW = [...wrap.children].reduce((s,b) => s + b.offsetWidth + 8, 0);
+          const disponible = wrap.parentElement?.offsetWidth || wrap.offsetWidth;
+          const hayEspacio = disponible >= totalW;
           extras.forEach(b => b.style.display = hayEspacio ? '' : 'none');
           masBtn.style.display = hayEspacio ? 'none' : 'inline-block';
         };
-        ajustar();
+        requestAnimationFrame(ajustar);
         new ResizeObserver(ajustar).observe(wrap.parentElement||wrap);
       }
     } catch(e) {}
