@@ -1536,7 +1536,7 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
   document.getElementById('modal-title').textContent = c.titulo||c.hoja;
   document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · Cargando...`;
   document.getElementById('modal-body').innerHTML = `
-    <div id="contrato-btns-${c.id}" style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:nowrap;align-items:center;overflow:hidden">
+    <div id="contrato-btns-${c.id}" style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:nowrap;align-items:center;position:relative">
       <button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;white-space:nowrap" onclick="openEditContrato(${c.id})">✏️ Editar</button>
       <button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="abrirCrearAcceso(${c.id},'${c.hoja}')">🔑 Acceso inquilino</button>
       ${c.periodicidad_actualizacion && c.periodicidad_actualizacion !== 'Sin actualización' ? `<button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;color:#6610f2;border-color:#6610f2;white-space:nowrap" onclick="abrirProyectarContrato(${c.id},'${c.hoja}')">📈 Proyectar alquiler</button>` : ''}
