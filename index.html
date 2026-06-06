@@ -1530,17 +1530,22 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
   document.getElementById('modal-title').textContent = c.titulo||c.hoja;
   document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · Cargando...`;
   document.getElementById('modal-body').innerHTML = `
-    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
-      <button class="btn btn-secondary" style="font-size:0.78rem;white-space:nowrap" onclick="openEditContrato(${c.id})">✏️ Editar</button>
-      <button class="btn btn-secondary" style="font-size:0.78rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="abrirCrearAcceso(${c.id},'${c.hoja}')">🔑 Acceso inquilino</button>
-      ${c.periodicidad_actualizacion && c.periodicidad_actualizacion !== 'Sin actualización' ? `<button class="btn btn-secondary" style="font-size:0.78rem;color:#6610f2;border-color:#6610f2;white-space:nowrap" onclick="abrirProyectarContrato(${c.id},'${c.hoja}')">📈 Proyectar alquiler</button>` : ''}
+    <div id="contrato-btns-${c.id}" style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:nowrap;align-items:center;overflow:hidden">
+      <button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;white-space:nowrap" onclick="openEditContrato(${c.id})">✏️ Editar</button>
+      <button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="abrirCrearAcceso(${c.id},'${c.hoja}')">🔑 Acceso inquilino</button>
+      ${c.periodicidad_actualizacion && c.periodicidad_actualizacion !== 'Sin actualización' ? `<button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;color:#6610f2;border-color:#6610f2;white-space:nowrap" onclick="abrirProyectarContrato(${c.id},'${c.hoja}')">📈 Proyectar alquiler</button>` : ''}
       ${!c.fecha_rescision
-        ? '<button class="btn btn-secondary" style="font-size:0.78rem;color:var(--accent);border-color:var(--accent);white-space:nowrap" onclick="abrirRescision('+c.id+',\''+c.hoja+'\')">✂ Rescindir</button>'
-        : `<span class="badge badge-red" style="font-size:0.78rem;white-space:nowrap;align-self:center">Rescindido ${formatDate(c.fecha_rescision,true)}</span>
-           <button class="btn btn-secondary" style="font-size:0.78rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="revertirRescision(${c.id},'${c.hoja}')">↩ Revertir rescisión</button>`
+        ? '<button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;color:var(--accent);border-color:var(--accent);white-space:nowrap" onclick="abrirRescision('+c.id+',\''+c.hoja+'\')">✂ Rescindir</button>'
+        : `<span class="badge badge-red contrato-btn-main" style="font-size:0.78rem;white-space:nowrap;align-self:center">Rescindido ${formatDate(c.fecha_rescision,true)}</span>
+           <button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="revertirRescision(${c.id},'${c.hoja}')">↩ Revertir rescisión</button>`
       }
-      <button class="btn btn-secondary" style="font-size:0.78rem;color:#721c24;border-color:#721c24;white-space:nowrap" onclick="eliminarContrato(${c.id})">🗑 Eliminar</button>
-      <div style="position:relative;display:inline-block">
+      <button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;color:#721c24;border-color:#721c24;white-space:nowrap" onclick="eliminarContrato(${c.id})">🗑 Eliminar</button>
+      <!-- Botones que pueden ir en Más o sueltos -->
+      <button class="btn btn-secondary contrato-btn-extra" data-label="📋 Historial" style="font-size:0.78rem;white-space:nowrap" onclick="imprimirHistorial(${c.id})">📋 Historial</button>
+      <button class="btn btn-secondary contrato-btn-extra" data-label="↺ Regenerar meses" style="font-size:0.78rem;color:#6610f2;border-color:#6610f2;white-space:nowrap" onclick="regenerarMeses(${c.id},'${c.hoja}')">↺ Regenerar meses</button>
+      <button class="btn btn-secondary contrato-btn-extra" data-label="📋 Duplicar contrato" style="font-size:0.78rem;color:#0d6efd;border-color:#0d6efd;white-space:nowrap" onclick="duplicarContrato(${c.id})">📋 Duplicar contrato</button>
+      <!-- Botón Más (solo cuando no hay espacio) -->
+      <div style="position:relative;display:none" id="contrato-mas-${c.id}">
         <button class="btn btn-secondary" style="font-size:0.78rem;white-space:nowrap" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';event.stopPropagation()">⋯ Más</button>
         <div style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:white;border:1.5px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:100;min-width:160px;padding:4px 0" onclick="event.stopPropagation()">
           <button onclick="imprimirHistorial(${c.id});this.closest('[style*=absolute]').style.display='none'" style="display:block;width:100%;text-align:left;padding:7px 14px;background:none;border:none;font-size:0.82rem;cursor:pointer;color:var(--ink)">📋 Historial</button>
@@ -1651,6 +1656,23 @@ async function recargarGrilla(c) {
     if (subtitleEl) subtitleEl.textContent = `${normTipo(c.tipo_inmueble)} · ${pagosActuales.length} meses`;
     if (totalAlqEl) totalAlqEl.innerHTML = `<label>Total acumulado</label><span style="font-weight:700">${formatMoney(totalAlq)}</span>`;
     if (saldoEl) saldoEl.innerHTML = `<label>Saldo pendiente</label><span class="${totalPend>0?'saldo-pendiente':'saldo-ok'}" style="font-weight:700">${totalPend>0?formatMoney(totalPend):'✓ Al día'}</span>`;
+
+    // Responsive overflow menu
+    try {
+      const wrap = document.getElementById(`contrato-btns-${c.id}`);
+      const masBtn = document.getElementById(`contrato-mas-${c.id}`);
+      if (wrap && masBtn) {
+        const extras = [...wrap.querySelectorAll('.contrato-btn-extra')];
+        const ajustar = () => {
+          const mainW = [...wrap.querySelectorAll('.contrato-btn-main')].reduce((s,b)=>s+b.offsetWidth+8,0);
+          const hayEspacio = (wrap.parentElement?.offsetWidth||wrap.offsetWidth) > mainW + 20;
+          extras.forEach(b => b.style.display = hayEspacio ? '' : 'none');
+          masBtn.style.display = hayEspacio ? 'none' : 'inline-block';
+        };
+        ajustar();
+        new ResizeObserver(ajustar).observe(wrap.parentElement||wrap);
+      }
+    } catch(e) {}
 
     const grillaEl = document.getElementById('grilla-container');
     if (grillaEl) renderGrilla(c);
