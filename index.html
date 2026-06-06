@@ -1234,6 +1234,12 @@ function formatMoney(n) {
   if (n == null || isNaN(n)) return '—';
   return '$\u00A0' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+function toggleMasMenu(id, force) {
+  const d = document.getElementById(id);
+  if (!d) return;
+  d.style.display = force === false ? 'none' : (d.style.display === 'block' ? 'none' : 'block');
+}
+
 function normTipo(t) {
   if (!t || t==='nan') return 'Otro';
   const l = t.toLowerCase().trim();
@@ -1546,11 +1552,11 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
       <button class="btn btn-secondary contrato-btn-extra" data-label="📋 Duplicar contrato" style="font-size:0.78rem;color:#0d6efd;border-color:#0d6efd;white-space:nowrap" onclick="duplicarContrato(${c.id})">📋 Duplicar contrato</button>
       <!-- Botón Más (solo cuando no hay espacio) -->
       <div style="position:relative;display:none" id="contrato-mas-${c.id}">
-        <button class="btn btn-secondary" style="font-size:0.78rem;white-space:nowrap" onclick="const d=document.getElementById('contrato-mas-dd-${c.id}');d.style.display=d.style.display==='block'?'none':'block';event.stopPropagation()">⋯ Más</button>
+        <button class="btn btn-secondary" style="font-size:0.78rem;white-space:nowrap" onclick="toggleMasMenu('contrato-mas-dd-${c.id}');event.stopPropagation()">⋯ Más</button>
         <div id="contrato-mas-dd-${c.id}" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:white;border:1.5px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:100;min-width:160px;padding:4px 0" onclick="event.stopPropagation()">
-          <button onclick="imprimirHistorial(${c.id});document.getElementById('contrato-mas-dd-${c.id}').style.display='none'" style="display:block;width:100%;text-align:left;padding:7px 14px;background:none;border:none;font-size:0.82rem;cursor:pointer;color:var(--ink)">📋 Historial</button>
-          <button onclick="regenerarMeses(${c.id},'${c.hoja}');document.getElementById('contrato-mas-dd-${c.id}').style.display='none'" style="display:block;width:100%;text-align:left;padding:7px 14px;background:none;border:none;font-size:0.82rem;cursor:pointer;color:#6610f2">↺ Regenerar meses</button>
-          <button onclick="duplicarContrato(${c.id});document.getElementById('contrato-mas-dd-${c.id}').style.display='none'" style="display:block;width:100%;text-align:left;padding:7px 14px;background:none;border:none;font-size:0.82rem;cursor:pointer;color:#0d6efd">📋 Duplicar contrato</button>
+          <button onclick="imprimirHistorial(${c.id});toggleMasMenu('contrato-mas-dd-${c.id}',false)" style="display:block;width:100%;text-align:left;padding:7px 14px;background:none;border:none;font-size:0.82rem;cursor:pointer;color:var(--ink)">📋 Historial</button>
+          <button onclick="regenerarMeses(${c.id},'${c.hoja}');toggleMasMenu('contrato-mas-dd-${c.id}',false)" style="display:block;width:100%;text-align:left;padding:7px 14px;background:none;border:none;font-size:0.82rem;cursor:pointer;color:#6610f2">↺ Regenerar meses</button>
+          <button onclick="duplicarContrato(${c.id});toggleMasMenu('contrato-mas-dd-${c.id}',false)" style="display:block;width:100%;text-align:left;padding:7px 14px;background:none;border:none;font-size:0.82rem;cursor:pointer;color:#0d6efd">📋 Duplicar contrato</button>
         </div>
       </div>
     </div>
