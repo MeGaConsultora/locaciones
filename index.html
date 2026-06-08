@@ -5070,6 +5070,11 @@ async function verDetalleDeuda(hoja, contratoId, mesKey) {
   const inm = DB_INMUEBLES?.find(x => x.id === c?.inmueble_id);
   const inmDir = inm ? [inm.calle, inm.numero, inm.piso, inm.dpto].filter(Boolean).join(' ') + (inm.localidad ? ' — '+inm.localidad : '') : (c?.titulo||hoja);
 
+  const cuotasHD = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
+  const totalInqHD = cuotasHD.reduce((s,g) => s+(g.monto_inquilino||0), 0);
+  const pagadoInqHD = cuotasHD.reduce((s,g) => s+(parseFloat(g.pagado_inquilino)||0), 0);
+  const saldoHonorariosD = Math.max(0, totalInqHD - pagadoInqHD);
+
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
   <title>Detalle de Deuda</title>
   <style>
@@ -5083,6 +5088,7 @@ async function verDetalleDeuda(hoja, contratoId, mesKey) {
     td:last-child{text-align:right;font-weight:600}
     .saldo-row td{font-size:15px;font-weight:700;color:#c0392b}
     .pagado-row td{color:#27ae60}
+    .honorarios-note{background:#f5f0e8;border-radius:4px;padding:8px 10px;font-size:12px;color:#856404;margin-top:8px}
     .footer{margin-top:20px;font-size:11px;color:#888;text-align:center}
     @media print{
       @page{margin:1cm}
@@ -5103,6 +5109,7 @@ async function verDetalleDeuda(hoja, contratoId, mesKey) {
     ${yaAbonado>0?`<tr class="pagado-row"><td>Ya abonado</td><td>− ${formatMoney(yaAbonado)}</td></tr>`:''}
     <tr class="saldo-row"><td>SALDO PENDIENTE</td><td>${formatMoney(saldo)}</td></tr>
   </table>
+  ${saldoHonorariosD > 0 ? `<div class="honorarios-note">📌 Honorarios pendientes: <strong>${formatMoney(saldoHonorariosD)}</strong> (no incluido en el saldo)</div>` : ''}
   <div class="no-print" style="margin-top:20px;text-align:center;display:flex;gap:12px;justify-content:center">
     <button onclick="window.print()" style="background:#2d6a4f;color:white;border:none;padding:10px 24px;border-radius:6px;font-size:14px;cursor:pointer">🖨 Imprimir / Guardar PDF</button>
     <button onclick="window.close()" style="background:#eee;color:#333;border:none;padding:10px 24px;border-radius:6px;font-size:14px;cursor:pointer">Cerrar</button>
@@ -5361,6 +5368,12 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     if (saldoItem > 0) itemsPendientes.push({ label: labels2[item], saldo: saldoItem });
   }
 
+  // Honorarios pendientes como comentario informativo
+  const cuotasH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
+  const totalInqH = cuotasH.reduce((s,g) => s+(g.monto_inquilino||0), 0);
+  const pagadoInqH = cuotasH.reduce((s,g) => s+(parseFloat(g.pagado_inquilino)||0), 0);
+  const saldoHonorarios = Math.max(0, totalInqH - pagadoInqH);
+
   // Generate receipt
   imprimirRecibo({
     contrato: c,
@@ -5370,7 +5383,8 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     itemsAbonados: itemsRecibo,
     totalAbonado: totalCobrado,
     nuevoSaldo,
-    itemsPendientes
+    itemsPendientes,
+    saldoHonorarios
   });
 
   const cObj = DB.contratos.find(x=>x.id===contratoId);
@@ -5726,17 +5740,17 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
       body { background:#f0ece4; display:flex; flex-direction:column; align-items:center; padding:12px; gap:0; font-family:'DM Sans',Arial,sans-serif; }
       .no-print { text-align:center; padding:10px 0; width:100%; }
       .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; font-family:'DM Sans',sans-serif; font-weight:600; }
-      .recibo-mitad { background:white; width:190mm; height:141mm; overflow:hidden; position:relative; }
+      .recibo-mitad { background:white; width:190mm; height:143mm; overflow:hidden; position:relative; }
       .recibo-mitad.recibo-original { border-bottom: 2px dashed #bbb; }
-      .recibo-label { padding:4px 18px; font-size:0.7rem; color:#1a1a2e; text-transform:uppercase; letter-spacing:.08em; font-weight:700; background:#f0ece4; border-bottom:1px solid #ddd; white-space:nowrap; overflow:hidden; }
+      .recibo-label { padding:4px 18px; font-size:0.7rem; color:#1a1a2e; text-transform:uppercase; letter-spacing:.08em; font-weight:700; background:#f0ece4; border-bottom:1px solid #ddd; white-space:nowrap; overflow:visible; }
       .recibo-inner { padding:6px 18px 10px; }
       .separador { display:none; }
-      @page { size: A4 portrait; margin: 0; }
+      @page { size: A4 portrait; margin: 5mm; }
       @media print {
-        html, body { width:210mm; height:297mm; background:white; padding:0; margin:0; display:block; }
+        html, body { width:200mm; background:white; padding:0; margin:0; display:block; }
         .no-print { display:none; }
         .separador { display:none; }
-        .recibo-mitad { width:210mm; height:148.5mm; box-sizing:border-box; }
+        .recibo-mitad { width:200mm; height:143mm; box-sizing:border-box; }
       }
     </style>
   </head><body>
@@ -7214,6 +7228,7 @@ function imprimirRecibo(data) {
         ${data.nuevoSaldo > 0 ? `<div style="background:#fff3cd;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#856404">⚠ Saldo pendiente: <strong>${formatMoney(data.nuevoSaldo)}</strong>
         ${data.itemsPendientes && data.itemsPendientes.length > 0 ? '<br><span style="font-size:0.7rem">Pendiente: ' + data.itemsPendientes.map(it => it.label + ' $' + formatMoney(it.saldo)).join(' · ') + '</span>' : ''}
       </div>` : '<div style="background:#d4edda;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#155724">✓ Mes cancelado en su totalidad</div>'}
+        ${data.saldoHonorarios > 0 ? `<div style="background:#f5f0e8;border-radius:4px;padding:5px 10px;font-size:0.72rem;color:#856404;margin-top:4px">📌 Honorarios pendientes: <strong>${formatMoney(data.saldoHonorarios)}</strong></div>` : ''}
       </div>
       <div style="padding:8px 14px 10px;border-top:1px dashed #ccc;margin:6px 14px 0">
         <div style="text-align:center;max-width:200px;margin:0 auto"><div style="border-top:1px solid #333;padding-top:4px;font-size:0.7rem;color:#666;margin-top:20px">Firma MeGa Consultora</div></div>
