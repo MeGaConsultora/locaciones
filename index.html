@@ -5217,7 +5217,10 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
 
   // Validate payment does not exceed total (excluding honorarios which is tracked separately)
   const yaAbonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
-  const maxPagable = (p.total||0) - yaAbonado;
+  // Incluir extras débito pendientes en el máximo pagable
+  const extrasPendientes = [...document.querySelectorAll('.cobro-chk[data-signo="1"]:not(#cobro-chk-honorarios):checked')]
+    .reduce((s, chk) => s + (parseFloat(chk.value)||0), 0);
+  const maxPagable = Math.max((p.total||0) - yaAbonado, 0) + extrasPendientes;
   const totalSinHonorarios = totalCobrado - honorariosCobrado;
   if (totalSinHonorarios > maxPagable + 0.01) {
     toast(`El cobro ($${formatMoney(totalCobrado)}) supera el saldo pendiente ($${formatMoney(maxPagable)}). Ajustá el importe.`, 'error');
