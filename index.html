@@ -177,7 +177,8 @@
   .pg-btn:disabled { opacity:0.3; cursor:default; }
 
   /* MODAL */
-  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(26,26,46,0.55); z-index:200; backdrop-filter:blur(4px); align-items:center; justify-content:center; padding:1rem; }
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(26,26,46,0.55); z-index:200; backdrop-filter:blur(4px); align-items:flex-start; justify-content:center; padding:1rem; overflow-y:auto; overflow-x:hidden; }
+  @media (min-width:600px) { .modal-overlay { align-items:center; } }
   .modal-overlay.open { display:flex; }
   .modal { background:white; border-radius:16px; box-shadow:var(--shadow-lg); width:100%; max-width:1100px; max-height:92vh; overflow-y:auto; animation:modalIn 0.22s ease; }
   @keyframes modalIn { from { opacity:0; transform:scale(0.96) translateY(10px); } to { opacity:1; transform:none; } }
@@ -249,7 +250,7 @@
   .toast.warn { border-left:3px solid #ffc107; }
   @keyframes toastIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
 
-  @media(max-width:600px) { main { padding:1rem; } .stats-row { grid-template-columns:1fr 1fr; } }
+  @media(max-width:600px) { main { padding:1rem; } .stats-row { grid-template-columns:1fr 1fr; } .col-mobile-hide { display:none !important; } .pagos-table td, .pagos-table th { padding:5px 6px; font-size:0.72rem; } }
 
   /* SOLAPAS */
   .solapas { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:1.2rem; }
@@ -1542,7 +1543,7 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
   document.getElementById('modal-title').textContent = c.titulo||c.hoja;
   document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · Cargando...`;
   document.getElementById('modal-body').innerHTML = `
-    <div id="contrato-btns-${c.id}" style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:nowrap;align-items:center;position:relative">
+    <div id="contrato-btns-${c.id}" style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center;position:relative">
       <button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;white-space:nowrap" onclick="openEditContrato(${c.id})">✏️ Editar</button>
       <button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="abrirCrearAcceso(${c.id},'${c.hoja}')">🔑 Acceso inquilino</button>
       ${c.periodicidad_actualizacion && c.periodicidad_actualizacion !== 'Sin actualización' ? `<button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;color:#6610f2;border-color:#6610f2;white-space:nowrap" onclick="abrirProyectarContrato(${c.id},'${c.hoja}')">📈 Proyectar alquiler</button>` : ''}
@@ -1810,18 +1811,18 @@ function renderGrilla(c) {
       title="Clic: editar | Doble clic: ver detalle"
       style="cursor:pointer">
       <td class="grid-mes"><strong>${formatDate(p.mes)}</strong></td>
-      <td style="font-size:0.78rem;color:#888;white-space:nowrap">${(() => { const f = calcularFechaVencimiento(p.mes?.substring(0,7)||'', c); return formatDate(f, true); })()}</td>
+      <td class="col-mobile-hide" style="font-size:0.78rem;color:#888;white-space:nowrap">${(() => { const f = calcularFechaVencimiento(p.mes?.substring(0,7)||'', c); return formatDate(f, true); })()}</td>
       <td class="num">${p.importe_alquiler>0?formatMoney(p.importe_alquiler):'—'}</td>
-      ${serviciosInquilino.epe?`<td class="num">${getMonto('epe')>0?formatMoney(getMonto('epe')):'—'}</td>`:''}
-      ${serviciosInquilino.agua?`<td class="num">${getMonto('agua')>0?formatMoney(getMonto('agua')):'—'}</td>`:''}
-      ${serviciosInquilino.tgiu?`<td class="num">${getMonto('tgiu')>0?formatMoney(getMonto('tgiu')):'—'}</td>`:''}
-      ${serviciosInquilino.seguro?`<td class="num">${getMonto('seguro')>0?formatMoney(getMonto('seguro')):'—'}</td>`:''}
-      ${serviciosInquilino.internet?`<td class="num">${getMonto('internet')>0?formatMoney(getMonto('internet')):'—'}</td>`:''}
-      ${serviciosInquilino.expensas?`<td class="num">${getMonto('expensas')>0?formatMoney(getMonto('expensas')):'—'}</td>`:''}
-
-      <td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasGralLabel}">${totalExtrasGral > 0 ? formatMoney(totalExtrasGral) : '—'}</td>
-      <td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasMesLabel}">${totalExtrasMes > 0 ? formatMoney(totalExtrasMes) : '—'}</td>
-      <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>      <td class="num" id="abonado-${p.id}">${(() => { const ab = p.pagado_importe || (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
+      ${serviciosInquilino.epe?`<td class="num col-mobile-hide">${getMonto('epe')>0?formatMoney(getMonto('epe')):'—'}</td>`:''}
+      ${serviciosInquilino.agua?`<td class="num col-mobile-hide">${getMonto('agua')>0?formatMoney(getMonto('agua')):'—'}</td>`:''}
+      ${serviciosInquilino.tgiu?`<td class="num col-mobile-hide">${getMonto('tgiu')>0?formatMoney(getMonto('tgiu')):'—'}</td>`:''}
+      ${serviciosInquilino.seguro?`<td class="num col-mobile-hide">${getMonto('seguro')>0?formatMoney(getMonto('seguro')):'—'}</td>`:''}
+      ${serviciosInquilino.internet?`<td class="num col-mobile-hide">${getMonto('internet')>0?formatMoney(getMonto('internet')):'—'}</td>`:''}
+      ${serviciosInquilino.expensas?`<td class="num col-mobile-hide">${getMonto('expensas')>0?formatMoney(getMonto('expensas')):'—'}</td>`:''}
+      <td class="col-mobile-hide" style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasGralLabel}">${totalExtrasGral > 0 ? formatMoney(totalExtrasGral) : '—'}</td>
+      <td class="col-mobile-hide" style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasMesLabel}">${totalExtrasMes > 0 ? formatMoney(totalExtrasMes) : '—'}</td>
+      <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>
+      <td class="num col-mobile-hide" id="abonado-${p.id}">${(() => { const ab = p.pagado_importe || (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
       <td class="num" id="saldo-${p.id}">${(()=>{const _exc=(p.pagado_importe||0)-calcularTotal(p,extras);return _exc>0.01?`<span style="color:var(--green);font-weight:700">+${formatMoney(_exc)}</span>`:saldoReal>0?`<span class="saldo-pendiente">${formatMoney(saldoReal)}</span>`:'<span class="saldo-ok">✓</span>';})()}</td>
       <td id="estado-${p.id}">${getEstadoLabel(p)}</td>
       <td onclick="event.stopPropagation()">
@@ -1835,23 +1836,22 @@ function renderGrilla(c) {
   }).join('');
 
   document.getElementById('grilla-container').innerHTML = `
-    <div id="grilla-zoom-wrap" style="max-height:55vh;overflow-y:auto;overflow-x:hidden">
-      <table class="grid-table">
+    <div id="grilla-zoom-wrap" style="max-height:55vh;overflow-y:auto;overflow-x:auto">
+      <table class="grid-table pagos-table">
         <thead><tr>
           <th>Mes</th>
-          <th>Vence</th>
+          <th class="col-mobile-hide">Vence</th>
           <th class="r">Alquiler</th>
-          ${serviciosInquilino.epe?'<th class="r">EPE</th>':''}
-          ${serviciosInquilino.agua?'<th class="r">Agua</th>':''}
-          ${serviciosInquilino.tgiu?'<th class="r">TGIU</th>':''}
-          ${serviciosInquilino.seguro?'<th class="r">Seguro</th>':''}
-          ${serviciosInquilino.internet?'<th class="r">Internet</th>':''}
-          ${serviciosInquilino.expensas?'<th class="r">Expensas</th>':''}
-
-          <th>Extras Gral</th>
-          <th>Extras Mes</th>
+          ${serviciosInquilino.epe?'<th class="r col-mobile-hide">EPE</th>':''}
+          ${serviciosInquilino.agua?'<th class="r col-mobile-hide">Agua</th>':''}
+          ${serviciosInquilino.tgiu?'<th class="r col-mobile-hide">TGIU</th>':''}
+          ${serviciosInquilino.seguro?'<th class="r col-mobile-hide">Seguro</th>':''}
+          ${serviciosInquilino.internet?'<th class="r col-mobile-hide">Internet</th>':''}
+          ${serviciosInquilino.expensas?'<th class="r col-mobile-hide">Expensas</th>':''}
+          <th class="col-mobile-hide">Extras Gral</th>
+          <th class="col-mobile-hide">Extras Mes</th>
           <th class="r">Total</th>
-          <th class="r">Abonado</th>
+          <th class="r col-mobile-hide">Abonado</th>
           <th class="r">Saldo</th>
           <th>Estado</th>
           <th>Acciones</th>
@@ -11014,7 +11014,7 @@ function abrirNuevoInmuebleDesdeContrato() {
 
   <!-- MODAL2 for editing contracts from services screen -->
   <div id="modal2-overlay" class="modal-overlay" style="z-index:1100">
-    <div class="modal-box" style="max-height:90vh;overflow-y:auto;width:100%;max-width:860px">
+    <div class="modal-box" style="max-height:90vh;overflow-y:auto;width:100%;max-width:860px;box-sizing:border-box">
       <div class="modal-header">
         <div>
           <h2 class="modal-title" id="modal2-title"></h2>
