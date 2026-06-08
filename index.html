@@ -519,8 +519,10 @@
       </select>
       <select class="filter-select" id="srv-inf-estado" style="width:auto" onchange="renderSrvInforme()">
         <option value="">Todos</option>
-        <option value="adeudado">Adeudados</option>
-        <option value="abonado">Abonados</option>
+        <option value="abonado">Abonados por inquilino</option>
+        <option value="adeudado">No abonados por inquilino</option>
+        <option value="no_pagado_proveedor">Pendientes de pago a proveedor</option>
+        <option value="pagado_proveedor">Pagados a proveedor</option>
       </select>
       <input type="text" class="search-input" id="srv-inf-buscar" placeholder="Buscar contrato…" style="width:200px" oninput="renderSrvInforme()">
       <button class="btn btn-secondary" onclick="srvInfSelAll(true)">✓ Seleccionar todos</button>
@@ -7422,8 +7424,9 @@ function populateSrvInformeAnios() {
   if (!cur && anios.length) sel.value = anios[0];
 }
 
-function renderSrvInforme() {
+async function renderSrvInforme() {
   const tipo = window._srvInformeTipo || 'srv-epe';
+  const srvKey = tipo === 'srv-epe' ? 'epe' : tipo === 'srv-agua' ? 'agua' : 'tgiu';
   const campo = tipo === 'srv-epe' ? 'monto_epe' : tipo === 'srv-agua' ? 'monto_agua' : 'monto_tgiu';
   const campoPagado = tipo === 'srv-epe' ? 'pagado_epe' : tipo === 'srv-agua' ? 'pagado_agua' : 'pagado_tgiu';
   const anio = document.getElementById('srv-inf-anio')?.value;
@@ -7439,27 +7442,62 @@ function renderSrvInforme() {
     return;
   }
   const mesKey = `${anio}-${mes}`;
-  let pagos = DB.pagos.filter(p => p.mes?.startsWith(mesKey) && (p[campo]||0) > 0);
+  let pagos = DB.pagos.filter(p => p.mes?.startsWith(mesKey));
 
-  // Filtro: abonado = inquilino ya pagó ese servicio; adeudado = no pagó aún
-  if (estado === 'abonado') pagos = pagos.filter(p => (p[campoPagado]||0) >= (p[campo]||0));
-  else if (estado === 'adeudado') pagos = pagos.filter(p => (p[campoPagado]||0) < (p[campo]||0));
+  // Cargar pagos_suministros del mes para este servicio
+  const pagoIds = pagos.map(p => p.id);
+  let psSuministros = [];
+  if (pagoIds.length) {
+    try {
+      psSuministros = await sbGet('pagos_suministros',
+        `pago_id=in.(${pagoIds.join(',')})&select=id,pago_id,suministro_id,importe,pagado_proveedor`
+      );
+      // Filtrar solo los del tipo correcto
+      psSuministros = psSuministros.filter(ps => {
+        const sum = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
+        return sum?.tipo === srvKey;
+      });
+    } catch(e) { psSuministros = []; }
+  }
+
+  // Construir filas — una por cada registro de pagos_suministros (puede haber múltiples EPE por contrato)
+  // Fallback al sistema viejo si no hay pagos_suministros
+  let filas = [];
+
+  if (psSuministros.length) {
+    // Sistema nuevo
+    filas = psSuministros.map(ps => {
+      const pago = DB.pagos.find(p => p.id === ps.pago_id);
+      const c = pago ? DB.contratos.find(x => x.hoja === pago.hoja) : null;
+      const sum = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
+      const abonado = (pago?.[campoPagado] || 0) >= (ps.importe || 0);
+      return { ps, pago, c, sum, importe: ps.importe || 0, abonado, pagadoProveedor: !!ps.pagado_proveedor };
+    }).filter(f => f.importe > 0);
+  } else {
+    // Sistema viejo — fallback
+    filas = pagos.filter(p => (p[campo]||0) > 0).map(pago => {
+      const c = DB.contratos.find(x => x.hoja === pago.hoja);
+      const abonado = (pago[campoPagado]||0) >= (pago[campo]||0);
+      return { ps: null, pago, c, sum: null, importe: pago[campo]||0, abonado, pagadoProveedor: false };
+    });
+  }
+
+  // Filtros de estado
+  if (estado === 'abonado') filas = filas.filter(f => f.abonado);
+  else if (estado === 'adeudado') filas = filas.filter(f => !f.abonado);
+  else if (estado === 'pagado_proveedor') filas = filas.filter(f => f.pagadoProveedor);
+  else if (estado === 'no_pagado_proveedor') filas = filas.filter(f => f.abonado && !f.pagadoProveedor);
 
   // Buscador
-  if (buscar) pagos = pagos.filter(p => {
-    const c = DB.contratos.find(x => x.hoja === p.hoja);
-    return (c?.titulo||p.hoja||'').toLowerCase().includes(buscar) ||
-           (c?.locatario||'').toLowerCase().includes(buscar);
-  });
+  if (buscar) filas = filas.filter(f =>
+    (f.c?.titulo||f.pago?.hoja||'').toLowerCase().includes(buscar) ||
+    (f.c?.locatario||'').toLowerCase().includes(buscar)
+  );
 
-  // Orden alfabético por título de contrato
-  pagos.sort((a, b) => {
-    const ta = (DB.contratos.find(x=>x.hoja===a.hoja)?.titulo||a.hoja||'').toLowerCase();
-    const tb = (DB.contratos.find(x=>x.hoja===b.hoja)?.titulo||b.hoja||'').toLowerCase();
-    return ta.localeCompare(tb);
-  });
+  // Orden alfabético
+  filas.sort((a, b) => (a.c?.titulo||a.pago?.hoja||'').toLowerCase().localeCompare((b.c?.titulo||b.pago?.hoja||'').toLowerCase()));
 
-  if (!pagos.length) {
+  if (!filas.length) {
     contenedor.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Sin registros para el período</p></div>';
     totalesBar.style.display = 'none';
     return;
@@ -7467,20 +7505,20 @@ function renderSrvInforme() {
 
   totalesBar.style.display = 'flex';
 
-  const rows = pagos.map(p => {
-    const c = DB.contratos.find(x => x.hoja === p.hoja);
-    const monto = p[campo] || 0;
-    const abonado = p[campoPagado] || 0;
-    const saldo = monto - abonado;
-    const pagadoFlag = abonado >= monto;
-    const nroSrv = c ? (tipo==='srv-epe' ? c.nro_epe : tipo==='srv-agua' ? c.nro_agua : c.nro_tgiu) : '';
-    return `<tr>
-      <td style="width:32px;text-align:center"><input type="checkbox" class="srv-chk" data-monto="${saldo>0?saldo:monto}" ${!pagadoFlag?'checked':''} onchange="srvInfActualizarTotal()"></td>
-      <td style="font-size:0.82rem"><strong>${c?.titulo||p.hoja}</strong></td>
-      <td style="font-size:0.78rem;color:#666">${nroSrv||'—'}</td>
-      <td style="text-align:right;font-size:0.82rem">${formatMoney(monto)}</td>
-      <td style="text-align:right;font-size:0.82rem;color:${abonado>0?'#2d7a4f':'#aaa'}">${abonado>0?formatMoney(abonado):'—'}</td>
-      <td style="text-align:right;font-size:0.82rem;font-weight:700;color:${saldo>0?'#c8483a':'#2d7a4f'}">${saldo>0?formatMoney(saldo):'✓'}</td>
+  const rows = filas.map(f => {
+    const nroSrv = f.sum?.nro_cuenta || (f.c ? (tipo==='srv-epe' ? f.c.nro_epe : tipo==='srv-agua' ? f.c.nro_agua : f.c.nro_tgiu) : '') || '—';
+    const psId = f.ps?.id;
+    return `<tr style="border-bottom:1px solid #eee;${f.pagadoProveedor?'opacity:0.6':''}">
+      <td style="padding:7px 10px;text-align:center">
+        ${psId ? `<input type="checkbox" class="srv-chk" data-monto="${f.importe}" data-ps-id="${psId}" ${f.abonado&&!f.pagadoProveedor?'checked':''} onchange="srvInfActualizarTotal()">` : `<input type="checkbox" class="srv-chk" data-monto="${f.importe}" ${f.abonado?'checked':''} onchange="srvInfActualizarTotal()">`}
+      </td>
+      <td style="font-size:0.82rem"><strong>${f.c?.titulo||f.pago?.hoja||'—'}</strong></td>
+      <td style="font-size:0.78rem;color:#666">${nroSrv}</td>
+      <td style="text-align:right;font-size:0.82rem">${formatMoney(f.importe)}</td>
+      <td style="text-align:center;font-size:0.82rem">${f.abonado ? '<span style="color:#2d7a4f">✓</span>' : '<span style="color:#aaa">—</span>'}</td>
+      <td style="text-align:center">
+        ${psId ? `<input type="checkbox" class="srv-chk-proveedor" data-ps-id="${psId}" ${f.pagadoProveedor?'checked':''} onchange="marcarPagadoProveedor(${psId},this.checked)" title="Pagado a proveedor">` : '—'}
+      </td>
     </tr>`;
   }).join('');
 
@@ -7489,14 +7527,23 @@ function renderSrvInforme() {
       <th style="padding:8px;width:32px"></th>
       <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Contrato</th>
       <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Nº servicio</th>
-      <th style="padding:8px;text-align:right;font-size:0.72rem;text-transform:uppercase">Total</th>
-      <th style="padding:8px;text-align:right;font-size:0.72rem;text-transform:uppercase">Abonado</th>
-      <th style="padding:8px;text-align:right;font-size:0.72rem;text-transform:uppercase">Saldo</th>
+      <th style="padding:8px;text-align:right;font-size:0.72rem;text-transform:uppercase">Importe</th>
+      <th style="padding:8px;text-align:center;font-size:0.72rem;text-transform:uppercase">Inq. abonó</th>
+      <th style="padding:8px;text-align:center;font-size:0.72rem;text-transform:uppercase">Pagado a proveedor</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 
   srvInfActualizarTotal();
+}
+
+async function marcarPagadoProveedor(psId, valor) {
+  try {
+    await sbPatch('pagos_suministros', psId, { pagado_proveedor: valor });
+    toast(valor ? 'Marcado como pagado a proveedor ✓' : 'Desmarcado ✓');
+  } catch(e) {
+    toast('Error al guardar: ' + e.message, 'error');
+  }
 }
 
 function srvInfActualizarTotal() {
