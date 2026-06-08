@@ -250,7 +250,18 @@
   .toast.warn { border-left:3px solid #ffc107; }
   @keyframes toastIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
 
-  @media(max-width:600px) { main { padding:1rem; } .stats-row { grid-template-columns:1fr 1fr; } .col-mobile-hide { display:none !important; } .pagos-table td, .pagos-table th { padding:5px 6px; font-size:0.72rem; } }
+  @media(max-width:600px) { 
+    main { padding:1rem; } 
+    .stats-row { grid-template-columns:1fr 1fr; } 
+    .col-mobile-hide { display:none !important; } 
+    .pagos-table td, .pagos-table th { padding:5px 6px; font-size:0.72rem; }
+    .modal-header { padding:1rem 1.2rem; }
+    .modal-body { padding:1rem; }
+    .modal-box { margin:0.5rem; }
+    .form-group { margin-bottom:0.8rem; }
+    .form-actions { flex-wrap:wrap; gap:0.5rem; }
+    .form-actions button { flex:1; min-width:120px; }
+  }
 
   /* SOLAPAS */
   .solapas { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:1.2rem; }
@@ -4108,7 +4119,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       <div class="form-actions" style="justify-content:space-between">
         ${((p.total||0) > (p.saldo||0) || (p.pagado && p.pagado !== '0')) ? `<button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="revertirCobro('${hoja}',${contratoId},'${mesKey}',${comisionPct})">↩ Revertir cobro</button>` : '<div></div>'}
         <button class="btn btn-secondary" onclick="verDetalleDeuda('${hoja}',${contratoId},'${mesKey}')" style="margin-right:0.5rem">📋 Detalle de deuda</button>
-        <button class="btn btn-green" onclick="confirmarCobroInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct})">✓ Confirmar cobro + Imprimir recibo</button>
+        <button class="btn btn-green" style="white-space:normal;text-align:center" onclick="confirmarCobroInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct})">✓ Confirmar cobro + Imprimir recibo</button>
       </div>`}
     </div>
 
@@ -11014,7 +11025,7 @@ function abrirNuevoInmuebleDesdeContrato() {
 
   <!-- MODAL2 for editing contracts from services screen -->
   <div id="modal2-overlay" class="modal-overlay" style="z-index:1100">
-    <div class="modal-box" style="max-height:90vh;overflow-y:auto;width:100%;max-width:860px;box-sizing:border-box">
+    <div class="modal-box" style="max-height:90vh;overflow-y:auto;width:100%;max-width:860px;box-sizing:border-box;overflow-x:hidden">
       <div class="modal-header">
         <div>
           <h2 class="modal-title" id="modal2-title"></h2>
