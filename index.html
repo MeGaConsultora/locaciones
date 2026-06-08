@@ -9440,7 +9440,7 @@ function actualizarBtnGenerar() {
 async function generarRecibosSeleccionados() {
   const checks = [...document.querySelectorAll('.chk-recibo:checked')];
   if (!checks.length) { toast('Seleccioná al menos un recibo', 'error'); return; }
-  if (!confirm(`¿Generar e imprimir ${checks.length} recibo/s? Se marcarán como emitidos.`)) return;
+  if (!confirm(`¿Generar e imprimir ${checks.length} recibo/s?`)) return;
   const anio = document.getElementById('recibos-anio')?.value;
   const mes = document.getElementById('recibos-mes')?.value;
   const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -9478,8 +9478,11 @@ async function generarRecibosSeleccionados() {
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }
       body { background:white; font-family:'DM Sans',Arial,sans-serif; }
-      .no-print { text-align:center; padding:12px 0; }
-      .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; }
+      .no-print { text-align:center; padding:12px 0; display:flex; gap:10px; justify-content:center; align-items:center; }
+      .no-print button { border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; }
+      .btn-imprimir { background:#1a1a2e; color:white; }
+      .btn-confirmar { background:#2d7a4f; color:white; }
+      .btn-cancelar { background:#f0ece4; color:#666; }
       .recibo-mitad { width:194mm; height:135mm; overflow:hidden; background:white; }
       .recibo-inner { transform-origin:top left; padding:8px 18px; }
       .separador { width:194mm; border:none; border-top:2px dashed #999; margin:0; }
@@ -9487,7 +9490,11 @@ async function generarRecibosSeleccionados() {
       @media print { .no-print { display:none; } }
     </style>
   </head><body>
-    <div class="no-print"><button onclick="window.print()">🖨️ Imprimir todos</button></div>
+    <div class="no-print">
+      <button class="btn-imprimir" onclick="window.print()">🖨️ Imprimir todos</button>
+      <button class="btn-confirmar" onclick="confirmar()">✓ Imprimí correctamente — marcar como emitidos</button>
+      <button class="btn-cancelar" onclick="window.close()">✕ Cerrar sin marcar</button>
+    </div>
     ${allHtml}
     <script>
       window.addEventListener('load', () => {
@@ -9498,12 +9505,25 @@ async function generarRecibosSeleccionados() {
           if (actual > avail) { const s = avail/actual; wrap.style.transform='scale('+s+')'; wrap.style.width=(100/s)+'%'; }
         });
       });
+      function confirmar() {
+        if (window.opener && !window.opener.closed) {
+          window.opener.confirmarRecibosEmitidos();
+        }
+        window.close();
+      }
     <\/script>
   </body></html>`);
   ventana.document.close();
+}
+
+async function confirmarRecibosEmitidos() {
+  const pagoIds = window._recibosPendientesMarcar || [];
+  if (!pagoIds.length) { closeModal(); return; }
   const now = new Date().toISOString();
   await Promise.all(pagoIds.map(id => sbPatch('pagos', id, { recibo_prop_emitido: true, recibo_prop_fecha: now })));
   pagoIds.forEach(id => { const p = DB.pagos.find(x => x.id === id); if (p) { p.recibo_prop_emitido = true; p.recibo_prop_fecha = now; } });
+  window._recibosPendientesMarcar = [];
+  closeModal();
   toast(`${pagoIds.length} recibo/s marcados como emitidos ✓`);
   renderRecibosEmitir();
 }
