@@ -7452,11 +7452,11 @@ async function renderSrvInforme() {
       psSuministros = await sbGet('pagos_suministros',
         `pago_id=in.(${pagoIds.join(',')})&select=id,pago_id,suministro_id,importe,pagado_proveedor`
       );
-      // Filtrar solo los del tipo correcto
-      psSuministros = psSuministros.filter(ps => {
-        const sum = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
-        return sum?.tipo === srvKey;
-      });
+      // Filtrar suministros que se rinden al propietario (no los abona la inmobiliaria)
+    psSuministros = psSuministros.filter(ps => {
+      const sum = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
+      return sum?.tipo === srvKey && !sum?.propietario_persona_id;
+    });
     } catch(e) { psSuministros = []; }
   }
 
