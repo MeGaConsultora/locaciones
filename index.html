@@ -9514,16 +9514,16 @@ async function generarRecibosSeleccionados() {
     <\/script>
   </body></html>`);
   ventana.document.close();
+  window._recibosPendientesMarcar = pagoIds;
 }
 
 async function confirmarRecibosEmitidos() {
   const pagoIds = window._recibosPendientesMarcar || [];
-  if (!pagoIds.length) { closeModal(); return; }
+  if (!pagoIds.length) return;
   const now = new Date().toISOString();
   await Promise.all(pagoIds.map(id => sbPatch('pagos', id, { recibo_prop_emitido: true, recibo_prop_fecha: now })));
   pagoIds.forEach(id => { const p = DB.pagos.find(x => x.id === id); if (p) { p.recibo_prop_emitido = true; p.recibo_prop_fecha = now; } });
   window._recibosPendientesMarcar = [];
-  closeModal();
   toast(`${pagoIds.length} recibo/s marcados como emitidos ✓`);
   renderRecibosEmitir();
 }
