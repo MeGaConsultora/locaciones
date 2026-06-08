@@ -9372,7 +9372,8 @@ function renderRecibosEmitir() {
   const fechaMes = meses[parseInt(mes)-1] + ' ' + anio;
   const pagos = DB.pagos.filter(p =>
     p.mes && p.mes.startsWith(mesKey) &&
-    (!p.saldo || p.saldo === 0) &&
+    (p.pagado_importe || 0) >= (p.importe_alquiler || 0) &&
+    (p.importe_alquiler || 0) > 0 &&
     !p.recibo_prop_emitido
   );
   if (!pagos.length) {
@@ -9458,11 +9459,15 @@ async function generarRecibosSeleccionados() {
     const reciboHtml = generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes);
     if (idx > 0) allHtml += '<div style="page-break-before:always"></div>';
     allHtml += `
-      <div style="font-size:0.62rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em;padding:3px 18px 0;background:white">Original</div>
-      <div class="recibo-mitad"><div class="recibo-inner">${reciboHtml}</div></div>
+      <div style="position:relative">
+        <div style="padding:4px 18px;font-size:0.7rem;color:#1a1a2e;text-transform:uppercase;letter-spacing:.08em;font-weight:700;background:#f0ece4;border-bottom:1px solid #ddd">▶ ORIGINAL &nbsp;·&nbsp; ${c?.locador||''}</div>
+        <div class="recibo-mitad"><div class="recibo-inner">${reciboHtml}</div></div>
+      </div>
       <hr class="separador">
-      <div style="font-size:0.62rem;color:#aaa;text-transform:uppercase;letter-spacing:.1em;padding:3px 18px 0;background:white">Duplicado</div>
-      <div class="recibo-mitad"><div class="recibo-inner">${reciboHtml}</div></div>`;
+      <div>
+        <div style="padding:4px 18px;font-size:0.7rem;color:#1a1a2e;text-transform:uppercase;letter-spacing:.08em;font-weight:700;background:#f0ece4;border-bottom:1px solid #ddd">▶ DUPLICADO</div>
+        <div class="recibo-mitad"><div class="recibo-inner">${reciboHtml}</div></div>
+      </div>`;
   }
   ventana.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8"><title>Recibos Propietario — ${fechaMes}</title>
@@ -9505,48 +9510,54 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes) {
   const comision = Math.round(alquiler * comisionPct / 100 * 100) / 100;
   const neto = alquiler - comision;
   let totalRendir = neto;
-  let itemsHtml = `
-    <tr style="background:#f5f0e8"><td style="padding:5px 10px">Alquiler</td><td style="padding:5px 10px;text-align:right">${formatMoney(alquiler)}</td></tr>
-    <tr><td style="padding:5px 10px">Comisión inmobiliaria (${comisionPct}%)</td><td style="padding:5px 10px;text-align:right;color:#c8483a">− ${formatMoney(comision)}</td></tr>`;
+  const items = [
+    { label: `Alquiler`, monto: alquiler },
+    { label: `Comisión ${comisionPct}%`, monto: -comision },
+  ];
   const servRinde = (c?.servicios_rendir_propietario||'').toLowerCase();
   ['epe','agua','tgiu','seguro','internet','expensas'].forEach(srv => {
     const monto = p['monto_'+srv] || 0;
-    // Prefer contrato_suministros, fallback to old fields
     const sum = DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === srv);
     const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv] ?? 0);
     const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
     const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv);
     if (seRinde && monto > 0) {
       totalRendir += monto;
-      itemsHtml += `<tr style="background:#f5f0e8"><td style="padding:5px 10px">${srv.charAt(0).toUpperCase()+srv.slice(1)} (a rendir)</td><td style="padding:5px 10px;text-align:right;color:#2d7a4f">+ ${formatMoney(monto)}</td></tr>`;
+      items.push({ label: `${srv.charAt(0).toUpperCase()+srv.slice(1)} (a rendir)`, monto });
     } else if (!seRinde && pctProp > 0 && monto > 0) {
       const totalBill = pctInq > 0 ? Math.round(monto * 100 / pctInq) : monto;
       const montoProp = Math.round(totalBill * pctProp / 100);
-      if (montoProp > 0) { totalRendir -= montoProp; itemsHtml += `<tr><td style="padding:5px 10px">${srv.charAt(0).toUpperCase()+srv.slice(1)} (prop. ${pctProp}%)</td><td style="padding:5px 10px;text-align:right;color:#c8483a">− ${formatMoney(montoProp)}</td></tr>`; }
+      if (montoProp > 0) { totalRendir -= montoProp; items.push({ label: `${srv.charAt(0).toUpperCase()+srv.slice(1)} (prop. ${pctProp}%)`, monto: -montoProp }); }
     }
   });
   extrasProp.forEach(e => {
     const signo = e.tipo === 'credito' ? 1 : -1;
     totalRendir += signo * (e.importe||0);
-    itemsHtml += `<tr style="background:#f5f0e8"><td style="padding:5px 10px">${e.concepto||'Extra'}</td><td style="padding:5px 10px;text-align:right;color:${signo>0?'#2d7a4f':'#c8483a'}">${signo>0?'+ ':'− '}${formatMoney(Math.abs(e.importe||0))}</td></tr>`;
+    items.push({ label: e.concepto||'Extra', monto: signo * (e.importe||0) });
   });
-  return `<div style="font-family:'DM Sans',Arial,sans-serif;border:1.5px solid #1a1a2e;border-radius:4px">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1.5px solid #1a1a2e;padding:8px 12px 6px">
-      <div><div style="font-size:1rem;font-weight:700;color:#1a1a2e">MeGa Consultora</div><div style="font-size:0.68rem;color:#666">Recibo de Rendición al Propietario</div></div>
-      <div style="text-align:right"><div style="font-size:0.65rem;color:#888">Período</div><div style="font-size:0.9rem;font-weight:700">${fechaMes}</div></div>
+
+  const inm = c?.inmueble_id ? DB_INMUEBLES?.find(x => x.id === c.inmueble_id) : null;
+  const inmuebleDir = inm ? formatDireccion(inm) : (c?.titulo || '—');
+  const fechaHoy = (() => { const d = new Date(); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; })();
+
+  return `<div style="font-family:'DM Sans',Arial,sans-serif;width:100%;max-width:680px;margin:0 auto;padding:18px;border:2px solid #1a1a2e;border-radius:8px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;border-bottom:2px solid #1a1a2e;padding-bottom:10px">
+      <div><div style="font-size:1.2rem;font-weight:700;color:#1a1a2e">MeGa Consultora</div><div style="font-size:0.75rem;color:#666">Recibo de Rendición al Propietario</div></div>
+      <div style="text-align:right"><div style="font-size:0.68rem;color:#888">Fecha</div><div style="font-size:1rem;font-weight:700">${fechaHoy}</div></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:6px 12px;font-size:0.75rem">
-      <div><span style="color:#888;font-size:0.62rem;display:block">Propietario</span>${c?.locador||'—'}</div>
-      <div><span style="color:#888;font-size:0.62rem;display:block">Inmueble</span>${c?.titulo||'—'}</div>
-      <div><span style="color:#888;font-size:0.62rem;display:block">Inquilino</span>${c?.locatario||'—'}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:0.8rem">
+      <div><span style="font-size:0.65rem;text-transform:uppercase;color:#888;display:block">Propietario</span><strong>${c?.locador||'—'}</strong></div>
+      <div><span style="font-size:0.65rem;text-transform:uppercase;color:#888;display:block">Período</span><strong>${fechaMes}</strong></div>
+      <div><span style="font-size:0.65rem;text-transform:uppercase;color:#888;display:block">Inmueble</span>${inmuebleDir}</div>
+      <div><span style="font-size:0.65rem;text-transform:uppercase;color:#888;display:block">Inquilino</span>${c?.locatario||'—'}</div>
     </div>
-    <table style="width:100%;border-collapse:collapse;font-size:0.75rem">
-      <thead><tr style="background:#1a1a2e;color:white"><th style="padding:4px 10px;text-align:left;font-size:0.62rem">Concepto</th><th style="padding:4px 10px;text-align:right;font-size:0.62rem">Importe</th></tr></thead>
-      <tbody>${itemsHtml}</tbody>
-      <tfoot><tr style="border-top:1.5px solid #1a1a2e"><td style="padding:5px 10px;font-weight:700;font-size:0.82rem">TOTAL A RECIBIR</td><td style="padding:5px 10px;text-align:right;font-weight:700;font-size:0.92rem;color:#2d7a4f">${formatMoney(totalRendir)}</td></tr></tfoot>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:10px;font-size:0.8rem">
+      <thead><tr style="background:#1a1a2e;color:white"><th style="padding:6px 10px;text-align:left;font-size:0.65rem;text-transform:uppercase">Concepto</th><th style="padding:6px 10px;text-align:right;font-size:0.65rem;text-transform:uppercase">Importe</th></tr></thead>
+      <tbody>${items.map((it,i)=>`<tr style="background:${i%2===0?'#f5f0e8':'white'}"><td style="padding:6px 10px">${it.label}</td><td style="padding:6px 10px;text-align:right;${it.monto<0?'color:#c8483a':''}">${formatMoney(it.monto)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr style="border-top:2px solid #1a1a2e"><td style="padding:8px 10px;font-weight:700">TOTAL A RECIBIR</td><td style="padding:8px 10px;text-align:right;font-weight:700;font-size:1rem;color:#2d7a4f">${formatMoney(totalRendir)}</td></tr></tfoot>
     </table>
-    <div style="padding:6px 12px 8px;margin-top:4px">
-      <div style="max-width:180px;margin:0 auto;text-align:center"><div style="border-top:1px solid #333;padding-top:4px;font-size:0.68rem;color:#666;margin-top:18px">Firma propietario</div></div>
+    <div style="padding-top:10px;border-top:1px dashed #ccc;max-width:200px;margin:0 auto;text-align:center">
+      <div style="border-top:1px solid #333;padding-top:4px;font-size:0.7rem;color:#666;margin-top:20px">Firma propietario</div>
     </div>
   </div>`;
 }
