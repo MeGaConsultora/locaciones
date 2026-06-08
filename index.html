@@ -571,7 +571,7 @@
 
   <!-- RECIBOS A EMITIR -->
   <div id="panel-recibos-emitir" class="panel" style="display:none">
-    <div class="toolbar" style="margin-bottom:1rem">
+    <div class="toolbar" style="margin-bottom:0.75rem">
       <strong style="font-size:0.95rem">🖨️ Recibos Propietarios</strong>
       <select class="filter-select" id="recibos-anio" style="width:auto" onchange="renderRecibosEmitir()">
         <option value="">-- Año --</option>
@@ -588,6 +588,9 @@
       <button class="btn btn-secondary" id="btn-sel-todos-recibos" onclick="seleccionarTodosRecibos(true)" style="display:none">✓ Seleccionar todos</button>
       <button class="btn btn-secondary" id="btn-desel-todos-recibos" onclick="seleccionarTodosRecibos(false)" style="display:none">✕ Deseleccionar</button>
       <button class="btn btn-primary" id="btn-generar-recibos" onclick="generarRecibosSeleccionados()" style="display:none">🖨️ Generar seleccionados</button>
+    </div>
+    <div style="background:#f5f0e8;border-radius:8px;padding:0.65rem 1rem;margin-bottom:1rem;font-size:0.8rem;color:#666;line-height:1.5">
+      Este listado incluye únicamente los recibos de rendición a propietarios <strong>pendientes de emisión</strong> para el período seleccionado. Solo se muestran los contratos cuyo alquiler ha sido <strong>abonado en su totalidad</strong> a la fecha. Los recibos ya emitidos no se vuelven a listar.
     </div>
     <div id="recibos-emitir-contenido">
       <div class="empty-state"><div class="icon">🖨️</div><p>Seleccioná un año y mes</p></div>
