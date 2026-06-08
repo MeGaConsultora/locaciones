@@ -9405,18 +9405,36 @@ function renderRecibosEmitir() {
       <th style="padding:8px 10px;text-align:left;cursor:pointer" onclick="sortRecibos('contrato')">Contrato ↕</th>
       <th style="padding:8px 10px;text-align:left;cursor:pointer" onclick="sortRecibos('propietario')">Propietario ↕</th>
       <th style="padding:8px 10px;text-align:left;cursor:pointer" onclick="sortRecibos('inquilino')">Inquilino ↕</th>
-      <th style="padding:8px 10px;text-align:right;cursor:pointer" onclick="sortRecibos('total')">Total ↕</th>
+      <th style="padding:8px 10px;text-align:right;cursor:pointer" onclick="sortRecibos('total')">Total a cobrar ↕</th>
       <th style="padding:8px 10px;text-align:center">Período</th>
     </tr></thead>
     <tbody>
       ${pagos.map(p => {
         const c = DB.contratos.find(x => x.hoja === p.hoja);
+        // Calcular total a cobrar por el propietario
+        const alquiler = p.importe_alquiler || 0;
+        const comisionPct = c?.comision_porcentaje || 8;
+        const comision = Math.round(alquiler * comisionPct / 100 * 100) / 100;
+        let totalRendir = alquiler - comision;
+        const servRinde = (c?.servicios_rendir_propietario||'').toLowerCase();
+        ['epe','agua','tgiu','seguro','internet','expensas'].forEach(srv => {
+          const monto = p['monto_'+srv] || 0;
+          const sum = DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === srv);
+          const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv] ?? 0);
+          const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
+          const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv);
+          if (seRinde && monto > 0) { totalRendir += monto; }
+          else if (!seRinde && pctProp > 0 && monto > 0) {
+            const totalBill = pctInq > 0 ? Math.round(monto * 100 / pctInq) : monto;
+            totalRendir -= Math.round(totalBill * pctProp / 100);
+          }
+        });
         return `<tr style="border-bottom:1px solid #eee">
           <td style="padding:7px 10px;text-align:center"><input type="checkbox" class="chk-recibo" data-pago-id="${p.id}" data-hoja="${p.hoja}" style="width:15px;height:15px" onchange="actualizarBtnGenerar()"></td>
           <td style="padding:7px 10px;font-weight:600">${c?.titulo||p.hoja}</td>
           <td style="padding:7px 10px">${c?.locador||'—'}</td>
           <td style="padding:7px 10px">${c?.locatario||'—'}</td>
-          <td style="padding:7px 10px;text-align:right">${formatMoney(p.total||0)}</td>
+          <td style="padding:7px 10px;text-align:right;font-weight:600;color:#2d7a4f">${formatMoney(totalRendir)}</td>
           <td style="padding:7px 10px;text-align:center">${fechaMes}</td>
         </tr>`;
       }).join('')}
