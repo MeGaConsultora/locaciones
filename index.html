@@ -527,6 +527,7 @@
       <input type="text" class="search-input" id="srv-inf-buscar" placeholder="Buscar contrato…" style="width:200px" oninput="renderSrvInforme()">
       <button class="btn btn-secondary" onclick="srvInfSelAll(true)">✓ Seleccionar todos</button>
       <button class="btn btn-secondary" onclick="srvInfSelAll(false)">✕ Deseleccionar</button>
+      <button class="btn btn-secondary" onclick="imprimirSrvInforme()" style="margin-left:auto">🖨️ Imprimir listado</button>
     </div>
     <div id="srv-inf-totales" style="display:none;background:white;border-radius:10px;padding:0.75rem 1.2rem;margin-bottom:1rem;display:flex;gap:2rem;align-items:center;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
       <span style="font-size:0.82rem;color:#666">Seleccionados: <strong id="srv-inf-count">0</strong></span>
@@ -7529,7 +7530,12 @@ async function renderSrvInforme() {
       <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Nº servicio</th>
       <th style="padding:8px;text-align:right;font-size:0.72rem;text-transform:uppercase">Importe</th>
       <th style="padding:8px;text-align:center;font-size:0.72rem;text-transform:uppercase">Inq. abonó</th>
-      <th style="padding:8px;text-align:center;font-size:0.72rem;text-transform:uppercase">Pagado a proveedor</th>
+      <th style="padding:8px;text-align:center;font-size:0.72rem;text-transform:uppercase">
+        <div style="display:flex;align-items:center;justify-content:center;gap:6px">
+          Pagado a proveedor
+          <input type="checkbox" id="chk-all-proveedor" title="Marcar/desmarcar todos como pagados a proveedor" style="width:14px;height:14px;cursor:pointer" onchange="srvInfMarcarTodosProveedor(this.checked)">
+        </div>
+      </th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
@@ -7544,6 +7550,68 @@ async function marcarPagadoProveedor(psId, valor) {
   } catch(e) {
     toast('Error al guardar: ' + e.message, 'error');
   }
+}
+
+async function srvInfMarcarTodosProveedor(valor) {
+  const chks = [...document.querySelectorAll('.srv-chk-proveedor')];
+  if (!chks.length) return;
+  const ids = chks.map(c => parseInt(c.dataset.psId)).filter(Boolean);
+  try {
+    await Promise.all(ids.map(id => sbPatch('pagos_suministros', id, { pagado_proveedor: valor })));
+    chks.forEach(c => c.checked = valor);
+    // Actualizar opacidad de filas
+    chks.forEach(c => { const tr = c.closest('tr'); if (tr) tr.style.opacity = valor ? '0.6' : '1'; });
+    toast(valor ? `${ids.length} marcados como pagados a proveedor ✓` : `${ids.length} desmarcados ✓`);
+  } catch(e) {
+    toast('Error al guardar: ' + e.message, 'error');
+  }
+}
+
+function imprimirSrvInforme() {
+  const tipo = window._srvInformeTipo || 'srv-epe';
+  const labels = { 'srv-epe':'⚡ EPE a abonar', 'srv-agua':'💧 Agua a abonar', 'srv-tgiu':'🏛️ TGIU a abonar' };
+  const anio = document.getElementById('srv-inf-anio')?.value;
+  const mes = document.getElementById('srv-inf-mes')?.value;
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const fechaMes = mes ? meses[parseInt(mes)-1] + ' ' + anio : '';
+  const tabla = document.getElementById('srv-inf-contenido')?.querySelector('table');
+  if (!tabla) { toast('No hay datos para imprimir', 'error'); return; }
+
+  // Clonar tabla sin checkboxes — reemplazar por ✓ o —
+  const clone = tabla.cloneNode(true);
+  clone.querySelectorAll('input[type="checkbox"]').forEach(chk => {
+    const span = document.createElement('span');
+    span.textContent = chk.checked ? '✓' : '—';
+    span.style.color = chk.checked ? '#2d7a4f' : '#aaa';
+    chk.parentNode.replaceChild(span, chk);
+  });
+
+  const totalEl = document.getElementById('srv-inf-total')?.textContent || '';
+  const countEl = document.getElementById('srv-inf-count')?.textContent || '';
+
+  const ventana = window.open('', '_blank');
+  ventana.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8"><title>${labels[tipo]} — ${fechaMes}</title>
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family:Arial,sans-serif; padding:20px; font-size:12px; }
+      h2 { font-size:16px; margin-bottom:4px; }
+      .sub { color:#666; font-size:11px; margin-bottom:16px; }
+      table { width:100%; border-collapse:collapse; }
+      thead tr { background:#1a1a2e; color:white; }
+      th { padding:7px 10px; text-align:left; font-size:10px; text-transform:uppercase; }
+      td { padding:6px 10px; border-bottom:1px solid #eee; }
+      .total { margin-top:12px; text-align:right; font-size:13px; }
+      @media print { body { padding:10px; } }
+    </style>
+  </head><body>
+    <h2>${labels[tipo]}</h2>
+    <div class="sub">${fechaMes} · ${countEl} seleccionados · Total: ${totalEl}</div>
+    ${clone.outerHTML}
+    <div class="total">Total seleccionado: <strong>${totalEl}</strong></div>
+    <script>window.onload=()=>window.print()<\/script>
+  </body></html>`);
+  ventana.document.close();
 }
 
 function srvInfActualizarTotal() {
