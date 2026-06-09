@@ -9110,7 +9110,9 @@ async function confirmarImportarEPE() {
           }
         }
 
-        const totalSrv = allPs.reduce((t, ps) => { const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id); return cs?.tipo === srv ? t + (ps.importe||0) : t; }, 0);
+        // Leer todos los pagos_suministros del pago para calcular totalSrv correcto
+        const allPsActuales = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&select=suministro_id,importe`).catch(()=>[]);
+        const totalSrv = allPsActuales.reduce((t, ps) => { const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id); return cs?.tipo === srv ? t + (ps.importe||0) : t; }, 0);
         const newTotal = (p.importe_alquiler||0) + await getTotalServiciosPago(p.id, srv, totalSrv);
         const abonadoP = p.pagado_importe || (p.total||0) - (p.saldo||0);
         await sbPatch('pagos', p.id, { ['monto_'+srv]: totalSrv, total: Math.round(newTotal*100)/100, saldo: Math.round(Math.max(0, newTotal - abonadoP)*100)/100 });
@@ -9324,8 +9326,8 @@ async function confirmarImportarExcel() {
             const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id);
             return cs?.tipo === srv ? t + (ps.importe||0) : t;
           }, 0);
-          const abonadoP2 = (p2.total||0) - (p2.saldo||0);
           const freshP2 = (await sbGet('pagos', `id=eq.${p2.id}&limit=1`))[0] || p2;
+          const abonadoP2 = freshP2.pagado_importe || (freshP2.total||0) - (freshP2.saldo||0);
           const newTotal = (freshP2.importe_alquiler||0) + await getTotalServiciosPago(freshP2.id, srv, totalSrv);
           const patch = { total: Math.round(newTotal*100)/100, saldo: Math.round(Math.max(0, newTotal - abonadoP2)*100)/100 };
           patch['monto_'+srv] = totalSrv;
