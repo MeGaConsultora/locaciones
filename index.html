@@ -3487,8 +3487,7 @@ async function guardarExtraGralItem(inputId) {
       const extrasTotal = todosExtras
         .filter(e => e.a_cargo_de !== 'propietario')
         .reduce((s,e) => s + ((e.tipo==='credito' ? -1 : 1) * (parseFloat(e.importe)||0)), 0);
-      const servicios = ['epe','agua','tgiu','seguro','internet','expensas']
-        .reduce((t,s) => t + (pag['monto_'+s]||0), 0);
+      const servicios = await getTotalServiciosPago(pagoId, null, 0);
       const newTotal = (pag.importe_alquiler||0) + servicios + extrasTotal;
       const pagadoImporte = pag.pagado_importe || 0;
       const newSaldo = Math.max(0, newTotal - pagadoImporte);
@@ -9006,23 +9005,32 @@ async function recargarDatosEPE() {
   }
 }
 
-async function getTotalServiciosPago(pagoId, tipoExcluir, valorExcluir) {
-  // Obtiene el total de servicios para un pago, leyendo de pagos_suministros si hay datos
-  // tipoExcluir: el tipo que ya calculamos afuera (para no duplicar)
-  // valorExcluir: el valor ya calculado para ese tipo
+async function getTotalServiciosPago(pagoId, tipoExcluir, valorNuevo) {
+  // Calcula el nuevo total de servicios para un pago.
+  // Para el tipo que se está modificando (tipoExcluir) usa valorNuevo.
+  // Para los demás tipos, usa pagos_suministros si tiene datos, sino monto_xxx.
   const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
-  let total = valorExcluir || 0;
+  const pago = DB.pagos.find(p => p.id === pagoId) ||
+    (await sbGet('pagos', `id=eq.${pagoId}&limit=1`).catch(()=>[]))[0];
+  if (!pago) return valorNuevo || 0;
+
+  let total = valorNuevo || 0;
   const psRows = await sbGet('pagos_suministros', `pago_id=eq.${pagoId}&select=suministro_id,importe`).catch(()=>[]);
-  const pago = DB.pagos.find(p => p.id === pagoId);
+
   for (const srv of servicios) {
     if (srv === tipoExcluir) continue;
-    // Buscar en pagos_suministros
-    const psSrv = psRows.filter(ps => { const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id); return cs?.tipo === srv; });
-    const psTotal = psSrv.reduce((s, ps) => s + (ps.importe||0), 0);
-    if (psTotal > 0) {
-      total += psTotal;
-    } else if (pago) {
-      total += pago['monto_'+srv] || 0;
+    // Para servicios no modificados: usar monto_xxx del sistema viejo
+    // Solo usar pagos_suministros si monto_xxx es 0 o no existe
+    const montoViejo = pago['monto_'+srv] || 0;
+    if (montoViejo > 0) {
+      total += montoViejo;
+    } else {
+      // Fallback a pagos_suministros solo si no hay dato en sistema viejo
+      const psSrv = psRows.filter(ps => {
+        const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id);
+        return cs?.tipo === srv;
+      });
+      total += psSrv.reduce((s, ps) => s + (ps.importe||0), 0);
     }
   }
   return total;
@@ -9056,6 +9064,12 @@ async function confirmarImportarEPE() {
         const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesStr}&limit=1`);
         if (!pagos.length) continue;
         const p = pagos[0];
+
+        // No actualizar contratos que ya pagaron su parte
+        const psActual = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&suministro_id=eq.${sums[0].id}&limit=1`).catch(()=>[]);
+        const importeInquilino = psActual.length ? (psActual[0].importe || 0) : 0;
+        const pagadoEpe = p.pagado_epe || 0;
+        if (importeInquilino > 0 && pagadoEpe >= importeInquilino) continue;
 
         let totalMonto = 0;
         for (const s of sums) {
