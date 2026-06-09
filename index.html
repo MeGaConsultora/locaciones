@@ -1831,9 +1831,9 @@ function renderGrilla(c) {
       ${serviciosInquilino.expensas?`<td class="num col-mobile-hide">${getMonto('expensas')>0?formatMoney(getMonto('expensas')):'—'}</td>`:''}
       <td class="col-mobile-hide" style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasGralLabel}">${totalExtrasGral > 0 ? formatMoney(totalExtrasGral) : '—'}</td>
       <td class="col-mobile-hide" style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasMesLabel}">${totalExtrasMes > 0 ? formatMoney(totalExtrasMes) : '—'}</td>
-      <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras))}</strong></td>
+      <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras, window._pagosSuministros?.[p.id]))}</strong></td>
       <td class="num col-mobile-hide" id="abonado-${p.id}">${(() => { const ab = p.pagado_importe || (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
-      <td class="num" id="saldo-${p.id}">${(()=>{const _exc=(p.pagado_importe||0)-calcularTotal(p,extras);return _exc>0.01?`<span style="color:var(--green);font-weight:700">+${formatMoney(_exc)}</span>`:saldoReal>0?`<span class="saldo-pendiente">${formatMoney(saldoReal)}</span>`:'<span class="saldo-ok">✓</span>';})()}</td>
+      <td class="num" id="saldo-${p.id}">${(()=>{const _exc=(p.pagado_importe||0)-calcularTotal(p,extras,window._pagosSuministros?.[p.id]);return _exc>0.01?`<span style="color:var(--green);font-weight:700">+${formatMoney(_exc)}</span>`:saldoReal>0?`<span class="saldo-pendiente">${formatMoney(saldoReal)}</span>`:'<span class="saldo-ok">✓</span>';})()}</td>
       <td id="estado-${p.id}">${getEstadoLabel(p)}</td>
       <td onclick="event.stopPropagation()">
         <div class="grid-actions">
@@ -1931,13 +1931,20 @@ async function editarMesConSolapa(hoja, contratoId, mesPreseleccionado, solapa) 
   await abrirNuevoMes(hoja, mesPreseleccionado, solapa);
 }
 
-function calcularTotal(p, extras) {
+function calcularTotal(p, extras, psData) {
   const totalExtras = (extras||[]).reduce((s,e) => {
     if (e.a_cargo_de === 'propietario') return s;
     const importe = parseFloat(e.importe)||0;
     return (e.tipo === 'descuento' || e.tipo === 'credito') ? s - importe : s + importe;
   }, 0);
-  const raw = (p.importe_alquiler||0)+(p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0)+totalExtras;
+  // Usar pagos_suministros si disponible, sino sistema viejo
+  let servicios;
+  if (psData && Object.keys(psData).length > 0) {
+    servicios = Object.values(psData).reduce((s, v) => s + (typeof v === 'object' ? (v.inq||0) : (v||0)), 0);
+  } else {
+    servicios = (p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0);
+  }
+  const raw = (p.importe_alquiler||0) + servicios + totalExtras;
   return Math.round(raw * 100) / 100;
 }
 
@@ -1961,7 +1968,8 @@ async function recalcularFilaPago(pagoId) {
   }
   if (!p) return;
   const extras = extrasActuales[pagoId]||[];
-  const total = calcularTotal(p, extras);
+  const psData = window._pagosSuministros?.[p.id];
+  const total = calcularTotal(p, extras, psData);
   // pagado_importe es inmutable — saldo = total - pagado_importe
   const pagadoImporte = p.pagado_importe || 0;
   const nuevoSaldo = Math.round((total - pagadoImporte) * 100) / 100;
@@ -2047,7 +2055,7 @@ async function marcarPagado(pagoId, hoja) {
   const p = pagosActuales.find(x=>x.id===pagoId);
   if (!p) return;
   const extras = extrasActuales[pagoId]||[];
-  const total = calcularTotal(p, extras);
+  const total = calcularTotal(p, extras, window._pagosSuministros?.[p.id]);
   // Open cobro modal
   openNuevoPago(hoja, pagoId);
 }
@@ -3596,8 +3604,7 @@ async function guardarServicioItem(inputId) {
         const extrasTotal = extrasDelPago
           .filter(e => e.a_cargo_de !== 'propietario')
           .reduce((s,e) => s + ((e.tipo==='credito' ? -1 : 1) * (parseFloat(e.importe)||0)), 0);
-        const newTotal = (pago.importe_alquiler||0) + totalTipo +
-          ['epe','agua','tgiu','seguro','internet','expensas'].filter(s=>s!==srv).reduce((t,s) => t+(pago['monto_'+s]||0), 0) + extrasTotal;
+        const newTotal = (pago.importe_alquiler||0) + await getTotalServiciosPago(pago.id, srv, totalTipo) + extrasTotal;
         const yaAbonado = pago.pagado_importe || (pago.total||0) - (pago.saldo||0);
         await sbPatch('pagos', pago.id, {
           ['monto_'+srv]: totalTipo,
@@ -3697,15 +3704,26 @@ async function guardarServicios() {
       };
 
       const alq = pago.importe_alquiler || 0;
-      const epe     = 'monto_epe'      in changes ? applyPct(changes.monto_epe, 'epe')           : (pago.monto_epe ?? 0);
-      const agua    = 'monto_agua'     in changes ? applyPct(changes.monto_agua, 'agua')          : (pago.monto_agua ?? 0);
-      const tgiu    = 'monto_tgiu'     in changes ? applyPct(changes.monto_tgiu, 'tgiu')          : (pago.monto_tgiu ?? 0);
-      const seguro  = 'monto_seguro'   in changes ? applyPct(changes.monto_seguro, 'seguro')      : (pago.monto_seguro ?? 0);
-      const internet= 'monto_internet' in changes ? applyPct(changes.monto_internet, 'internet')  : (pago.monto_internet ?? 0);
-      const expensas= 'monto_expensas' in changes ? applyPct(changes.monto_expensas, 'expensas')  : (pago.monto_expensas ?? 0);
-      const newTotal = alq + epe + agua + tgiu + seguro + internet + expensas;
+      // Calcular servicios usando pagos_suministros si disponible
+      const serviciosTotal = await getTotalServiciosPago(parseInt(pagoId), null, 0);
+      // Override con los valores modificados en este guardado
+      let overrideTotal = 0;
+      for (const [campo, val] of Object.entries(changes)) {
+        const srvKey = campo.replace('monto_', '');
+        overrideTotal += applyPct(val, srvKey);
+      }
+      // Restar los servicios del tipo modificado (ya incluidos en overrideTotal)
+      let srvsSinModificar = await getTotalServiciosPago(parseInt(pagoId), null, 0);
+      for (const [campo] of Object.entries(changes)) {
+        const srvKey = campo.replace('monto_', '');
+        // Restar el valor actual de ese tipo del total
+        const psActual = (await sbGet('pagos_suministros', `pago_id=eq.${parseInt(pagoId)}`).catch(()=>[])).filter(ps => { const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id); return cs?.tipo === srvKey; }).reduce((s,ps) => s+(ps.importe||0), 0);
+        const montoViejoSrv = psActual > 0 ? psActual : (pago['monto_'+srvKey]||0);
+        srvsSinModificar -= montoViejoSrv;
+      }
+      const newTotal = alq + srvsSinModificar + overrideTotal;
       const yaAbonado = pago.pagado_importe || (pago.total||0) - (pago.saldo||0);
-      const patch = { total: newTotal, saldo: Math.max(0, newTotal - yaAbonado) };
+      const patch = { total: Math.round(newTotal*100)/100, saldo: Math.max(0, Math.round((newTotal - yaAbonado)*100)/100) };
 
       // For each changed service, save to pagos_suministros if contract uses new system
       for (const [campo, val] of Object.entries(changes)) {
@@ -8988,6 +9006,28 @@ async function recargarDatosEPE() {
   }
 }
 
+async function getTotalServiciosPago(pagoId, tipoExcluir, valorExcluir) {
+  // Obtiene el total de servicios para un pago, leyendo de pagos_suministros si hay datos
+  // tipoExcluir: el tipo que ya calculamos afuera (para no duplicar)
+  // valorExcluir: el valor ya calculado para ese tipo
+  const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
+  let total = valorExcluir || 0;
+  const psRows = await sbGet('pagos_suministros', `pago_id=eq.${pagoId}&select=suministro_id,importe`).catch(()=>[]);
+  const pago = DB.pagos.find(p => p.id === pagoId);
+  for (const srv of servicios) {
+    if (srv === tipoExcluir) continue;
+    // Buscar en pagos_suministros
+    const psSrv = psRows.filter(ps => { const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id); return cs?.tipo === srv; });
+    const psTotal = psSrv.reduce((s, ps) => s + (ps.importe||0), 0);
+    if (psTotal > 0) {
+      total += psTotal;
+    } else if (pago) {
+      total += pago['monto_'+srv] || 0;
+    }
+  }
+  return total;
+}
+
 async function confirmarImportarEPE() {
   const datos = window._epeImportDatos || [];
   const mesKey = window._epeImportMes || TODAY.substring(0,7);
@@ -9030,10 +9070,8 @@ async function confirmarImportarEPE() {
           }
         }
 
-        const allPs = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&select=suministro_id,importe`);
         const totalSrv = allPs.reduce((t, ps) => { const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id); return cs?.tipo === srv ? t + (ps.importe||0) : t; }, 0);
-        const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
-        const newTotal = (p.importe_alquiler||0) + servicios.reduce((sv2, sv) => sv === srv ? sv2 + totalSrv : sv2 + (p['monto_'+sv]||0), 0);
+        const newTotal = (p.importe_alquiler||0) + await getTotalServiciosPago(p.id, srv, totalSrv);
         const abonadoP = p.pagado_importe || (p.total||0) - (p.saldo||0);
         await sbPatch('pagos', p.id, { ['monto_'+srv]: totalSrv, total: Math.round(newTotal*100)/100, saldo: Math.round(Math.max(0, newTotal - abonadoP)*100)/100 });
       }
@@ -9246,10 +9284,9 @@ async function confirmarImportarExcel() {
             const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id);
             return cs?.tipo === srv ? t + (ps.importe||0) : t;
           }, 0);
-          const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
           const abonadoP2 = (p2.total||0) - (p2.saldo||0);
           const freshP2 = (await sbGet('pagos', `id=eq.${p2.id}&limit=1`))[0] || p2;
-          const newTotal = (freshP2.importe_alquiler||0) + servicios.reduce((sv2, sv) => sv === srv ? sv2 + totalSrv : sv2 + (freshP2['monto_'+sv]||0), 0);
+          const newTotal = (freshP2.importe_alquiler||0) + await getTotalServiciosPago(freshP2.id, srv, totalSrv);
           const patch = { total: Math.round(newTotal*100)/100, saldo: Math.round(Math.max(0, newTotal - abonadoP2)*100)/100 };
           patch['monto_'+srv] = totalSrv;
           await sbPatch('pagos', p2.id, patch);
@@ -9423,15 +9460,13 @@ async function confirmarImportarPDF() {
         }
 
         const alq = p.importe_alquiler || 0;
-        // Recalculate from all pagos_suministros for this pago
         const allPsForPago = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&select=suministro_id,importe`);
         const totalSrv = allPsForPago.reduce((t, ps) => {
           const cs = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
           return cs?.tipo === srv ? t + (ps.importe||0) : t;
         }, 0);
-        const servicios = ['epe','agua','tgiu','seguro','internet','expensas'];
-        const newTotal = alq + servicios.reduce((sv2, sv) => sv === srv ? sv2 + totalSrv : sv2 + (p['monto_'+sv] || 0), 0);
-        const patch = { total: newTotal, saldo: Math.max(0, newTotal - ((p.total||0) - (p.saldo||0))) };
+        const newTotal = alq + await getTotalServiciosPago(p.id, srv, totalSrv);
+        const patch = { total: Math.round(newTotal*100)/100, saldo: Math.max(0, Math.round((newTotal - ((p.total||0) - (p.saldo||0)))*100)/100) };
         patch['monto_'+srv] = totalSrv;
         await sbPatch('pagos', p.id, patch);
 
