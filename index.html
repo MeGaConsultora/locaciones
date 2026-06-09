@@ -9023,7 +9023,7 @@ async function recargarDatosEPE() {
 
     const datosFiltrados = datos.filter(d => !suministrosConPago.has(d.suministro_id));
     window._epeImportDatos = datosFiltrados;
-    wrap.innerHTML = _renderEPEPreview(datos);
+    wrap.innerHTML = _renderEPEPreview(datosFiltrados);
 
   } catch(e) {
     wrap.innerHTML = `<div style="text-align:center;color:var(--accent);padding:2rem">Error: ${e.message}</div>`;
