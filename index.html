@@ -8887,7 +8887,7 @@ function _renderEPEPreview(datos) {
               </td>
               <td style="padding:6px 8px;font-weight:600">${d.nro_cuenta || '—'}</td>
               <td style="padding:6px 8px">${contrato ? (contrato.titulo || contrato.hoja) : '<span style="color:var(--accent)">Sin contrato</span>'}</td>
-              <td style="padding:6px 8px;text-align:right">${tieneImporte ? formatMoney(d.importe) : '<span style="color:#aaa">—</span>'}</td>
+              <td style="padding:6px 8px;text-align:right">${tieneImporte ? formatMoney(d.importe) + (d.es_2do_vto ? ' <span style="font-size:0.7rem;color:#856404" title="2do vencimiento">②</span>' : '') : '<span style="color:#aaa">—</span>'}</td>
               <td style="padding:6px 8px;text-align:right;${hayDiferencia ? 'color:var(--accent);font-weight:600' : 'color:#888'}">${cargado !== null ? formatMoney(cargado) : '—'}</td>
               <td style="padding:6px 8px;text-align:right;color:var(--green)">${aCargar ? formatMoney(aCargar) : '—'}</td>
             </tr>`;
@@ -8913,7 +8913,7 @@ async function recargarDatosEPE() {
   try {
     // Obtener PDFs EPE del mes desde pagos_pdf (el bot ya guardó importe_extraido)
     const pdfs = await sbGet('pagos_pdf',
-      `servicio=eq.epe&select=id,pago_id,pdf_path,suministro_id,importe_extraido&order=id.asc`
+      `servicio=eq.epe&select=id,pago_id,pdf_path,suministro_id,importe_extraido,importe_2do_vencimiento&order=id.asc`
     ).catch(() => []);
 
     const pdfsDelMes = pdfs.filter(r => r.pdf_path && r.pdf_path.includes(`epe/${mesKey}/`));
@@ -8949,15 +8949,22 @@ async function recargarDatosEPE() {
       // Importe actualmente cargado en pagos_suministros
       const psRow = psSuministros.find(ps => ps.pago_id === pdfRec.pago_id && ps.suministro_id === pdfRec.suministro_id);
       const importeCargado = psRow?.importe || null;
+      // Usar 2do vencimiento si el inquilino no pagó aún
+      const pagadoEpe = pago ? (pago.pagado_epe || 0) : 0;
+      const imp1 = pdfRec.importe_extraido || null;
+      const imp2 = pdfRec.importe_2do_vencimiento || null;
+      const inquilinoPago = imp1 && pagadoEpe >= imp1;
+      const importeAUsar = (!inquilinoPago && imp2) ? imp2 : imp1;
       return {
         pdf_id: pdfRec.id,
         pago_id: pdfRec.pago_id,
         suministro_id: pdfRec.suministro_id,
         nro_cuenta: sum?.nro_cuenta || nroCuenta || '?',
-        importe: pdfRec.importe_extraido || null,
+        importe: importeAUsar,
         importe_cargado: importeCargado,
         titular: contrato?.titulo || contrato?.hoja || '',
         pdf_path: pdfRec.pdf_path,
+        es_2do_vto: !inquilinoPago && !!imp2,
       };
     });
 
