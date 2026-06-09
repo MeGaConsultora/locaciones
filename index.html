@@ -8997,22 +8997,25 @@ async function recargarDatosEPE() {
       };
     }).filter(Boolean);
 
-    // Para suministros compartidos: si algún contrato que comparte la cuenta ya pagó, sacar solo ese suministro
+    // Para suministros compartidos: si algún contrato que comparte la cuenta ya pagó, sacar ese suministro
     const suministrosConPago = new Set();
-    for (const d of datos) {
-      const sumsDeNro = DB_SUMINISTROS.filter(s => s.nro_cuenta === d.nro_cuenta && s.tipo === 'epe');
-      if (sumsDeNro.length <= 1) continue; // no compartido, no filtrar
-      for (const s of sumsDeNro) {
-        const contrato = DB.contratos.find(c => c.id === parseInt(s.contrato_id));
-        if (!contrato) continue;
-        const pago = DB.pagos?.find(p => p.hoja === contrato.hoja && p.mes?.startsWith(mesKey));
+    const nrosCuentaEnDatos = [...new Set(datos.map(d => d.nro_cuenta))];
+    for (const nro of nrosCuentaEnDatos) {
+      const sumsDeNro = DB_SUMINISTROS.filter(s => s.nro_cuenta === nro && s.tipo === 'epe');
+      if (sumsDeNro.length <= 1) continue; // no compartido
+      // Consultar pagos_suministros para todos los suministros de esta cuenta en el mes
+      const sumIds = sumsDeNro.map(s => s.id).join(',');
+      const psDeNro = await sbGet('pagos_suministros',
+        `suministro_id=in.(${sumIds})&select=pago_id,suministro_id,importe`
+      ).catch(() => []);
+      // Para cada suministro, ver si el pago correspondiente ya tiene pagado_epe >= importe
+      for (const ps of psDeNro) {
+        if (!ps.importe || ps.importe <= 0) continue;
+        const pago = DB.pagos?.find(p => p.id === ps.pago_id && p.mes?.startsWith(mesKey));
         if (!pago) continue;
-        const psRow = psSuministros.find(ps => ps.pago_id === pago.id && ps.suministro_id === s.id);
-        const importeInq = psRow?.importe || 0;
-        const pagadoEpe = pago.pagado_epe || 0;
-        if (importeInq > 0 && pagadoEpe >= importeInq) {
-          // Alguno pagó — marcar todos los suministros de esta cuenta como excluidos
-          sumsDeNro.forEach(x => suministrosConPago.add(x.id));
+        if ((pago.pagado_epe || 0) >= ps.importe) {
+          // Alguno pagó — excluir todos los suministros compartidos de esta cuenta
+          sumsDeNro.forEach(s => suministrosConPago.add(s.id));
           break;
         }
       }
