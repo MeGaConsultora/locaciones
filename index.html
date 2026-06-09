@@ -8826,10 +8826,17 @@ async function abrirImportarEPE() {
       <div style="background:#f5f0e8;border-radius:8px;padding:0.8rem 1rem;margin-bottom:1.2rem;font-size:0.85rem;color:#666;line-height:1.5">
         <strong>Antes de importar:</strong> ejecutá <code style="background:#e8e0d0;padding:2px 6px;border-radius:4px">EPE Bot.bat</code> en la PC servidor para descargar y subir las boletas del mes al sistema.
       </div>
-      <div style="display:flex;gap:1rem;margin-bottom:1.2rem;align-items:flex-end">
+      <div style="display:flex;gap:1rem;margin-bottom:1.2rem;align-items:flex-end;flex-wrap:wrap">
         <div class="form-group" style="margin:0">
           <label>Mes</label>
           <input type="month" id="epe-mes" value="${mesKey}" style="margin-top:4px" onchange="recargarDatosEPE()">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Vencimiento</label>
+          <select id="epe-vto" style="margin-top:4px;padding:8px;border:1.5px solid var(--border);border-radius:8px" onchange="recargarDatosEPE()">
+            <option value="1">1er vencimiento</option>
+            <option value="2">2do vencimiento</option>
+          </select>
         </div>
         <button class="btn btn-secondary" style="font-size:0.82rem" onclick="recargarDatosEPE()">🔄 Actualizar</button>
       </div>
@@ -8930,9 +8937,11 @@ async function recargarDatosEPE() {
       return;
     }
 
+    const vto = document.getElementById('epe-vto')?.value || '1';
+    const usar2do = vto === '2';
+
     // Construir datos desde pagos_pdf — importe ya extraído por el bot
     const pagoIds = [...new Set(pdfsDelMes.map(r => r.pago_id).filter(Boolean))];
-    // Cargar pagos_suministros del mes para comparar con importe extraído
     let psSuministros = [];
     if (pagoIds.length) {
       psSuministros = await sbGet('pagos_suministros',
@@ -8946,27 +8955,26 @@ async function recargarDatosEPE() {
       const sum = DB_SUMINISTROS.find(s => s.id === pdfRec.suministro_id);
       const pago = DB.pagos?.find(p => p.id === pdfRec.pago_id);
       const contrato = pago ? DB.contratos.find(c => c.hoja === pago.hoja) : null;
-      // Importe actualmente cargado en pagos_suministros
       const psRow = psSuministros.find(ps => ps.pago_id === pdfRec.pago_id && ps.suministro_id === pdfRec.suministro_id);
       const importeCargado = psRow?.importe || null;
-      // Usar 2do vencimiento si el inquilino no pagó aún
       const pagadoEpe = pago ? (pago.pagado_epe || 0) : 0;
       const imp1 = pdfRec.importe_extraido || null;
       const imp2 = pdfRec.importe_2do_vencimiento || null;
-      const inquilinoPago = imp1 && pagadoEpe >= imp1;
-      const importeAUsar = (!inquilinoPago && imp2) ? imp2 : imp1;
+      const yaPago = imp1 && pagadoEpe >= imp1;
+      if (yaPago) return null; // ya pagó, no mostrar
+      const importe = usar2do ? (imp2 || imp1) : imp1;
       return {
         pdf_id: pdfRec.id,
         pago_id: pdfRec.pago_id,
         suministro_id: pdfRec.suministro_id,
         nro_cuenta: sum?.nro_cuenta || nroCuenta || '?',
-        importe: importeAUsar,
+        importe,
         importe_cargado: importeCargado,
         titular: contrato?.titulo || contrato?.hoja || '',
         pdf_path: pdfRec.pdf_path,
-        es_2do_vto: !inquilinoPago && !!imp2,
+        es_2do_vto: usar2do && !!imp2,
       };
-    });
+    }).filter(Boolean);
 
     window._epeImportDatos = datos;
     wrap.innerHTML = _renderEPEPreview(datos);
