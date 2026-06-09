@@ -8960,8 +8960,10 @@ async function recargarDatosEPE() {
       const pagadoEpe = pago ? (pago.pagado_epe || 0) : 0;
       const imp1 = pdfRec.importe_extraido || null;
       const imp2 = pdfRec.importe_2do_vencimiento || null;
-      const yaPago = imp1 && pagadoEpe >= imp1;
-      if (yaPago) return null; // ya pagó, no mostrar
+      const importeInquilino = psRow?.importe || 0;
+      // Pagado si el inquilino abonó >= lo que le corresponde de este suministro
+      const yaPago = importeInquilino === 0 || pagadoEpe >= importeInquilino;
+      if (yaPago) return null;
       const importe = usar2do ? (imp2 || imp1) : imp1;
       return {
         pdf_id: pdfRec.id,
