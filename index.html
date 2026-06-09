@@ -1788,8 +1788,7 @@ function renderGrilla(c) {
     // Calculate per-type totals from pagos_suministros (with fallback to pagos.monto_xxx)
     const getMonto = (tipo) => {
       const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id && s.tipo === tipo);
-      const esMesNuevo = (p.mes||'') >= '2026-06-01';
-      if (sums.length > 0 && esMesNuevo) {
+      if (sums.length > 0) {
         const psTotal = sums.reduce((t, s) => {
           const entry = ps[s.id];
           if (entry === undefined) return t;
@@ -2489,11 +2488,16 @@ async function proyectarPeriodo(hoja, desdeKey, importe, periodicidad, diaVenc, 
   const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc&limit=500`);
   const mesesExistentes = new Set(pagos.map(p => p.mes?.substring(0,7)).filter(Boolean));
 
+  // Obtener vigencia_hasta del contrato para no excederla
+  const contratoVig = DB.contratos.find(x => x.hoja === hoja);
+  const vigHastaKey = contratoVig?.vigencia_hasta?.substring(0,7) || '9999-12';
+
   // Create missing pagos in range if they don't exist
   const nuevos = [];
   let [cy, cm] = desdeKey.split('-').map(Number);
   for (let i = 0; i < mesesPeriodo; i++) {
     const key = `${cy}-${String(cm).padStart(2,'0')}`;
+    if (key > vigHastaKey) break; // no crear meses más allá de la vigencia
     if (!mesesExistentes.has(key)) {
       nuevos.push({ hoja, mes: key+'-01', corresponde_a_mes: key+'-01', importe_alquiler: 0, total: 0, saldo: 0, pagado: '0' });
     }
@@ -2512,6 +2516,7 @@ async function proyectarPeriodo(hoja, desdeKey, importe, periodicidad, diaVenc, 
     if (!p.mes) continue;
     const mesKey = p.mes.substring(0,7);
     if (mesKey < desdeKey) continue;
+    if (mesKey > vigHastaKey) break; // no actualizar más allá de la vigencia
     if (count >= mesesPeriodo) break;
 
     const [y, m] = mesKey.split('-').map(Number);
@@ -3707,8 +3712,7 @@ async function guardarServicios() {
         const srv = campo.replace('monto_', '');
         const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(cPago?.id) && s.tipo === srv);
         const mesKey = pago.mes?.substring(0,7) || '';
-        const usaNuevoSistema = sums.length > 0 && mesKey >= '2026-06';
-        if (usaNuevoSistema) {
+        if (sums.length > 0) {
           // Save in pagos_suministros, clear monto_xxx
           const valPct = applyPct(val, srv);
           for (const sum of sums) {
@@ -4000,8 +4004,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
           const getSrvVal = (srv) => {
             const ps = window._pagosSuministros?.[p?.id] || {};
             const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === srv);
-            const esMesNuevo = mesKey >= '2026-06';
-            if (sums.length > 0 && esMesNuevo) {
+            if (sums.length > 0) {
               // _pagosSuministros stores {suministro_id: {inq, prop}} structure
               const psTotal = sums.reduce((t, s) => {
                 const entry = ps[s.id];
@@ -4173,8 +4176,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
   const ps = window._pagosSuministros?.[p?.id] || {};
   const getSrvMonto = (tipo) => {
     const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === tipo);
-    const esMesNuevo = mesKey >= '2026-06';
-    if (sums.length > 0 && esMesNuevo) {
+    if (sums.length > 0) {
       // Desde junio 2026: usar solo pagos_suministros, sin fallback a monto_xxx
       return sums.reduce((t, s) => {
         const entry = ps[s.id];
@@ -4440,8 +4442,7 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
       const ps = window._pagosSuministros?.[p?.id] || {};
       const getSrvMonto = (tipo) => {
         const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === tipo);
-        const esMesNuevo = (p?.mes||'') >= '2026-06-01';
-        if (sums.length > 0 && esMesNuevo) {
+        if (sums.length > 0) {
           // Desde junio 2026: usar solo pagos_suministros, sin fallback a monto_xxx
           return sums.reduce((t, s) => {
             const entry = ps[s.id];
@@ -4786,13 +4787,11 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
   let usaSuministros = false;
   if (existingPre.length) {
     const pagoExistente = existingPre[0];
-    if (mesKey >= '2026-06') {
-      const psRows = await sbGet('pagos_suministros', `pago_id=eq.${pagoExistente.id}`).catch(()=>[]);
-      const psTotal = psRows.reduce((t,r) => t + (r.importe||0), 0);
-      if (psTotal > 0) {
-        usaSuministros = true;
-        serviciosTotal = psTotal;
-      }
+    const psRows = await sbGet('pagos_suministros', `pago_id=eq.${pagoExistente.id}`).catch(()=>[]);
+    const psTotal = psRows.reduce((t,r) => t + (r.importe||0), 0);
+    if (psTotal > 0) {
+      usaSuministros = true;
+      serviciosTotal = psTotal;
     }
     if (!usaSuministros) {
       // Use existing monto_xxx values from Supabase (not disabled form fields)
@@ -5059,7 +5058,10 @@ async function verDetalleDeuda(hoja, contratoId, mesKey) {
   psRows.forEach(r => ps[r.suministro_id] = r.importe);
   const getSrv = tipo => {
     const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id)===contratoId && s.tipo===tipo);
-    if (sums.length && mesKey >= '2026-06') return sums.reduce((t,s)=>t+(ps[s.id]||0),0);
+    if (sums.length) {
+      const total = sums.reduce((t,s)=>t+(ps[s.id]||0),0);
+      if (total > 0) return total;
+    }
     return p['monto_'+tipo]||0;
   };
   const items = [
