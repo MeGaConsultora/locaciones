@@ -8997,7 +8997,29 @@ async function recargarDatosEPE() {
       };
     }).filter(Boolean);
 
-    window._epeImportDatos = datos;
+    // Para suministros compartidos: si algún contrato que comparte la cuenta ya pagó, sacar solo ese suministro
+    const suministrosConPago = new Set();
+    for (const d of datos) {
+      const sumsDeNro = DB_SUMINISTROS.filter(s => s.nro_cuenta === d.nro_cuenta && s.tipo === 'epe');
+      if (sumsDeNro.length <= 1) continue; // no compartido, no filtrar
+      for (const s of sumsDeNro) {
+        const contrato = DB.contratos.find(c => c.id === parseInt(s.contrato_id));
+        if (!contrato) continue;
+        const pago = DB.pagos?.find(p => p.hoja === contrato.hoja && p.mes?.startsWith(mesKey));
+        if (!pago) continue;
+        const psRow = psSuministros.find(ps => ps.pago_id === pago.id && ps.suministro_id === s.id);
+        const importeInq = psRow?.importe || 0;
+        const pagadoEpe = pago.pagado_epe || 0;
+        if (importeInq > 0 && pagadoEpe >= importeInq) {
+          // Alguno pagó — marcar todos los suministros de esta cuenta como excluidos
+          sumsDeNro.forEach(x => suministrosConPago.add(x.id));
+          break;
+        }
+      }
+    }
+
+    const datosFiltrados = datos.filter(d => !suministrosConPago.has(d.suministro_id));
+    window._epeImportDatos = datosFiltrados;
     wrap.innerHTML = _renderEPEPreview(datos);
 
   } catch(e) {
