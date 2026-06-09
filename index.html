@@ -1808,12 +1808,13 @@ function renderGrilla(c) {
     const totalExtrasGral = extrasGral.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
     const totalExtrasMes = extrasMes.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
     const totalExtras = totalExtrasGral + totalExtrasMes;
-    // saldo already reflects extras (recalcularFilaPago updates it when extras are added)
-    const saldoReal = (p.saldo||0);
+    // saldo calculado en tiempo real (igual que el total mostrado), para evitar mostrar valor desactualizado de BD
+    const _totalCalc = calcularTotal(p, extras, window._pagosSuministros?.[p.id]);
+    const saldoReal = Math.max(0, _totalCalc - (p.pagado_importe||0));
     const excedente = (p.pagado_importe||0) > (p.total||0) ? Math.round(((p.pagado_importe||0) - (p.total||0)) * 100) / 100 : 0;
     const extrasGralLabel = extrasGral.length > 0 ? extrasGral.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
     const extrasMesLabel = extrasMes.length > 0 ? extrasMes.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
-    const rowClass = saldoReal > 0 ? (p.saldo > 0 ? getRowClass(p) : 'row-parcial') : getRowClass(p);
+    const rowClass = saldoReal > 0 ? getRowClass(p) : (p.saldo > 0 ? 'row-parcial' : getRowClass(p));
 
     return `<tr class="${rowClass}" id="row-${p.id}" 
       onclick="editarMes('${c.hoja}',${c.id},'${p.mes?.substring(0,7)}')" 
@@ -1831,9 +1832,9 @@ function renderGrilla(c) {
       ${serviciosInquilino.expensas?`<td class="num col-mobile-hide">${getMonto('expensas')>0?formatMoney(getMonto('expensas')):'—'}</td>`:''}
       <td class="col-mobile-hide" style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasGralLabel}">${totalExtrasGral > 0 ? formatMoney(totalExtrasGral) : '—'}</td>
       <td class="col-mobile-hide" style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasMesLabel}">${totalExtrasMes > 0 ? formatMoney(totalExtrasMes) : '—'}</td>
-      <td class="num" id="total-${p.id}"><strong>${formatMoney(calcularTotal(p, extras, window._pagosSuministros?.[p.id]))}</strong></td>
+      <td class="num" id="total-${p.id}"><strong>${formatMoney(_totalCalc)}</strong></td>
       <td class="num col-mobile-hide" id="abonado-${p.id}">${(() => { const ab = p.pagado_importe || (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
-      <td class="num" id="saldo-${p.id}">${(()=>{const _exc=(p.pagado_importe||0)-calcularTotal(p,extras,window._pagosSuministros?.[p.id]);return _exc>0.01?`<span style="color:var(--green);font-weight:700">+${formatMoney(_exc)}</span>`:saldoReal>0?`<span class="saldo-pendiente">${formatMoney(saldoReal)}</span>`:'<span class="saldo-ok">✓</span>';})()}</td>
+      <td class="num" id="saldo-${p.id}">${(()=>{const _exc=(p.pagado_importe||0)-_totalCalc;return _exc>0.01?`<span style="color:var(--green);font-weight:700">+${formatMoney(_exc)}</span>`:saldoReal>0?`<span class="saldo-pendiente">${formatMoney(saldoReal)}</span>`:'<span class="saldo-ok">✓</span>';})()}</td>
       <td id="estado-${p.id}">${getEstadoLabel(p)}</td>
       <td onclick="event.stopPropagation()">
         <div class="grid-actions">
