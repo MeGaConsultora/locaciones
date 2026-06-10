@@ -5365,7 +5365,12 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     }
   }
 
-  const nuevoSaldo = Math.round(Math.max(0, (p.saldo||0) - montoRegular) * 100) / 100;
+  // Calcular nuevoSaldo desde el total real (con extras) para evitar saldos ficticios
+  const extrasP = extrasActuales[p.id]||[];
+  const psDataP = window._pagosSuministros?.[p.id];
+  const totalReal = calcularTotal(p, extrasP, psDataP);
+  const yaAbonadoReal = (p.pagado_importe||0) + montoRegular;
+  const nuevoSaldo = Math.round(Math.max(0, totalReal - yaAbonadoReal) * 100) / 100;
   const nroMes = pagosActuales.findIndex(x=>x.id===p.id)+1;
   const fechaMovimiento = document.getElementById('gp-fecha-pago')?.value || TODAY;
 
