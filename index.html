@@ -5968,6 +5968,31 @@ async function imprimirHistorial(contratoId) {
     return true;
   });
 
+  // Cargar pagos_suministros y pagos_extras para recalcular totales correctamente
+  const pagoIds = pagos.map(p => p.id);
+  let psMap = {}, extrasMap = {};
+  if (pagoIds.length) {
+    const [psRows, extrasRows] = await Promise.all([
+      sbGet('pagos_suministros', `pago_id=in.(${pagoIds.join(',')})&select=pago_id,suministro_id,importe`).catch(() => []),
+      sbGet('pagos_extras', `pago_id=in.(${pagoIds.join(',')})&select=pago_id,importe,a_cargo_de,tipo`).catch(() => [])
+    ]);
+    psRows.forEach(ps => {
+      if (!psMap[ps.pago_id]) psMap[ps.pago_id] = 0;
+      psMap[ps.pago_id] += (ps.importe || 0);
+    });
+    extrasRows.forEach(e => {
+      if (!extrasMap[e.pago_id]) extrasMap[e.pago_id] = 0;
+      if (e.a_cargo_de === 'propietario') return;
+      extrasMap[e.pago_id] += (e.tipo === 'credito' ? -1 : 1) * (parseFloat(e.importe) || 0);
+    });
+  }
+
+  const calcularTotalHistorial = p => {
+    const servicios = psMap[p.id] > 0 ? psMap[p.id]
+      : (p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0);
+    return Math.round(((p.importe_alquiler||0) + servicios + (extrasMap[p.id]||0)) * 100) / 100;
+  };
+
   const fmtFecha = str => {
     if (!str) return '—';
     const d = str.split('T')[0].split('-');
@@ -5982,8 +6007,9 @@ async function imprimirHistorial(contratoId) {
   const fmt = n => n > 0 ? '$ ' + Number(n).toLocaleString('es-AR', {minimumFractionDigits:2,maximumFractionDigits:2}) : (n < 0 ? '$ -' + Math.abs(Number(n)).toLocaleString('es-AR', {minimumFractionDigits:2,maximumFractionDigits:2}) : '—');
 
   const filasResumen = pagos.map(p => {
+    const totalCalc = calcularTotalHistorial(p);
+    const abonado = p.pagado_importe || Math.max(0, totalCalc - (p.saldo||0));
     const pend = p.saldo && p.saldo > 0;
-    const abonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
     return `<tr class="${pend?'impago':'pagado'}">
       <td><strong>${fmtMes(p.mes)}</strong></td>
       <td>${fmtFecha(p.fecha_pago_hasta)}</td>
@@ -5993,7 +6019,7 @@ async function imprimirHistorial(contratoId) {
       <td class="r">${fmt(p.monto_tgiu)}</td>
       <td class="r">${fmt(p.monto_seguro)}</td>
       <td class="r">${fmt(p.monto_otros)}</td>
-      <td class="r"><strong>${fmt(p.total)}</strong></td>
+      <td class="r"><strong>${fmt(totalCalc)}</strong></td>
       <td class="r" style="color:${abonado>0?'#2d7a4f':'#888'};font-weight:${abonado>0?700:400}">${abonado>0?fmt(abonado):'—'}</td>
       <td class="r" style="${pend?'color:#c8483a;font-weight:700':'color:#2d7a4f'}">${pend?fmt(p.saldo):'✓'}</td>
       <td><span style="font-size:0.72rem;font-weight:600;padding:2px 8px;border-radius:100px;background:${pend?'#f8d7da':'#d4edda'};color:${pend?'#721c24':'#155724'}">${pend?'Pendiente':'Pagado'}</span></td>
