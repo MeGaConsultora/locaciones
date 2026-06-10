@@ -1938,10 +1938,25 @@ function calcularTotal(p, extras, psData) {
     const importe = parseFloat(e.importe)||0;
     return (e.tipo === 'descuento' || e.tipo === 'credito') ? s - importe : s + importe;
   }, 0);
-  // Usar pagos_suministros si disponible, sino sistema viejo
-  let servicios;
+  // Calcular servicios: usar pagos_suministros para los tipos que tienen datos,
+  // y completar con sistema viejo (monto_xxx) para los tipos que no están en psData
+  let servicios = 0;
   if (psData && Object.keys(psData).length > 0) {
+    // Sumar lo que hay en pagos_suministros
     servicios = Object.values(psData).reduce((s, v) => s + (typeof v === 'object' ? (v.inq||0) : (v||0)), 0);
+    // Detectar qué tipos están cubiertos por pagos_suministros
+    const tiposCubiertos = new Set();
+    Object.keys(psData).forEach(sumId => {
+      const sum = DB_SUMINISTROS?.find(x => x.id === parseInt(sumId));
+      if (sum?.tipo) tiposCubiertos.add(sum.tipo);
+    });
+    // Completar con sistema viejo solo para tipos NO cubiertos
+    const srvViejos = ['epe','agua','tgiu','seguro','internet','expensas'];
+    srvViejos.forEach(srv => {
+      if (!tiposCubiertos.has(srv) && p['monto_'+srv]) {
+        servicios += (p['monto_'+srv]||0);
+      }
+    });
   } else {
     servicios = (p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0);
   }
