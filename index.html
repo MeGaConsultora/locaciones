@@ -4009,6 +4009,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
     const mes = mesKey+'-01';
     const pagosDelMes = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
     p = pagosDelMes.length > 0 ? pagosDelMes[0] : null;
+    window._gpPagoActual = p; // para cálculo de intereses punitorios
   } catch(e) {}
 
   let extrasDelMes = [];
@@ -4604,8 +4605,14 @@ function recalcIntereses() {
   const c = window._gpContratoActual;
   const alquiler = parseMonto(document.getElementById('gp-alquiler')?.value);
   if (!c || !fechaPago || !vence || !alquiler) return;
-  
-  const interes = calcularIntereses(alquiler, vence, fechaPago, c.interes_punitorio||0);
+
+  // Punitorios solo sobre saldo pendiente de alquiler (no servicios ni extras)
+  const p = window._gpPagoActual;
+  const pagadoImporte = p?.pagado_importe || 0;
+  const saldoAlquiler = Math.max(0, alquiler - pagadoImporte);
+  const baseIntereses = saldoAlquiler > 0 ? saldoAlquiler : alquiler;
+
+  const interes = calcularIntereses(baseIntereses, vence, fechaPago, c.interes_punitorio||0);
   const infoEl = document.getElementById('gp-interes-info');
   const labelEl = document.getElementById('gp-interes-label');
   const chkEl = document.getElementById('gp-interes-chk');
