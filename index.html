@@ -1968,7 +1968,15 @@ async function recalcularFilaPago(pagoId) {
     p = pagosActuales.find(x => x.id === pagoId);
   }
   if (!p) return;
-  const extras = extrasActuales[pagoId]||[];
+  // Leer extras frescos de BD (no usar memoria para evitar datos desactualizados)
+  let extras = extrasActuales[pagoId]||[];
+  try {
+    const extrasDB = await sbGet('pagos_extras', `pago_id=eq.${pagoId}`);
+    if (extrasDB.length) {
+      extras = extrasDB;
+      extrasActuales[pagoId] = extrasDB; // sincronizar memoria también
+    }
+  } catch(e) { /* fallback a memoria */ }
   const psData = window._pagosSuministros?.[p.id];
   const total = calcularTotal(p, extras, psData);
   // pagado_importe es inmutable — saldo = total - pagado_importe
@@ -3534,6 +3542,20 @@ async function guardarExtrasGral() {
       } else {
         await sbPost('pagos_extras', body);
       }
+      // Recalcular total y saldo del pago
+      const pagoActualizado = (await sbGet('pagos', `id=eq.${pagoId}&limit=1`))[0];
+      if (pagoActualizado) {
+        const todosExtras = await sbGet('pagos_extras', `pago_id=eq.${pagoId}`);
+        const extrasTotal = todosExtras
+          .filter(e => e.a_cargo_de !== 'propietario')
+          .reduce((s,e) => s + ((e.tipo==='credito' ? -1 : 1) * (parseFloat(e.importe)||0)), 0);
+        const servicios = await getTotalServiciosPago(pagoId, null, 0);
+        const newTotal = (pagoActualizado.importe_alquiler||0) + servicios + extrasTotal;
+        const pagadoImporte = pagoActualizado.pagado_importe || 0;
+        const newSaldo = Math.max(0, newTotal - pagadoImporte);
+        const newPagado = newSaldo <= 0 ? 'SI' : (pagadoImporte > 0 ? 'PARCIAL' : (pagoActualizado.pagado||'NO'));
+        await sbPatch('pagos', pagoId, { total: newTotal, saldo: newSaldo, pagado: newPagado });
+      }
       guardados++;
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -4729,6 +4751,10 @@ async function eliminarExtraGP(extraId, hoja, contratoId, mesKey, comisionPct) {
   try {
     await sbDelete('pagos_extras', extraId);
     document.getElementById(`gp-extra-${extraId}`)?.remove();
+    // Recalcular total y saldo del pago
+    const mesStr = mesKey + '-01';
+    const pagos = await sbGet('pagos', `hoja=eq.${encodeURIComponent(hoja)}&mes=eq.${mesStr}&limit=1`);
+    if (pagos.length) await recalcularFilaPago(pagos[0].id);
     toast('Concepto eliminado ✓');
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
