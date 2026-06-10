@@ -4608,9 +4608,10 @@ function recalcIntereses() {
 
   // Punitorios solo sobre saldo pendiente de alquiler (no servicios ni extras)
   const p = window._gpPagoActual;
-  const pagadoImporte = p?.pagado_importe || 0;
-  const saldoAlquiler = Math.max(0, alquiler - pagadoImporte);
-  const baseIntereses = saldoAlquiler > 0 ? saldoAlquiler : alquiler;
+  const pagadoImporte = p?.pagado_importe ?? null;
+  // Si nunca pagó nada (null), base = alquiler completo
+  // Si pagó algo, base = max(0, alquiler - pagado) — puede ser 0 si ya cubrió el alquiler
+  const baseIntereses = pagadoImporte === null ? alquiler : Math.max(0, alquiler - pagadoImporte);
 
   const interes = calcularIntereses(baseIntereses, vence, fechaPago, c.interes_punitorio||0);
   const infoEl = document.getElementById('gp-interes-info');
