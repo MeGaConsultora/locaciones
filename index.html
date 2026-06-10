@@ -1810,7 +1810,7 @@ function renderGrilla(c) {
     const totalExtras = totalExtrasGral + totalExtrasMes;
     // saldo calculado en tiempo real (igual que el total mostrado), para evitar mostrar valor desactualizado de BD
     const _totalCalc = calcularTotal(p, extras, window._pagosSuministros?.[p.id]);
-    const saldoReal = Math.max(0, _totalCalc - (p.pagado_importe||0));
+    const saldoReal = Math.max(0, Math.round((_totalCalc - (p.pagado_importe||0)) * 100) / 100);
     const excedente = (p.pagado_importe||0) > (p.total||0) ? Math.round(((p.pagado_importe||0) - (p.total||0)) * 100) / 100 : 0;
     const extrasGralLabel = extrasGral.length > 0 ? extrasGral.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
     const extrasMesLabel = extrasMes.length > 0 ? extrasMes.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
