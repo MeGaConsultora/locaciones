@@ -9880,18 +9880,18 @@ async function generarRecibosSeleccionados() {
       .btn-imprimir { background:#1a1a2e; color:white; }
       .btn-confirmar { background:#2d7a4f; color:white; }
       .btn-cancelar { background:#f0ece4; color:#666; }
-      .recibo-wrap { width:190mm; }
+      .recibo-wrap { width:190mm; margin:0 auto; }
       .recibo-mitad { width:190mm; height:143mm; overflow:hidden; background:white; position:relative; }
       .recibo-mitad.recibo-original { border-bottom: 2px dashed #bbb; }
       .recibo-label { padding:4px 18px; font-size:0.7rem; color:#1a1a2e; text-transform:uppercase; letter-spacing:.08em; font-weight:700; background:#f0ece4; border-bottom:1px solid #ddd; }
       .recibo-inner { transform-origin:top left; padding:6px 18px 10px; }
-      .separador { width:190mm; border:none; border-top:2px dashed #999; margin:0; }
+      .separador { width:190mm; border:none; border-top:2px dashed #999; margin:0 auto; }
       @page { size: A4 portrait; margin: 5mm; }
       @media print {
         html, body { width:200mm; background:white; padding:0; margin:0; display:block; }
         .no-print { display:none; }
-        .recibo-wrap { width:200mm; }
-        .recibo-mitad { width:200mm; height:143mm; page-break-inside:avoid; }
+        .recibo-wrap { width:190mm; margin:0 auto; }
+        .recibo-mitad { height:143mm; page-break-inside:avoid; }
         .separador { display:block; }
       }
     </style>
