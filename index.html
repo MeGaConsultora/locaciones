@@ -9882,11 +9882,17 @@ async function generarRecibosSeleccionados() {
       .btn-imprimir { background:#1a1a2e; color:white; }
       .btn-confirmar { background:#2d7a4f; color:white; }
       .btn-cancelar { background:#f0ece4; color:#666; }
-      .recibo-mitad { width:194mm; height:135mm; overflow:hidden; background:white; }
-      .recibo-inner { transform-origin:top left; padding:8px 18px; }
-      .separador { width:194mm; border:none; border-top:2px dashed #999; margin:0; }
-      @page { size: A4 portrait; margin: 8mm 10mm; }
-      @media print { .no-print { display:none; } }
+      .recibo-mitad { width:190mm; height:143mm; overflow:hidden; background:white; position:relative; }
+      .recibo-mitad.recibo-original { border-bottom: 2px dashed #bbb; }
+      .recibo-inner { transform-origin:top left; padding:6px 18px 10px; }
+      .separador { width:190mm; border:none; border-top:2px dashed #999; margin:0; }
+      @page { size: A4 portrait; margin: 5mm; }
+      @media print {
+        html, body { width:200mm; background:white; padding:0; margin:0; display:block; }
+        .no-print { display:none; }
+        .recibo-mitad { height:143mm; page-break-inside:avoid; }
+        .separador { display:block; }
+      }
     </style>
   </head><body>
     <div class="no-print">
