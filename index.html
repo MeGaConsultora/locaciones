@@ -2015,20 +2015,6 @@ async function recalcularFilaPago(pagoId) {
   p.total = total;
   p.saldo = saldoFinal;
 
-  // Si hay excedente (pagó más de lo que debía), aplicar al mes siguiente
-  if (nuevoSaldo < 0) {
-    const excedente = Math.abs(nuevoSaldo);
-    const todosLosPagos = await sbGet('pagos', `hoja=eq.${encodeURIComponent(p.hoja)}&order=mes.asc`);
-    const siguiente = todosLosPagos.find(x => x.mes > p.mes);
-    if (siguiente) {
-      const nuevoSaldoSig = Math.round(Math.max(0, (siguiente.saldo||0) - excedente) * 100) / 100;
-      const pagadoSig = nuevoSaldoSig === 0 ? 'SI' : (((siguiente.total||0) - nuevoSaldoSig) > 0 ? 'PARCIAL' : 'NO');
-      await sbPatch('pagos', siguiente.id, { saldo: nuevoSaldoSig, pagado: pagadoSig });
-      toast(`Excedente de ${formatMoney(excedente)} aplicado al mes siguiente ✓`);
-    } else {
-      toast(`⚠ Saldo a favor del inquilino: ${formatMoney(excedente)} — No hay mes siguiente para acreditar`);
-    }
-  }
   // Update DOM
   const totalEl = document.getElementById(`total-${pagoId}`);
   if (totalEl) totalEl.innerHTML = `<strong>${formatMoney(total)}</strong>`;
@@ -5304,10 +5290,12 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     .reduce((s, chk) => s + (parseFloat(chk.value)||0), 0);
   const maxPagable = Math.max((p.total||0) - yaAbonado, 0) + extrasPendientes;
   const totalSinHonorarios = totalCobrado - honorariosCobrado;
-  if (totalSinHonorarios > maxPagable + 0.01) {
-    toast(`El cobro ($${formatMoney(totalCobrado)}) supera el saldo pendiente ($${formatMoney(maxPagable)}). Ajustá el importe.`, 'error');
-    return;
-  }
+  // Excedente: lo que pagó el inquilino por encima del total real del mes
+  const extrasActP = extrasActuales[p.id]||[];
+  const psDataActP = window._pagosSuministros?.[p.id];
+  const totalRealMes = calcularTotal(p, extrasActP, psDataActP);
+  const yaAbonadoAntes = p.pagado_importe || 0;
+  const excedente = Math.round(Math.max(0, (yaAbonadoAntes + totalSinHonorarios) - totalRealMes) * 100) / 100;
   
   // Add interest if checked
   const interesChk = document.getElementById('gp-interes-chk');
@@ -5429,6 +5417,32 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   } catch(e) { console.warn('movimientos_pagos no guardado:', e); }
 
   toast('Cobro registrado ✓');
+
+  // Si hay excedente, crear extra crédito en mes siguiente
+  if (excedente > 0) {
+    const todosLosPagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc&limit=500`);
+    const siguientePago = todosLosPagos.find(x => x.mes > p.mes);
+    if (siguientePago) {
+      const extrasExistentes = await sbGet('pagos_extras', `pago_id=eq.${siguientePago.id}&concepto=eq.Pago a cuenta mes anterior`).catch(()=>[]);
+      if (extrasExistentes.length > 0) {
+        const nuevoImporte = Math.round(((extrasExistentes[0].importe||0) + excedente) * 100) / 100;
+        await sbPatch('pagos_extras', extrasExistentes[0].id, { importe: nuevoImporte });
+      } else {
+        await sbPost('pagos_extras', {
+          pago_id: siguientePago.id,
+          concepto: 'Pago a cuenta mes anterior',
+          importe: Math.round(excedente * 100) / 100,
+          tipo: 'credito',
+          a_cargo_de: 'inquilino'
+        });
+      }
+      // Ajustar pagado_importe del mes actual para no incluir el excedente
+      await sbPatch('pagos', p.id, { pagado_importe: Math.round(totalRealMes * 100) / 100 });
+      toast(`Excedente de ${formatMoney(excedente)} acreditado al mes siguiente ✓`);
+    } else {
+      toast(`⚠ Saldo a favor del inquilino: ${formatMoney(excedente)} — No hay mes siguiente para acreditar`);
+    }
+  }
 
   // Save honorarios pagado if ticked
   const honChk = document.getElementById('cobro-chk-honorarios');
@@ -7263,20 +7277,25 @@ async function confirmarPago(pagoId, hoja, nroMes) {
 
     toast('Pago registrado ✓');
 
-    // Aviso si hay excedente
+    // Si hay excedente, crear extra crédito en mes siguiente
     if (excedente > 0) {
-      // Check if there's a next month
       const siguientePago = pagos.find(p => p.mes > pagoActual.mes && p.hoja === hoja);
       if (siguientePago) {
-        // Apply as pago a cuenta for next month
-        const nuevoSaldoSig = Math.round(Math.max(0, (siguientePago.saldo||0) - excedente) * 100) / 100;
-        await sbPatch('pagos', siguientePago.id, {
-          saldo: nuevoSaldoSig,
-          pagado: nuevoSaldoSig === 0 ? 'SI' : 'PARCIAL'
-        });
-        toast(`Excedente de ${formatMoney(excedente)} aplicado como pago a cuenta de ${siguientePago.mes?.substring(0,7)} ✓`);
+        const extrasExistentes = await sbGet('pagos_extras', `pago_id=eq.${siguientePago.id}&concepto=eq.Pago a cuenta mes anterior`).catch(()=>[]);
+        if (extrasExistentes.length > 0) {
+          const nuevoImporte = Math.round(((extrasExistentes[0].importe||0) + excedente) * 100) / 100;
+          await sbPatch('pagos_extras', extrasExistentes[0].id, { importe: nuevoImporte });
+        } else {
+          await sbPost('pagos_extras', {
+            pago_id: siguientePago.id,
+            concepto: 'Pago a cuenta mes anterior',
+            importe: Math.round(excedente * 100) / 100,
+            tipo: 'credito',
+            a_cargo_de: 'inquilino'
+          });
+        }
+        toast(`Excedente de ${formatMoney(excedente)} acreditado al mes siguiente ✓`);
       } else {
-        // Last month - show credit notice
         toast(`⚠ Saldo a favor del inquilino: ${formatMoney(excedente)} — No hay mes siguiente para acreditar`);
       }
     }
