@@ -9628,7 +9628,8 @@ async function confirmarImportarPDF() {
           const hasInqPortion = sums.some(s => (s.pct_inquilino||0) > 0);
           if (hasInqPortion) {
             await sbDeleteWhere('pagos_pdf', `pago_id=eq.${p.id}&servicio=eq.${srv}`);
-            await sbPost('pagos_pdf', { pago_id: p.id, servicio: srv, pdf_path: window._pdfFileName, pdf_pagina: r.pagina });
+            const sumInq = sums.find(s => (s.pct_inquilino||0) > 0);
+            await sbPost('pagos_pdf', { pago_id: p.id, servicio: srv, pdf_path: window._pdfFileName, pdf_pagina: r.pagina, suministro_id: sumInq?.id || null });
           }
         }
       }
