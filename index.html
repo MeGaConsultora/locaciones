@@ -1942,10 +1942,33 @@ function calcularTotal(p, extras, psData) {
     const importe = parseFloat(e.importe)||0;
     return (e.tipo === 'descuento' || e.tipo === 'credito') ? s - importe : s + importe;
   }, 0);
-  // Usar pagos_suministros si disponible, sino sistema viejo
   let servicios;
   if (psData && Object.keys(psData).length > 0) {
+    // Sumar pagos_suministros
     servicios = Object.values(psData).reduce((s, v) => s + (typeof v === 'object' ? (v.inq||0) : (v||0)), 0);
+    // Detectar tipos cubiertos por pagos_suministros
+    const tiposCubiertos = new Set();
+    Object.keys(psData).forEach(sumId => {
+      const sum = (DB_SUMINISTROS||[]).find(x => x.id === parseInt(sumId));
+      if (sum?.tipo) tiposCubiertos.add(sum.tipo);
+    });
+    // Para tipos NO cubiertos, usar monto_xxx solo si el contrato tiene ese suministro
+    // con pct_inquilino > 0 (evita sumar datos residuales del sistema viejo)
+    const contratoId = (DB?.contratos||[]).find(c => c.hoja === p.hoja)?.id;
+    const srvViejos = ['epe','agua','tgiu','seguro','internet','expensas'];
+    srvViejos.forEach(srv => {
+      if (tiposCubiertos.has(srv)) return; // ya cubierto por pagos_suministros
+      if (!(p['monto_'+srv] > 0)) return; // sin valor en sistema viejo
+      if (!contratoId) return; // no se pudo identificar el contrato
+      // Buscar suministro del tipo en el contrato con pct_inquilino > 0
+      const sum = (DB_SUMINISTROS||[]).find(s => 
+        parseInt(s.contrato_id) === contratoId && s.tipo === srv && (s.pct_inquilino||0) > 0
+      );
+      if (sum) {
+        // monto_xxx ya viene con el porcentaje aplicado, sumar directo
+        servicios += (p['monto_'+srv]||0);
+      }
+    });
   } else {
     servicios = (p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0);
   }
