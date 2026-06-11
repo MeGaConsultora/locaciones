@@ -1810,7 +1810,11 @@ function renderGrilla(c) {
     const totalExtras = totalExtrasGral + totalExtrasMes;
     // saldo calculado en tiempo real (igual que el total mostrado), para evitar mostrar valor desactualizado de BD
     const _totalCalc = calcularTotal(p, extras, window._pagosSuministros?.[p.id]);
-    const saldoReal = Math.max(0, Math.round((_totalCalc - (p.pagado_importe||0)) * 100) / 100);
+    // Si pagado='SI' o saldo=0 en BD, confiar en BD (evita saldos falsos por datos históricos inconsistentes)
+    // Solo recalcular en tiempo real para pagos pendientes o parciales
+    const saldoReal = (p.pagado === 'SI' || (p.saldo||0) === 0)
+      ? 0
+      : Math.max(0, Math.round((_totalCalc - (p.pagado_importe||0)) * 100) / 100);
     const excedente = (p.pagado_importe||0) > (p.total||0) ? Math.round(((p.pagado_importe||0) - (p.total||0)) * 100) / 100 : 0;
     const extrasGralLabel = extrasGral.length > 0 ? extrasGral.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
     const extrasMesLabel = extrasMes.length > 0 ? extrasMes.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
@@ -1938,23 +1942,10 @@ function calcularTotal(p, extras, psData) {
     const importe = parseFloat(e.importe)||0;
     return (e.tipo === 'descuento' || e.tipo === 'credito') ? s - importe : s + importe;
   }, 0);
+  // Usar pagos_suministros si disponible, sino sistema viejo
   let servicios;
   if (psData && Object.keys(psData).length > 0) {
-    // Sumar pagos_suministros
     servicios = Object.values(psData).reduce((s, v) => s + (typeof v === 'object' ? (v.inq||0) : (v||0)), 0);
-    // Detectar tipos cubiertos por pagos_suministros (cruzando suministro_id con DB_SUMINISTROS)
-    const tiposCubiertos = new Set();
-    Object.keys(psData).forEach(sumId => {
-      const sum = (typeof DB_SUMINISTROS !== 'undefined' ? DB_SUMINISTROS : []).find(x => x.id === parseInt(sumId));
-      if (sum?.tipo) tiposCubiertos.add(sum.tipo);
-    });
-    // Para tipos NO cubiertos por pagos_suministros, completar con monto_xxx del sistema viejo
-    const srvViejos = ['epe','agua','tgiu','seguro','internet','expensas'];
-    srvViejos.forEach(srv => {
-      if (!tiposCubiertos.has(srv) && (p['monto_'+srv]||0) > 0) {
-        servicios += (p['monto_'+srv]||0);
-      }
-    });
   } else {
     servicios = (p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0);
   }
