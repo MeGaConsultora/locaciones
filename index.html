@@ -6768,8 +6768,8 @@ async function guardarContrato() {
     gastos_inicio: parseFloat(document.getElementById('f-gastos-inicio')?.value)||0,
     gastos_cuotas: parseInt(document.getElementById('f-gastos-cuotas')?.value)||1,
     gastos_desde_mes: document.getElementById('f-gastos-desde')?.value ? document.getElementById('f-gastos-desde').value+'-01' : (vigDesde||null),
-    gastos_pct_inquilino: parseFloat(document.getElementById('f-gastos-pct-inq')?.value)??100,
-    gastos_pct_propietario: parseFloat(document.getElementById('f-gastos-pct-prop')?.value)??0,
+    gastos_pct_inquilino: (() => { const v = parseFloat(document.getElementById('f-gastos-pct-inq')?.value); return isNaN(v) ? 100 : v; })(),
+    gastos_pct_propietario: (() => { const v = parseFloat(document.getElementById('f-gastos-pct-prop')?.value); return isNaN(v) ? 0 : v; })(),
   };
 
   try {
@@ -6893,8 +6893,8 @@ async function actualizarContrato(id) {
     gastos_inicio: parseFloat(document.getElementById('f-gastos-inicio')?.value)||0,
     gastos_cuotas: parseInt(document.getElementById('f-gastos-cuotas')?.value)||1,
     gastos_desde_mes: document.getElementById('f-gastos-desde')?.value ? document.getElementById('f-gastos-desde').value+'-01' : (document.getElementById('f-desde')?.value||null),
-    gastos_pct_inquilino: parseFloat(document.getElementById('f-gastos-pct-inq')?.value)??100,
-    gastos_pct_propietario: parseFloat(document.getElementById('f-gastos-pct-prop')?.value)??0,
+    gastos_pct_inquilino: (() => { const v = parseFloat(document.getElementById('f-gastos-pct-inq')?.value); return isNaN(v) ? 100 : v; })(),
+    gastos_pct_propietario: (() => { const v = parseFloat(document.getElementById('f-gastos-pct-prop')?.value); return isNaN(v) ? 0 : v; })(),
     servicios_inquilino: suministrosToServiciosStr(leerSuministros())||null,
     servicios_rendir_propietario: leerSuministros().filter(s=>s.propietario_persona_id).map(s=>s.nombre||s.tipo).join(', ')||null,
     dia_vencimiento: parseInt(document.getElementById('f-dia-venc')?.value)||10,
@@ -10465,8 +10465,13 @@ function leerSuministros() {
       tipo: inputs[0]?.value,
       nro_cuenta: inputs[1]?.value.trim() || null,
       nombre: inputs[1]?.value.trim() || null,
-      pct_inquilino: parseFloat(inputs[2]?.value) ?? 100,
-      pct_propietario: parseFloat(inputs[3]?.value) ?? 0,
+      pct_inquilino: (() => {
+        const v = parseFloat(inputs[2]?.value);
+        if (!isNaN(v)) return v;
+        const vProp = parseFloat(inputs[3]?.value);
+        return !isNaN(vProp) ? 0 : 100; // si prop tiene valor, inq=0; si ambos vacios, inq=100
+      })(),
+      pct_propietario: (() => { const v = parseFloat(inputs[3]?.value); return isNaN(v) ? 0 : v; })(),
       descuenta_persona_id: parseInt(inputs[4]?.value) || null,
       monto_fijo: parseMonto(inputs[5]?.value) || null,
       propietario_persona_id: parseInt(inputs[6]?.value) || null,
