@@ -275,16 +275,33 @@
   @keyframes toastIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
 
   @media(max-width:600px) { 
-    main { padding:1rem; } 
-    .stats-row { grid-template-columns:1fr 1fr; } 
+    main { padding:0.6rem; overflow-x:hidden; }
+    .stats-row { grid-template-columns:1fr 1fr; }
     .col-mobile-hide { display:none !important; } 
     .pagos-table td, .pagos-table th { padding:5px 6px; font-size:0.72rem; }
-    .modal-header { padding:1rem 1.2rem; }
+    .modal-overlay { padding:0; }
+    .modal-header { padding:1rem 1.2rem; flex-wrap:wrap; }
     .modal-body { padding:1rem; }
     .modal-box { margin:0.5rem; }
+    .modal { width:100%; max-width:100%; max-height:100vh; border-radius:0; }
     .form-group { margin-bottom:0.8rem; }
+    .form-grid { grid-template-columns:1fr; gap:0.6rem; }
     .form-actions { flex-wrap:wrap; gap:0.5rem; }
     .form-actions button { flex:1; min-width:120px; }
+
+    /* Toolbars / acciones de encabezado: que se acomoden de forma prolija */
+    .toolbar { gap:0.5rem; }
+    .toolbar > * { flex:1 1 auto; min-width:0; }
+    .toolbar .btn { flex:1 1 auto; justify-content:center; padding:0.6rem 0.8rem; font-size:0.8rem; }
+    .toolbar input, .toolbar select { width:100%; min-width:0; box-sizing:border-box; }
+    .toolbar .results-count { flex:0 0 100%; text-align:center; }
+
+    /* Tablas: scroll horizontal en vez de desbordar la pantalla */
+    .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; max-width:100%; }
+    .table-wrap table { min-width:560px; }
+
+    /* Cualquier contenido ancho dentro de modales/paneles: scroll horizontal contenido */
+    .modal-body, .panel, #panel-dashboard, .chart-card { max-width:100%; overflow-x:auto; box-sizing:border-box; }
   }
 
   /* SOLAPAS */
