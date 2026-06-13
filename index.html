@@ -306,6 +306,16 @@
 
     /* Cualquier contenido ancho dentro de modales/paneles: scroll horizontal contenido */
     .modal-body, .panel, #panel-dashboard, .chart-card { max-width:100%; overflow-x:auto; box-sizing:border-box; }
+
+    /* Informes de servicios (EPE/Agua/TGIU a abonar) */
+    #panel-srv-informe .toolbar select.filter-select,
+    #panel-srv-informe .toolbar input.search-input {
+      width:100% !important; box-sizing:border-box;
+    }
+    #panel-srv-informe #srv-inf-titulo { flex:1 1 100%; }
+    #srv-inf-totales { flex-wrap:wrap; gap:0.5rem 1.5rem; }
+    #srv-inf-contenido { overflow-x:auto; -webkit-overflow-scrolling:touch; max-width:100%; }
+    #srv-inf-contenido table { min-width:600px; }
   }
 
   /* SOLAPAS */
