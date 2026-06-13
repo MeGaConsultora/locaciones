@@ -43,6 +43,17 @@
     .sync-btn { font-size:0.75rem; padding:5px 8px; }
     #user-name { display:none; }
     #sync-status { display:none; }
+    /* Submenus: en mobile se apilan hacia abajo en vez de abrirse a la derecha (se salen de pantalla) */
+    .tab-dropdown-menu { left:auto; right:0; max-width:92vw; max-height:75vh; overflow-y:auto; }
+    .tab-dropdown-menu .submenu-items,
+    .submenu-nivel3 > .submenu-items {
+      display:none !important;
+      position:static !important; left:auto !important; top:auto !important;
+      box-shadow:none; border-radius:0; margin-left:0.75rem; border-left:2px solid var(--accent);
+    }
+    .tab-dropdown-menu .submenu-wrap.open > .submenu-items {
+      display:block !important;
+    }
   }
   .sync-btn {
     background:rgba(255,255,255,0.12); border:none; color:var(--cream);
@@ -410,10 +421,10 @@
     <button class="tab-btn" onclick="toggleInformesMenu(event)">⚙️ Gestión ▾</button>
     <div class="tab-dropdown-menu" id="informes-menu" style="display:none">
       <div class="submenu-wrap">
-        <div class="submenu-header">📊 Informes ▸</div>
+        <div class="submenu-header" onclick="toggleSubmenuMobile(event)">📊 Informes ▸</div>
         <div class="submenu-items">
           <div class="submenu-wrap submenu-nivel3">
-            <div class="submenu-header">📅 Reportes mensuales ▸</div>
+            <div class="submenu-header" onclick="toggleSubmenuMobile(event)">📅 Reportes mensuales ▸</div>
             <div class="submenu-items">
               <button onclick="selectInforme('mensual')">📋 Totalizados</button>
               <button onclick="selectInforme('srv-epe')">⚡ EPE a abonar</button>
@@ -425,11 +436,11 @@
         </div>
       </div>
       <div class="submenu-wrap">
-        <div class="submenu-header">⚡ Servicios ▸</div>
+        <div class="submenu-header" onclick="toggleSubmenuMobile(event)">⚡ Servicios ▸</div>
         <div class="submenu-items">
           <button onclick="abrirCargarServicios()">⚡ Cargar servicios del mes</button>
           <div class="submenu-wrap submenu-nivel3">
-            <div class="submenu-header">📥 Importar ▸</div>
+            <div class="submenu-header" onclick="toggleSubmenuMobile(event)">📥 Importar ▸</div>
             <div class="submenu-items">
               <button onclick="abrirImportarAgua()">💧 Agua</button>
               <button onclick="abrirImportarExcel()">🏛️ TGIU</button>
@@ -7591,11 +7602,29 @@ function toggleInformesMenu(e) {
     menu.style.display = 'block';
     menu.style.position = 'fixed';
     menu.style.top = rect.bottom + 'px';
-    menu.style.left = rect.left + 'px';
+    if (window.innerWidth <= 640) {
+      // En mobile: anclar al borde derecho para que no se salga de pantalla
+      menu.style.left = 'auto';
+      menu.style.right = '8px';
+    } else {
+      menu.style.left = rect.left + 'px';
+      menu.style.right = 'auto';
+    }
     menu.style.zIndex = '99999';
     // Move to body to escape overflow clipping
     document.body.appendChild(menu);
   }
+}
+
+function toggleSubmenuMobile(e) {
+  if (window.innerWidth > 640) return; // en desktop se maneja con :hover
+  e.stopPropagation();
+  const wrap = e.currentTarget.parentElement;
+  const wasOpen = wrap.classList.contains('open');
+  // Cerrar hermanos en el mismo nivel
+  const parent = wrap.parentElement;
+  parent.querySelectorAll(':scope > .submenu-wrap.open').forEach(w => { if (w !== wrap) w.classList.remove('open'); });
+  wrap.classList.toggle('open', !wasOpen);
 }
 
 function selectInforme(tipo) {
