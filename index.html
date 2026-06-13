@@ -241,9 +241,9 @@
   @media(max-width:768px) { .dashboard-grid { grid-template-columns:1fr; } }
   .chart-card { background:white; border-radius:12px; box-shadow:var(--shadow); padding:1.4rem; max-width:100%; width:100%; overflow:hidden; box-sizing:border-box; min-width:0; }
   .chart-title { font-family:'DM Serif Display',serif; font-size:1rem; margin-bottom:1rem; }
-  .vbar-chart { display:flex; align-items:flex-end; gap:10px; height:195px; padding:34px 5px 0; overflow-x:auto; width:100%; max-width:100%; box-sizing:border-box; -webkit-overflow-scrolling:touch; }
+  .vbar-chart { display:flex; align-items:flex-end; gap:10px; height:210px; padding:42px 5px 0; overflow-x:auto; overflow-y:visible; width:100%; max-width:100%; box-sizing:border-box; -webkit-overflow-scrolling:touch; }
   .vbar-group { display:flex; flex-direction:column; align-items:center; gap:4px; flex-shrink:0; min-width:48px; }
-  .vbar-bars { display:flex; align-items:flex-end; gap:3px; height:140px; }
+  .vbar-bars { display:flex; align-items:flex-end; gap:3px; height:120px; overflow:visible; }
   .vbar { width:14px; border-radius:4px 4px 0 0; position:relative; transition:height 0.5s; }
   .vbar-total { background:var(--green); }
   .vbar-pagado { background:#d8d2c5; }
@@ -1383,7 +1383,7 @@ function renderDashboard() {
       ${ultimosMeses.map(mk => {
         const { total, totTotal, totAbonado } = mesesMap[mk];
         const pct = totTotal > 0 ? Math.round((totAbonado/totTotal)*100) : 0;
-        const hTotal = (total/maxTotal*140).toFixed(0);
+        const hTotal = (total/maxTotal*120).toFixed(0);
         const hPct = (hTotal * pct/100).toFixed(0);
         return `<div class="vbar-group">
           <div class="vbar-bars">
