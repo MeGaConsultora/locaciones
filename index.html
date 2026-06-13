@@ -1256,6 +1256,18 @@ document.addEventListener('click', e => {
   if (!e.target.closest('.header-search')) cerrarBuscadorHeader();
 });
 
+// Cerrar todos los dropdowns de nav al hacer click fuera
+document.addEventListener('click', e => {
+  if (!e.target.closest('#dropdown-informes') && !e.target.closest('#informes-menu')) {
+    const m = document.getElementById('informes-menu');
+    if (m) m.style.display = 'none';
+  }
+  if (!e.target.closest('#dropdown-mantenimiento') && !e.target.closest('#mantenimiento-menu')) {
+    const m = document.getElementById('mantenimiento-menu');
+    if (m) m.style.display = 'none';
+  }
+});
+
 function formatDate(d, showDay=false) {
   if (!d) return '—';
   const [y,m,day] = d.substring(0,10).split('-');
@@ -11436,7 +11448,22 @@ async function exportarBackup() {
       'contrato_suministros','personas','inmuebles','pagos_pdf',
       'pagos_gastos_inicio','contrato_honorarios'
     ];
-    const backup = { fecha: new Date().toISOString(), tablas: {} };
+    const backup = { fecha: new Date().toISOString(), tablas: {}, schema: {} };
+    // Obtener schema de cada tabla via information_schema
+    try {
+      const cols = await sbGet('information_schema/columns',
+        'select=table_name,column_name,data_type,is_nullable,column_default&table_schema=eq.public&order=table_name.asc,ordinal_position.asc&limit=2000'
+      ).catch(() => []);
+      cols.forEach(col => {
+        if (!backup.schema[col.table_name]) backup.schema[col.table_name] = [];
+        backup.schema[col.table_name].push({
+          column: col.column_name,
+          type: col.data_type,
+          nullable: col.is_nullable === 'YES',
+          default: col.column_default
+        });
+      });
+    } catch(e) {}
     for (const tabla of tablas) {
       try {
         let rows = [];
