@@ -230,6 +230,19 @@
   @media(max-width:768px) { .dashboard-grid { grid-template-columns:1fr; } }
   .chart-card { background:white; border-radius:12px; box-shadow:var(--shadow); padding:1.4rem; }
   .chart-title { font-family:'DM Serif Display',serif; font-size:1rem; margin-bottom:1rem; }
+  .vbar-chart { display:flex; align-items:flex-end; gap:10px; height:195px; padding:34px 5px 0; overflow-x:auto; }
+  .vbar-group { display:flex; flex-direction:column; align-items:center; gap:4px; flex-shrink:0; min-width:48px; }
+  .vbar-bars { display:flex; align-items:flex-end; gap:3px; height:140px; }
+  .vbar { width:14px; border-radius:4px 4px 0 0; position:relative; transition:height 0.5s; }
+  .vbar-total { background:var(--green); }
+  .vbar-pagado { background:#d8d2c5; }
+  .vbar-mes { font-size:0.7rem; color:#888; }
+  .vbar-val { font-size:0.65rem; color:#555; position:absolute; left:50%; transform:translateX(-50%); white-space:nowrap; }
+  .vbar-total .vbar-val { top:-32px; }
+  .vbar-pagado .vbar-val { top:-16px; }
+  .vbar-legend { display:flex; gap:16px; justify-content:center; margin-top:8px; font-size:0.78rem; color:#555; }
+  .vbar-legend span { display:inline-flex; align-items:center; gap:5px; }
+  .vbar-legend .dot { width:10px; height:10px; border-radius:3px; display:inline-block; }
   .bar-row { display:flex; align-items:center; gap:0.75rem; margin-bottom:0.6rem; }
   .bar-label { font-size:0.78rem; width:140px; flex-shrink:0; color:#555; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .bar-track { flex:1; background:#f0ece4; border-radius:100px; height:10px; }
@@ -443,7 +456,7 @@
   <div id="panel-dashboard" class="panel active">
     <div class="stats-row" id="stats-row"><div class="loading-overlay">Cargando datos...</div></div>
     <div class="dashboard-grid">
-      <div class="chart-card"><div class="chart-title">Contratos por tipo de inmueble</div><div id="chart-tipos"></div></div>
+      <div class="chart-card"><div class="chart-title">Cantidad de contratos</div><div id="chart-tipos"></div></div>
       <div class="chart-card"><div class="chart-title">Próximos vencimientos (30 días)</div><div id="chart-venc"></div></div>
     </div>
   </div>
@@ -1316,12 +1329,29 @@ function populateFiltros() {
 // DASHBOARD
 // ============================================================
 function renderDashboard() {
-  const vigentes = DB.contratos.filter(c => getEstado(c)==='vigente').length;
   const vencidos = DB.contratos.filter(c => getEstado(c)==='vencido').length;
   const rescindidos = DB.contratos.filter(c => getEstado(c)==='rescindido').length;
   const pendientes = DB.pagos.filter(p => p.saldo && p.saldo > 0 && p.mes && p.mes.substring(0,7) <= TODAY.substring(0,7));
   const totalPendiente = pendientes.reduce((s,p) => s+(p.saldo||0), 0);
   const proxVenc = DB.contratos.filter(c => { if(!c.vigencia_hasta||c.fecha_rescision) return false; const d=daysDiff(c.vigencia_hasta,TODAY); return d>=0&&d<=60; }).length;
+
+  // Grafico: cantidad de contratos con alquiler ese mes, y % cobrado sobre TODOS los pagos del mes
+  const mesesMap = {};
+  DB.pagos.forEach(p => {
+    if (!p.mes) return;
+    const mk = p.mes.substring(0,7);
+    if (mk > TODAY.substring(0,7)) return; // no incluir meses futuros
+    if (!mesesMap[mk]) mesesMap[mk] = { total: 0, totTotal: 0, totAbonado: 0 };
+    const totalReal = p.total || (p.importe_alquiler||0) + (p.monto_epe||0) + (p.monto_agua||0) + (p.monto_tgiu||0) + (p.monto_seguro||0) + (p.monto_internet||0) + (p.monto_expensas||0);
+    const abonado = p.pagado_importe || Math.max(0, totalReal - (p.saldo||0));
+    mesesMap[mk].totTotal += totalReal;
+    mesesMap[mk].totAbonado += abonado;
+    if ((p.importe_alquiler||0) > 0) mesesMap[mk].total++; // conteo de contratos con alquiler
+  });
+  const mesesOrdenados = Object.keys(mesesMap).sort();
+  const ultimosMeses = mesesOrdenados.slice(-12); // ultimos 12 meses
+  const mesActualKey = TODAY.substring(0,7);
+  const vigentes = mesesMap[mesActualKey]?.total || 0;
 
   document.getElementById('stats-row').innerHTML = `
     <div class="stat-card green"><div class="stat-label">Contratos vigentes</div><div class="stat-val">${vigentes}</div><div class="stat-sub">de ${DB.contratos.length} totales</div></div>
@@ -1331,13 +1361,28 @@ function renderDashboard() {
     <div class="stat-card gold"><div class="stat-label">Saldo pendiente</div><div class="stat-val" style="font-size:1.3rem">${formatMoney(totalPendiente)}</div><div class="stat-sub">${pendientes.length} cuotas sin cobrar</div></div>
   `;
 
-  const tiposMap = {};
-  DB.contratos.forEach(c => { const t=normTipo(c.tipo_inmueble); tiposMap[t]=(tiposMap[t]||0)+1; });
-  const tiposSorted = Object.entries(tiposMap).sort((a,b)=>b[1]-a[1]);
-  const maxT = tiposSorted[0]?.[1]||1;
-  document.getElementById('chart-tipos').innerHTML = tiposSorted.map(([t,n]) =>
-    `<div class="bar-row"><div class="bar-label" title="${t}">${t}</div><div class="bar-track"><div class="bar-fill" style="width:${(n/maxT*100).toFixed(1)}%"></div></div><div class="bar-val">${n}</div></div>`
-  ).join('');
+  const mesNombre = mk => { const [y,m] = mk.split('-'); const meses=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']; return meses[parseInt(m)-1]+" '"+y.substring(2); };
+  const maxTotal = Math.max(1, ...ultimosMeses.map(mk => mesesMap[mk].total));
+  document.getElementById('chart-tipos').innerHTML = `
+    <div class="vbar-chart">
+      ${ultimosMeses.map(mk => {
+        const { total, totTotal, totAbonado } = mesesMap[mk];
+        const pct = totTotal > 0 ? Math.round((totAbonado/totTotal)*100) : 0;
+        const hTotal = (total/maxTotal*140).toFixed(0);
+        const hPct = (hTotal * pct/100).toFixed(0);
+        return `<div class="vbar-group">
+          <div class="vbar-bars">
+            <div class="vbar vbar-total" style="height:${hTotal}px"><span class="vbar-val">${total}</span></div>
+            <div class="vbar vbar-pagado" style="height:${hPct}px"><span class="vbar-val">${pct.toFixed(0)}%</span></div>
+          </div>
+          <div class="vbar-mes">${mesNombre(mk)}</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="vbar-legend">
+      <span><span class="dot" style="background:var(--green)"></span>Contratos</span>
+      <span><span class="dot" style="background:#d8d2c5"></span>% Pagado</span>
+    </div>`;
 
   const vencList = DB.contratos.filter(c => { if(!c.vigencia_hasta||c.fecha_rescision) return false; const d=daysDiff(c.vigencia_hasta,TODAY); return d>=-30&&d<=30; }).sort((a,b)=>a.vigencia_hasta.localeCompare(b.vigencia_hasta));
   const VISIBLE = 5;
@@ -5533,7 +5578,10 @@ async function renderInforme() {
   cont.innerHTML = '<div class="loading">Cargando informe...</div>';
 
   // Get pagos for this month
-  let pagosMes = DB.pagos.filter(p => p.mes && p.mes.startsWith(mesKey));
+  // pagosTodos: todos los pagos del mes (para % cobrado total)
+  const pagosTodos = DB.pagos.filter(p => p.mes && p.mes.startsWith(mesKey));
+  // pagosMes: solo con alquiler cargado (para conteo "Alquileres activos" y tabla)
+  let pagosMes = pagosTodos.filter(p => (p.importe_alquiler||0) > 0);
 
   // Apply deuda filter
   if (deudaFiltro === 'pendiente') {
@@ -5577,8 +5625,17 @@ async function renderInforme() {
   const totTgiu = rows.reduce((s,r) => s+(r.p.monto_tgiu||0), 0);
   const totSeguro = rows.reduce((s,r) => s+(r.p.monto_seguro||0), 0);
   const totExtras = rows.reduce((s,r) => s+r.extrasInqTotal, 0);
-  const pct = totTotal > 0 ? Math.round((totAbonado/totTotal)*100) : 0;
-  const vigentes = rows.filter(r => r.c && getEstado(r.c) === 'vigente').length;
+  // % cobrado: sobre TODOS los pagos del mes (aunque no tengan importe_alquiler)
+  const pctTotal = pagosTodos.reduce((s,p) => {
+    const tr = p.total || (p.importe_alquiler||0) + (p.monto_epe||0) + (p.monto_agua||0) + (p.monto_tgiu||0) + (p.monto_seguro||0) + (p.monto_internet||0) + (p.monto_expensas||0);
+    return s + tr;
+  }, 0);
+  const pctAbonado = pagosTodos.reduce((s,p) => {
+    const tr = p.total || (p.importe_alquiler||0) + (p.monto_epe||0) + (p.monto_agua||0) + (p.monto_tgiu||0) + (p.monto_seguro||0) + (p.monto_internet||0) + (p.monto_expensas||0);
+    return s + (p.pagado_importe || Math.max(0, tr - (p.saldo||0)));
+  }, 0);
+  const pct = pctTotal > 0 ? Math.round((pctAbonado/pctTotal)*100) : 0;
+  const vigentes = rows.length; // igual logica que dashboard: todos los pagos con importe_alquiler ese mes
 
   const mesesNombres = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
