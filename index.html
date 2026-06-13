@@ -120,6 +120,8 @@
   .panel.active { display:block; }
 
   .stats-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:1rem; margin-bottom:2rem; }
+  .report-stats-grid { display:flex; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
+  .report-stats-grid .stat-card { flex:1 1 140px; }
   .stat-card {
     background:white; border-radius:12px; padding:1.2rem 1.4rem;
     box-shadow:var(--shadow); border-left:3px solid var(--border); transition:transform 0.2s;
@@ -277,6 +279,8 @@
   @media(max-width:600px) { 
     main { padding:0.6rem; overflow-x:hidden; }
     .stats-row { grid-template-columns:1fr 1fr; }
+    .report-stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; }
+    .report-stats-grid .stat-card { flex:none; }
     .col-mobile-hide { display:none !important; } 
     .pagos-table td, .pagos-table th { padding:5px 6px; font-size:0.72rem; }
     .modal-overlay { padding:0; }
@@ -1823,7 +1827,7 @@ function renderGrilla(c) {
       const saldoInq = Math.max(0, totalInq - pagadoInq);
       const totalProp = cuotas.reduce((s,g) => s+(g.monto_propietario||0), 0);
       const pagadoProp = cuotas.reduce((s,g) => s+(parseFloat(g.pagado_propietario)||0), 0);
-      const saldoProp = Math.max(0, totalProp - pagadoProp);
+      const saldoProp = Math.round(Math.max(0, totalProp - pagadoProp) * 100) / 100;
       const montoCuotaInq = cuotas[0]?.monto_inquilino || 0;
       const montoCuotaProp = cuotas[0]?.monto_propietario || 0;
       if (saldoInq > 0 || saldoProp > 0) {
@@ -4144,7 +4148,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
                 const val = (typeof entry === 'object') ? (entry.inq||0) : (entry||0);
                 return t + val;
               }, 0);
-              if (psTotal > 0) return psTotal;
+              if (psTotal > 0) return Math.round(psTotal * 100) / 100;
             }
             // Fallback to monto_xxx from pagos table
             return p?.['monto_'+srv] || '';
@@ -4418,10 +4422,10 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
   const cuotasH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
   const totalInqH = cuotasH.reduce((s,g) => s+(g.monto_inquilino||0), 0);
   const pagadoInqH = cuotasH.reduce((s,g) => s+(parseFloat(g.pagado_inquilino)||0), 0);
-  const saldoInqH = Math.max(0, totalInqH - pagadoInqH);
+  const saldoInqH = Math.round(Math.max(0, totalInqH - pagadoInqH) * 100) / 100;
   // Buscar la cuota del mes actual para precargar ese importe
   const cuotaMesActual = cuotasH.find(g => g.mes && g.mes.startsWith(window._gpMesKey || TODAY.substring(0,7)));
-  const importePrecargar = cuotaMesActual ? Math.max(0, (cuotaMesActual.monto_inquilino||0) - (parseFloat(cuotaMesActual.pagado_inquilino)||0)) : saldoInqH;
+  const importePrecargar = cuotaMesActual ? Math.round(Math.max(0, (cuotaMesActual.monto_inquilino||0) - (parseFloat(cuotaMesActual.pagado_inquilino)||0)) * 100) / 100 : saldoInqH;
 
   const honorariosItem = saldoInqH > 0 ? `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:5px 0;border-bottom:1px solid #f0ece4">
@@ -4673,7 +4677,7 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
       const cuotasH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c?.id);
       const totalProp = cuotasH.reduce((s,g) => s+(g.monto_propietario||0), 0);
       const pagadoProp = cuotasH.reduce((s,g) => s+(parseFloat(g.pagado_propietario)||0), 0);
-      const saldoProp = Math.max(0, totalProp - pagadoProp);
+      const saldoProp = Math.round(Math.max(0, totalProp - pagadoProp) * 100) / 100;
       if (saldoProp <= 0) return '';
       const montoCuota = cuotasH[0]?.monto_propietario || 0;
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
@@ -5683,8 +5687,8 @@ async function renderInforme() {
   }
 
   cont.innerHTML = `
-    <div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
-      <div class="stat-card" style="background:#1a1a2e;color:white;min-width:140px">
+    <div class="report-stats-grid">
+      <div class="stat-card" style="background:#1a1a2e;color:white">
         <div class="stat-label" style="color:#aaa">Mes</div>
         <div class="stat-val" style="color:white;font-size:1.3rem">${mesesNombres[parseInt(mes)]} ${anio}</div>
       </div>
@@ -7256,7 +7260,7 @@ function cargarItemsPago(impagos, pagoId, todosPagos) {
   for (const item of ordenAcred) {
     const bruto = brutos[item] || 0;
     const cubierto = Math.min(restanteAbonado, bruto);
-    saldosPorItem[item] = Math.max(0, bruto - cubierto);
+    saldosPorItem[item] = Math.round(Math.max(0, bruto - cubierto) * 100) / 100;
     restanteAbonado -= cubierto;
   }
 
