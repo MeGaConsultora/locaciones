@@ -489,6 +489,12 @@
   </div>
   <button class="tab-btn" onclick="showTab('inmuebles',this)">🏠 Inmuebles</button>
   <button class="tab-btn" onclick="showTab('clientes',this)">🧑‍🤝‍🧑 Clientes</button>
+  <div class="tab-dropdown" id="dropdown-mantenimiento">
+    <button class="tab-btn" onclick="toggleMantenimientoMenu(event)">🔧 Mantenimiento ▾</button>
+    <div class="tab-dropdown-menu" id="mantenimiento-menu" style="display:none">
+      <button onclick="exportarBackup()">💾 Exportar backup</button>
+    </div>
+  </div>
   <button class="tab-btn" id="tab-admin" onclick="showTab('admin',this)" style="display:none;margin-left:auto">👥 Usuarios</button>
 </nav>
 
@@ -7621,6 +7627,29 @@ async function openModal2ForContrato(contratoId) {
 // ============================================================
 // TABS
 // ============================================================
+function toggleMantenimientoMenu(e) {
+  e.stopPropagation();
+  const menu = document.getElementById('mantenimiento-menu');
+  const btn = document.querySelector('#dropdown-mantenimiento .tab-btn');
+  const isOpen = menu.style.display !== 'none';
+  document.querySelectorAll('.tab-dropdown-menu').forEach(m => m.style.display='none');
+  if (!isOpen) {
+    const rect = btn.getBoundingClientRect();
+    menu.style.display = 'block';
+    menu.style.position = 'fixed';
+    menu.style.top = rect.bottom + 'px';
+    if (window.innerWidth <= 640) {
+      menu.style.left = 'auto';
+      menu.style.right = '8px';
+    } else {
+      menu.style.left = rect.left + 'px';
+      menu.style.right = 'auto';
+    }
+    menu.style.zIndex = '99999';
+    document.body.appendChild(menu);
+  }
+}
+
 function toggleInformesMenu(e) {
   e.stopPropagation();
   const menu = document.getElementById('informes-menu');
@@ -11396,6 +11425,51 @@ function abrirNuevoInmuebleDesdeContrato() {
   }
   document.getElementById('modal-overlay').classList.remove('open');
   _abrirFormularioInmueble(null);
+}
+
+async function exportarBackup() {
+  document.getElementById('informes-menu').style.display = 'none';
+  toast('Preparando backup... puede tardar unos segundos ⏳');
+  try {
+    const tablas = [
+      'contratos','pagos','pagos_extras','pagos_suministros',
+      'contrato_suministros','personas','inmuebles','pagos_pdf',
+      'pagos_gastos_inicio','contrato_honorarios'
+    ];
+    const backup = { fecha: new Date().toISOString(), tablas: {} };
+    for (const tabla of tablas) {
+      try {
+        let rows = [];
+        let offset = 0;
+        const limit = 1000;
+        while (true) {
+          const batch = await sbGet(tabla, `select=*&limit=${limit}&offset=${offset}`);
+          rows = rows.concat(batch);
+          if (batch.length < limit) break;
+          offset += limit;
+        }
+        backup.tablas[tabla] = rows;
+      } catch(e) {
+        backup.tablas[tabla] = { error: e.message };
+      }
+    }
+    // Descargar como JSON
+    const json = JSON.stringify(backup, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const fecha = new Date().toISOString().substring(0,10);
+    a.href = url;
+    a.download = `MeGa_backup_${fecha}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    const total = Object.values(backup.tablas).reduce((s,t) => s + (Array.isArray(t) ? t.length : 0), 0);
+    toast(`Backup descargado ✓ — ${total.toLocaleString()} registros`, 'success');
+  } catch(e) {
+    toast('Error al generar backup: ' + e.message, 'error');
+  }
 }
 </script>
 
