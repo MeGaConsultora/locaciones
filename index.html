@@ -5249,8 +5249,9 @@ async function verDetalleDeuda(hoja, contratoId, mesKey) {
     ...extras.map(e => ({ label: e.concepto||'Extra', monto: parseFloat(e.importe)||0 }))
   ].filter(i => i.monto > 0);
 
+  const totalItems = items.reduce((s,i) => s + (i.monto||0), 0);
   const yaAbonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
-  const saldo = p.saldo||0;
+  const saldo = Math.max(0, totalItems - yaAbonado);
   const mesLabel = new Date(mes+'T12:00:00').toLocaleString('es-AR',{month:'long',year:'numeric'});
   const inquilinos = DB_CONTRATO_PERSONAS.filter(cp=>parseInt(cp.contrato_id)===contratoId&&cp.rol==='inquilino')
     .map(cp=>DB_PERSONAS?.find(x=>x.id===cp.persona_id)||DB.contratos.find(x=>x.id===contratoId))
