@@ -10040,13 +10040,21 @@ async function generarRecibosSeleccionados() {
     try { extras = await sbGet('pagos_extras', `pago_id=eq.${pagoId}&order=id.asc`); } catch(e) {}
     const extrasProp = extras.filter(e => e.a_cargo_de === 'propietario' || e.propietario_persona_id);
     const comisionPct = c.comision_porcentaje || 8;
-    const reciboHtml = generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes);
-    allHtml += `
-      <div class="recibo-mitad recibo-original"${idx>0?' style="page-break-before:always"':''}>
-        <div class="recibo-label">▶ ORIGINAL &nbsp;·&nbsp; <span style="font-size:0.85rem;letter-spacing:0.05em">${c?.locador||''}</span></div>
-        <div class="recibo-inner">${reciboHtml}</div>
-      </div>
-      <div class="recibo-mitad"><div class="recibo-label">▶ DUPLICADO</div><div class="recibo-inner">${reciboHtml}</div></div>`;
+    // Generar un recibo por propietario (igual que GP)
+    const propsCp = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(c?.id) && x.rol === 'propietario');
+    const propsToRender = propsCp.length > 0 ? propsCp : [null];
+    for (const cp of propsToRender) {
+      const propPersonaId = cp ? cp.persona_id : null;
+      const reciboHtml = generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPersonaId);
+      const propNombreLabel = cp ? (DB_PERSONAS.find(x=>x.id===parseInt(cp.persona_id)) ? formatNombrePersona(DB_PERSONAS.find(x=>x.id===parseInt(cp.persona_id))) : c?.locador||'') : c?.locador||'';
+      const isFirst = idx === 0 && propsToRender.indexOf(cp) === 0;
+      allHtml += `
+        <div class="recibo-mitad recibo-original"${!isFirst?' style="page-break-before:always"':''}>
+          <div class="recibo-label">▶ ORIGINAL &nbsp;·&nbsp; <span style="font-size:0.85rem;letter-spacing:0.05em">${propNombreLabel}</span></div>
+          <div class="recibo-inner">${reciboHtml}</div>
+        </div>
+        <div class="recibo-mitad"><div class="recibo-label">▶ DUPLICADO</div><div class="recibo-inner">${reciboHtml}</div></div>`;
+    }
   }
   ventana.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8"><title>Recibos Propietario — ${fechaMes}</title>
@@ -10127,32 +10135,55 @@ async function confirmarRecibosEmitidos() {
   renderRecibosEmitir();
 }
 
-function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes) {
-  const alquiler = p.importe_alquiler || 0;
+function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPersonaId) {
+  // Soporte multi-propietario: igual que GP
+  const propsCp = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(c?.id) && x.rol === 'propietario');
+  const activeCp = propPersonaId
+    ? propsCp.find(x => parseInt(x.persona_id) === parseInt(propPersonaId))
+    : propsCp[0];
+  const pctAlq = activeCp?.pct_alquiler ?? 100;
+  const alquilerTotal = p.importe_alquiler || 0;
+  const alquiler = Math.round(alquilerTotal * pctAlq / 100 * 100) / 100;
   const comision = Math.round(alquiler * comisionPct / 100 * 100) / 100;
   const neto = alquiler - comision;
   let totalRendir = neto;
+  const activePropId = activeCp ? parseInt(activeCp.persona_id) : null;
+  const activePropIdStr = activePropId ? String(activePropId) : null;
+  const propNombre = activeCp ? (DB_PERSONAS.find(x=>x.id===activePropId) ? formatNombrePersona(DB_PERSONAS.find(x=>x.id===activePropId)) : c?.locador||'—') : c?.locador||'—';
+  const pctLabel = pctAlq < 100 ? ` (${pctAlq}%)` : '';
   const items = [
-    { label: `Alquiler`, monto: alquiler },
+    { label: `Alquiler${pctLabel}`, monto: alquiler },
     { label: `Comisión ${comisionPct}%`, monto: -comision },
   ];
   const servRinde = (c?.servicios_rendir_propietario||'').toLowerCase();
+  const allSumsCont = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c?.id));
   ['epe','agua','tgiu','seguro','internet','expensas'].forEach(srv => {
     const monto = p['monto_'+srv] || 0;
-    const sum = DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === srv);
-    const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv] ?? 0);
-    const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
-    const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv);
-    if (seRinde && monto > 0) {
-      totalRendir += monto;
-      items.push({ label: `${srv.charAt(0).toUpperCase()+srv.slice(1)} (a rendir)`, monto });
-    } else if (!seRinde && pctProp > 0 && monto > 0) {
-      const totalBill = pctInq > 0 ? Math.round(monto * 100 / pctInq) : monto;
-      const montoProp = Math.round(totalBill * pctProp / 100);
-      if (montoProp > 0) { totalRendir -= montoProp; items.push({ label: `${srv.charAt(0).toUpperCase()+srv.slice(1)} (prop. ${pctProp}%)`, monto: -montoProp }); }
-    }
+    const sumsOfType = allSumsCont.filter(s => s.tipo === srv);
+    const sums = sumsOfType.length ? sumsOfType : [null];
+    sums.forEach(sum => {
+      const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv] ?? 0);
+      const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
+      const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv);
+      const seDescuenta = sum ? !!sum.descuenta_persona_id : (!sum && pctProp > 0 && !seRinde);
+      if (!seRinde && !seDescuenta) return;
+      const srvLabel = srv.charAt(0).toUpperCase()+srv.slice(1);
+      if (seRinde && monto > 0) {
+        totalRendir += monto;
+        items.push({ label: `${srvLabel} (a rendir)`, monto });
+      } else if (seDescuenta && pctProp > 0 && monto > 0) {
+        const totalBill = pctInq > 0 ? Math.round(monto * 100 / pctInq) : monto;
+        const montoProp = Math.round(totalBill * pctProp / 100);
+        if (montoProp > 0) { totalRendir -= montoProp; items.push({ label: `${srvLabel} (prop. ${pctProp}%)`, monto: -montoProp }); }
+      }
+    });
   });
-  extrasProp.forEach(e => {
+  // Filtrar extras por propietario activo — igual que GP
+  const extrasFiltered = extrasProp.filter(e => {
+    if (!e.propietario_persona_id) return propsCp.length <= 1;
+    return String(parseInt(e.propietario_persona_id)) === activePropIdStr;
+  });
+  extrasFiltered.forEach(e => {
     const signo = e.tipo === 'credito' ? 1 : -1;
     totalRendir += signo * (e.importe||0);
     items.push({ label: e.concepto||'Extra', monto: signo * (e.importe||0) });
@@ -10168,7 +10199,7 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes) {
       <div style="text-align:right"><div style="font-size:0.68rem;color:#888">Fecha</div><div style="font-size:1rem;font-weight:700">${fechaHoy}</div></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:0.8rem">
-      <div><span style="font-size:0.65rem;text-transform:uppercase;color:#888;display:block">Propietario</span><strong>${c?.locador||'—'}</strong></div>
+      <div><span style="font-size:0.65rem;text-transform:uppercase;color:#888;display:block">Propietario</span><strong>${propNombre}</strong></div>
       <div><span style="font-size:0.65rem;text-transform:uppercase;color:#888;display:block">Período</span><strong>${fechaMes}</strong></div>
       <div><span style="font-size:0.65rem;text-transform:uppercase;color:#888;display:block">Inmueble</span>${inmuebleDir}</div>
       <div><span style="font-size:0.65rem;text-transform:uppercase;color:#888;display:block">Inquilino</span>${c?.locatario||'—'}</div>
