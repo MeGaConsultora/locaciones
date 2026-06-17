@@ -5479,7 +5479,24 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     }
   }
 
-  // Calcular nuevoSaldo desde el total real (con extras) para evitar saldos ficticios
+  // Si hay intereses punitorios, crear extra débito para que sumen al total del mes
+  const interesChkVal = interesChk?.checked ? parseFloat(interesChk.dataset.interes||0) : 0;
+  if (interesChkVal > 0) {
+    try {
+      await sbPost('pagos_extras', {
+        pago_id: p.id,
+        concepto: 'Interés punitorio',
+        importe: Math.round(interesChkVal * 100) / 100,
+        tipo: 'debito',
+        a_cargo_de: 'inquilino'
+      });
+      // Actualizar extrasActuales en memoria
+      if (!extrasActuales[p.id]) extrasActuales[p.id] = [];
+      extrasActuales[p.id].push({ pago_id: p.id, concepto: 'Interés punitorio', importe: interesChkVal, tipo: 'debito', a_cargo_de: 'inquilino' });
+    } catch(e) { console.error('Error guardando interés punitorio como extra:', e); }
+  }
+
+  // Calcular nuevoSaldo desde el total real (con extras, incluyendo interés si se creó)
   const extrasP = extrasActuales[p.id]||[];
   const psDataP = window._pagosSuministros?.[p.id];
   const totalReal = calcularTotal(p, extrasP, psDataP);
