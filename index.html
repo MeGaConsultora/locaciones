@@ -1315,10 +1315,10 @@ function calcularIntereses(alquiler, fechaVencStr, fechaPagoStr, interesdiario) 
     primerDiaHabil.setDate(primerDiaHabil.getDate() + 1);
   }
   
-  if (fechaPago <= primerDiaHabil) return 0; // No interest
+  if (fechaPago < primerDiaHabil) return 0; // No interest — pagó antes del primer dia habil post vencimiento
   
-  // Days of mora
-  const diasMora = Math.floor((fechaPago - primerDiaHabil) / 86400000);
+  // Days of mora: el primer dia habil ya es dia 1 de mora
+  const diasMora = Math.floor((fechaPago - primerDiaHabil) / 86400000) + 1;
   if (diasMora <= 0) return 0;
   
   // Compound interest: alquiler * ((1 + rate/100)^days - 1)
