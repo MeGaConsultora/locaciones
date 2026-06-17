@@ -3921,13 +3921,21 @@ function actualizarTotalPct(srv) {
 function validarPctAlGuardar(contratoId) {
   const suministros = leerSuministros();
   // Check for duplicate nro within same contract
-  const nroTipoCount = {};
+  // Permitir duplicados si tienen distinto descuenta_persona_id (misma cuenta dividida entre propietarios)
+  const nroTipoSeen = {};
+  const duplicados = [];
   for (const s of suministros) {
     if (!s.nro_cuenta || !s.tipo) continue;
     const key = s.nro_cuenta.trim() + '|' + s.tipo;
-    nroTipoCount[key] = (nroTipoCount[key] || 0) + 1;
+    const propId = s.descuenta_persona_id || 'null';
+    if (!nroTipoSeen[key]) { nroTipoSeen[key] = new Set(); }
+    if (nroTipoSeen[key].has(propId)) {
+      // Mismo nro+tipo+propietario: duplicado real
+      if (!duplicados.find(([n,t]) => n === s.nro_cuenta.trim() && t === s.tipo))
+        duplicados.push([s.nro_cuenta.trim(), s.tipo]);
+    }
+    nroTipoSeen[key].add(propId);
   }
-  const duplicados = Object.entries(nroTipoCount).filter(([k,v]) => v > 1).map(([k]) => k.split('|'));
   if (duplicados.length) {
     toast('⚠ N° de cuenta duplicado: ' + duplicados.map(([nro,tipo]) => `${nro} (${tipo.toUpperCase()})`).join(', ') + '. Corregí antes de guardar.', 'error');
     return false;
@@ -10590,10 +10598,13 @@ function validarPctSuministros() {
   const nroTipoCount = {};
   for (const s of suministros) {
     if (!s.nro_cuenta || !s.tipo) continue;
-    const key = s.nro_cuenta.trim() + '|' + s.tipo;
+    const key = s.nro_cuenta.trim() + '|' + s.tipo + '|' + (s.descuenta_persona_id||'null');
     nroTipoCount[key] = (nroTipoCount[key] || 0) + 1;
   }
-  const duplicados = Object.entries(nroTipoCount).filter(([k,v]) => v > 1).map(([k]) => k.split('|'));
+  // Duplicado real = mismo nro+tipo+propietario (distinto propietario es válido)
+  const duplicados = Object.entries(nroTipoCount)
+    .filter(([k,v]) => v > 1)
+    .map(([k]) => k.split('|').slice(0,2));
 
   // Get or create warn element (single instance)
   let warnEl = document.getElementById('suministros-pct-warn');
