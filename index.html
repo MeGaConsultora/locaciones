@@ -11,6 +11,8 @@
   :root {
     --ink: #1a1a2e;
     --ink2: #2d2d4e;
+    --header-bg: #1a2a6c;
+    --header-bg2: #1877F2;
     --cream: #f5f0e8;
     --warm: #faf7f2;
     --accent: #c8483a;
@@ -25,7 +27,7 @@
   body { font-family:'DM Sans',sans-serif; background:var(--cream); color:var(--ink); min-height:100vh; overflow-x:hidden; }
 
   header {
-    background:var(--ink); color:var(--cream);
+    background:var(--header-bg); color:var(--cream);
     padding:0 2rem; display:flex; align-items:center;
     justify-content:space-between; height:64px;
     position:sticky; top:0; z-index:200;
@@ -33,7 +35,7 @@
     gap:0.75rem;
   }
   .logo { font-family:'DM Serif Display',serif; font-size:1.4rem; display:flex; align-items:center; gap:10px; flex-shrink:0; }
-  .logo-dot { width:8px; height:8px; background:var(--accent); border-radius:50%; }
+  .logo-dot { width:8px; height:8px; background:#f0c040; border-radius:50%; box-shadow:0 0 4px rgba(240,192,64,0.7); }
   @media (max-width:640px) {
     header { padding:0.4rem 0.75rem; height:auto; min-height:56px; flex-wrap:wrap; gap:0.4rem; }
     .logo { font-size:1rem; }
@@ -92,7 +94,7 @@
   .hsr-item-sub { font-size:0.75rem; color:#888; margin-top:1px; }
   .hsr-empty { padding:0.8rem 1rem; font-size:0.82rem; color:#aaa; text-align:center; }
 
-  nav { background:var(--ink2); display:flex; padding:0 2rem; overflow-x:auto; overflow-y:visible; position:relative; z-index:50; }
+  nav { background:var(--header-bg2); display:flex; padding:0 2rem; overflow-x:auto; overflow-y:visible; position:relative; z-index:50; }
   .tab-btn {
     background:none; border:none; color:rgba(245,240,232,0.55);
     font-family:'DM Sans',sans-serif; font-size:0.85rem; font-weight:500;
@@ -195,7 +197,7 @@
   .modal-overlay.open { display:flex; }
   .modal { background:white; border-radius:16px; box-shadow:var(--shadow-lg); width:100%; max-width:1100px; max-height:92vh; overflow-y:auto; animation:modalIn 0.22s ease; }
   @keyframes modalIn { from { opacity:0; transform:scale(0.96) translateY(10px); } to { opacity:1; transform:none; } }
-  .modal-header { background:var(--ink); color:var(--cream); padding:1.4rem 1.8rem; border-radius:16px 16px 0 0; display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
+  .modal-header { background:var(--header-bg2); color:var(--cream); padding:1.4rem 1.8rem; border-radius:16px 16px 0 0; display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
   .modal-title { font-family:'DM Serif Display',serif; font-size:1.4rem; line-height:1.2; }
   .modal-subtitle { font-size:0.8rem; opacity:0.6; margin-top:4px; }
   .modal-close { background:rgba(255,255,255,0.15); border:none; color:var(--cream); width:32px; height:32px; border-radius:6px; cursor:pointer; font-size:1.1rem; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
@@ -360,7 +362,7 @@
   }
   .login-logo { text-align:center; margin-bottom:2rem; }
   .login-logo-title { font-family:'DM Serif Display',serif; font-size:1.8rem; color:var(--ink); }
-  .login-logo-dot { width:10px; height:10px; background:var(--accent); border-radius:50%; display:inline-block; margin-right:6px; }
+  .login-logo-dot { width:10px; height:10px; background:#f0c040; border-radius:50%; display:inline-block; margin-right:6px; }
   .login-logo-sub { font-size:0.82rem; color:#999; margin-top:6px; }
   .login-tabs { display:flex; background:var(--cream); border-radius:10px; padding:4px; margin-bottom:1.5rem; }
   .login-tab { flex:1; padding:0.5rem; border:none; background:none; border-radius:8px; cursor:pointer; font-family:'DM Sans',sans-serif; font-size:0.85rem; font-weight:500; color:#888; transition:all 0.2s; }
@@ -812,7 +814,7 @@ function sesionExpirada() {
         <div style="font-size:2.5rem;margin-bottom:1rem">🔒</div>
         <h2 style="margin-bottom:0.5rem;color:#1a1a2e">Sesión expirada</h2>
         <p style="color:#888;margin-bottom:1.5rem;font-size:0.92rem">Tu sesión ha expirado por inactividad. Por favor volvé a ingresar.</p>
-        <button onclick="location.reload()" style="background:#1a1a2e;color:white;border:none;padding:10px 28px;border-radius:8px;font-size:0.95rem;cursor:pointer;font-family:'DM Sans',sans-serif">
+        <button onclick="location.reload()" style="background:#1877F2;color:white;border:none;padding:10px 28px;border-radius:8px;font-size:0.95rem;cursor:pointer;font-family:'DM Sans',sans-serif">
           Volver al inicio
         </button>
       </div>
@@ -5717,7 +5719,7 @@ async function renderInforme() {
 
   cont.innerHTML = `
     <div class="report-stats-grid">
-      <div class="stat-card" style="background:#1a1a2e;color:white">
+      <div class="stat-card" style="background:#1877F2;color:white">
         <div class="stat-label" style="color:#aaa">Mes</div>
         <div class="stat-val" style="color:white;font-size:1.3rem">${mesesNombres[parseInt(mes)]} ${anio}</div>
       </div>
@@ -5730,7 +5732,7 @@ async function renderInforme() {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr style="background:#1a1a2e;color:white">
+        <thead><tr style="background:#1877F2;color:white">
           <th>Contrato</th>
           <th class="r">Total mes</th>
           <th class="r">Abonado</th>
@@ -5758,7 +5760,7 @@ async function renderInforme() {
             </tr>
           `).join('')}
         </tbody>
-        <tfoot><tr style="background:#1a1a2e;color:white;font-weight:700">
+        <tfoot><tr style="background:#1877F2;color:white;font-weight:700">
           <td>TOTALES</td>
           <td class="r">${formatMoney(totTotal)}</td>
           <td class="r">${formatMoney(totAbonado)}</td>
@@ -5961,7 +5963,7 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
         <div><span style="font-size:0.7rem;text-transform:uppercase;color:#888;display:block">Inquilino</span>${c?.locatario||'—'}</div>
       </div>
       <table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:0.85rem">
-        <thead><tr style="background:#1a1a2e;color:white"><th style="padding:7px 10px;text-align:left;font-size:0.7rem;text-transform:uppercase">Concepto</th><th style="padding:7px 10px;text-align:right;font-size:0.7rem;text-transform:uppercase">Importe</th></tr></thead>
+        <thead><tr style="background:#1877F2;color:white"><th style="padding:7px 10px;text-align:left;font-size:0.7rem;text-transform:uppercase">Concepto</th><th style="padding:7px 10px;text-align:right;font-size:0.7rem;text-transform:uppercase">Importe</th></tr></thead>
         <tbody>
           ${items.map((it,i)=>`<tr style="background:${i%2===0?'#f5f0e8':'white'}"><td style="padding:7px 10px">${it.label}</td><td style="padding:7px 10px;text-align:right;font-weight:${it.monto<0?'normal':'600'};color:${it.monto<0?'#c8483a':'inherit'}">${formatMoney(it.monto)}</td></tr>`).join('')}
         </tbody>
@@ -7479,7 +7481,7 @@ function imprimirRecibo(data) {
         <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Inmueble</span>${inmuebleDirInq}</div>
       </div>
       <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:0.78rem">
-        <thead><tr style="background:#1a1a2e;color:white">
+        <thead><tr style="background:#1877F2;color:white">
           <th style="padding:5px 14px;text-align:left;font-size:0.65rem;letter-spacing:.06em;text-transform:uppercase">Concepto</th>
           <th style="padding:5px 14px;text-align:right;font-size:0.65rem;letter-spacing:.06em;text-transform:uppercase">Importe</th>
         </tr></thead>
@@ -7852,7 +7854,7 @@ async function renderSrvInforme() {
   }).join('');
 
   contenedor.innerHTML = `<table style="width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
-    <thead><tr style="background:#1a1a2e;color:white">
+    <thead><tr style="background:#1877F2;color:white">
       <th style="padding:8px;width:32px"></th>
       <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Contrato</th>
       <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Nº servicio</th>
@@ -10206,7 +10208,7 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPers
       <div><span style="font-size:0.65rem;text-transform:uppercase;color:#888;display:block">Inquilino</span>${c?.locatario||'—'}</div>
     </div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:10px;font-size:0.8rem">
-      <thead><tr style="background:#1a1a2e;color:white"><th style="padding:6px 10px;text-align:left;font-size:0.65rem;text-transform:uppercase">Concepto</th><th style="padding:6px 10px;text-align:right;font-size:0.65rem;text-transform:uppercase">Importe</th></tr></thead>
+      <thead><tr style="background:#1877F2;color:white"><th style="padding:6px 10px;text-align:left;font-size:0.65rem;text-transform:uppercase">Concepto</th><th style="padding:6px 10px;text-align:right;font-size:0.65rem;text-transform:uppercase">Importe</th></tr></thead>
       <tbody>${items.map((it,i)=>`<tr style="background:${i%2===0?'#f5f0e8':'white'}"><td style="padding:6px 10px">${it.label}</td><td style="padding:6px 10px;text-align:right;${it.monto<0?'color:#c8483a':''}">${formatMoney(it.monto)}</td></tr>`).join('')}</tbody>
       <tfoot><tr style="border-top:2px solid #1a1a2e"><td style="padding:8px 10px;font-weight:700">TOTAL A RECIBIR</td><td style="padding:8px 10px;text-align:right;font-weight:700;font-size:1rem;color:#2d7a4f">${formatMoney(totalRendir)}</td></tr></tfoot>
     </table>
@@ -11353,7 +11355,7 @@ function imprimirReciboRapido() {
         <div><span style="color:#888;font-size:0.65rem;text-transform:uppercase;display:block">Fecha de pago</span>${fecha}</div>
       </div>
       <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:0.78rem">
-        <thead><tr style="background:#1a1a2e;color:white">
+        <thead><tr style="background:#1877F2;color:white">
           <th style="padding:5px 14px;text-align:left;font-size:0.65rem;letter-spacing:.06em;text-transform:uppercase">Concepto</th>
           <th style="padding:5px 14px;text-align:right;font-size:0.65rem;letter-spacing:.06em;text-transform:uppercase">Importe</th>
         </tr></thead>
