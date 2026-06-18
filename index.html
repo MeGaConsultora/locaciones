@@ -9305,7 +9305,8 @@ async function recargarDatosEPE() {
       const imp2 = pdfRec.importe_2do_vencimiento || null;
       const importeInquilino = psRow?.importe || 0;
       // Pagado si el inquilino abonó >= lo que le corresponde de este suministro
-      const yaPago = importeInquilino === 0 || pagadoEpe >= importeInquilino;
+      // Solo filtrar si importeInquilino > 0 (ya tiene dato cargado) Y pagadoEpe cubre
+      const yaPago = importeInquilino > 0 && pagadoEpe >= importeInquilino;
       if (yaPago) return null;
       const importe = usar2do ? (imp2 || imp1) : imp1;
       return {
