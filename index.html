@@ -81,7 +81,7 @@
   .header-search-results {
     position:absolute; top:calc(100% + 6px); left:0; width:340px;
     background:white; border-radius:10px; box-shadow:0 8px 32px rgba(0,0,0,0.25);
-    z-index:999; overflow:hidden; display:none;
+    z-index:999; overflow-y:auto; overflow-x:hidden; display:none; max-height:60vh;
   }
   .header-search-results.open { display:block; }
   .hsr-item {
@@ -89,7 +89,7 @@
     transition:background 0.1s;
   }
   .hsr-item:last-child { border-bottom:none; }
-  .hsr-item:hover { background:#f5f0e8; }
+  .hsr-item:hover, .hsr-item.hsr-active { background:#f5f0e8; }
   .hsr-item-title { font-size:0.85rem; font-weight:600; color:var(--ink); }
   .hsr-item-sub { font-size:0.75rem; color:#888; margin-top:1px; }
   .hsr-empty { padding:0.8rem 1rem; font-size:0.82rem; color:#aaa; text-align:center; }
@@ -431,7 +431,7 @@
     <span class="header-search-icon">🔍</span>
     <input type="text" id="header-search-input" placeholder="Buscar contrato…"
       oninput="buscarContratoHeader(this.value)"
-      onkeydown="if(event.key==='Escape'){this.value='';cerrarBuscadorHeader()}"
+      onkeydown="manejarTeclasBuscador(event)"
       autocomplete="off">
     <div class="header-search-results" id="header-search-results"></div>
   </div>
@@ -1224,16 +1224,14 @@ function buscarContratoHeader(q) {
     if ((c.locador||'').toLowerCase().includes(ql)) return true;
     if ((c.locatario||'').toLowerCase().includes(ql)) return true;
     if ((c.hoja||'').toLowerCase().includes(ql)) return true;
-    // Also search inmueble address
     const inm = DB_INMUEBLES.find(x => x.id === c.inmueble_id);
     if (inm && formatDireccion(inm).toLowerCase().includes(ql)) return true;
-    // Also search personas
     const personas = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id)
       .map(x => DB_PERSONAS.find(p => p.id === x.persona_id))
       .filter(Boolean);
     if (personas.some(p => `${p.apellido||''} ${p.nombre||''} ${p.dni||''}`.toLowerCase().includes(ql))) return true;
     return false;
-  }).slice(0, 8);
+  });
   if (!matches.length) {
     res.innerHTML = '<div class="hsr-empty">Sin resultados</div>';
   } else {
@@ -1247,6 +1245,30 @@ function buscarContratoHeader(q) {
     }).join('');
   }
   res.classList.add('open');
+}
+
+function manejarTeclasBuscador(e) {
+  if (e.key === 'Escape') { e.target.value = ''; cerrarBuscadorHeader(); return; }
+  const items = document.querySelectorAll('#header-search-results .hsr-item');
+  if (!items.length) return;
+  const active = document.querySelector('#header-search-results .hsr-active');
+  let idx = active ? Array.from(items).indexOf(active) : -1;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (active) active.classList.remove('hsr-active');
+    idx = Math.min(idx + 1, items.length - 1);
+    items[idx].classList.add('hsr-active');
+    items[idx].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (active) active.classList.remove('hsr-active');
+    idx = Math.max(idx - 1, 0);
+    items[idx].classList.add('hsr-active');
+    items[idx].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter' && active) {
+    e.preventDefault();
+    active.click();
+  }
 }
 
 function cerrarBuscadorHeader() {
