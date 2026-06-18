@@ -3193,7 +3193,7 @@ async function cargarListaServicios(filtro='') {
       const pctInq = getPctInq(c, sumId);
       if (pctInq === 0) return; // skip propietario-only
       // Sum pct_inquilino from ALL vigente contracts sharing this nro
-      const allSumsForNro = DB_SUMINISTROS.filter(s => s.nro_cuenta === nro && s.tipo === srv && ((s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0));
+      const allSumsForNro = DB_SUMINISTROS.filter(s => s.nro_cuenta === nro && s.tipo === srv);
       const totalPct = allSumsForNro.reduce((t, s) => {
         const cc = DB.contratos.find(x => x.id === parseInt(s.contrato_id));
         if (!cc || getEstado(cc) !== 'vigente') return t;
