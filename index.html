@@ -2754,6 +2754,13 @@ function filtrarContratosActualizar() {
     if (filtroIndice && c.indice_actualizacion !== filtroIndice) return false;
     const mesesPeriodo = {'Mensual':1,'Bimestral':2,'Trimestral':3,'Cuatrimestral':4,'Semestral':6,'Anual':12}[c.periodicidad_actualizacion]||0;
     if (!mesesPeriodo) return false;
+    // Prioridad 1: si existe un pago real para mesKey SIN importe_alquiler cargado (mes "futuro" pendiente de actualizar), usar eso como fuente de verdad
+    const pagoDelMes = DB.pagos.find(p => p.hoja === c.hoja && p.mes?.startsWith(mesKey));
+    if (pagoDelMes) {
+      return !(pagoDelMes.importe_alquiler > 0); // pendiente de actualizar = sin importe cargado todavia
+    }
+    // Fallback: si no hay pago creado para ese mes, calcular matematicamente desde vigencia_desde
+    // (puede desfasarse si la periodicidad cambio historicamente, pero es el unico dato disponible)
     const [sy, sm] = c.vigencia_desde.substring(0,7).split('-').map(Number);
     const mesesTranscurridos = (y - sy) * 12 + (m - sm);
     return mesesTranscurridos > 0 && mesesTranscurridos % mesesPeriodo === 0;
@@ -2918,10 +2925,26 @@ function previsualizarConfirmacion() {
     const pagoPrev = DB.pagos.filter(p => p.hoja===c.hoja && p.mes?.startsWith(prevKey) && p.importe_alquiler>0)[0];
     const actual = pagoPrev?.importe_alquiler || DB.pagos.filter(p => p.hoja===c.hoja && p.importe_alquiler>0).sort((a,b)=>b.mes?.localeCompare(a.mes))[0]?.importe_alquiler || 0;
     const rangMeses = getMesesRango(c, desde);
+    // Verificar cuantos meses del rango ya existen vs se van a crear (transparencia antes de confirmar)
+    const mesesExistentesC = new Set(DB.pagos.filter(p => p.hoja === c.hoja).map(p => p.mes?.substring(0,7)).filter(Boolean));
+    let [ry, rm] = desde.split('-').map(Number);
+    let existentes = 0, nuevos = 0, conPagoPrevio = 0;
+    for (let i = 0; i < n; i++) {
+      const k = `${ry}-${String(rm).padStart(2,'0')}`;
+      if (mesesExistentesC.has(k)) {
+        existentes++;
+        const pagoExist = DB.pagos.find(p => p.hoja === c.hoja && p.mes?.startsWith(k));
+        if ((pagoExist?.pagado_importe||0) > 0 || pagoExist?.pagado === 'SI') conPagoPrevio++;
+      } else nuevos++;
+      rm++; if (rm > 12) { rm = 1; ry++; }
+    }
+    const avisoPagoPrevio = conPagoPrevio > 0 ? `<div style="font-size:0.7rem;color:#c0392b;margin-top:2px">⚠ ${conPagoPrevio} mes/es ya tiene/n pago registrado</div>` : '';
     return `<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:5px 8px;font-size:0.82rem">
         <div>${c.titulo||c.hoja}</div>
         <div style="font-size:0.72rem;color:var(--accent);margin-top:2px">📅 ${rangMeses}</div>
+        <div style="font-size:0.7rem;color:#888;margin-top:2px">${existentes} existente/s · ${nuevos} nuevo/s</div>
+        ${avisoPagoPrevio}
       </td>
       <td style="padding:5px 8px;text-align:right;font-size:0.82rem">${formatMoney(actual)}</td>
       <td style="padding:5px 8px;text-align:right;font-size:0.82rem;color:var(--green);font-weight:700">${formatMoney(importe)}</td>
