@@ -1856,14 +1856,15 @@ function getRowClass(p) {
   return 'row-vencido';
 }
 
-function getEstadoLabel(p) {
+function getEstadoLabel(p, saldoOverride) {
   if (!p.mes) return '—';
   if (p.pagado === 'RESCINDIDO') return '<span class="badge badge-gray">Rescindido</span>';
   const esFuturo = p.mes.substring(0,7) > TODAY.substring(0,7);
   if (esFuturo) return '<span class="badge badge-blue">Futuro</span>';
   if (!p.total || p.total === 0) return '<span class="badge badge-gray">Sin datos</span>';
   const abonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
-  if (p.saldo <= 0) return '<span class="badge badge-green">✓ Pagado</span>';
+  const saldoParaEstado = saldoOverride !== undefined ? saldoOverride : (p.saldo||0);
+  if (saldoParaEstado <= 0) return '<span class="badge badge-green">✓ Pagado</span>';
   if (abonado > 0) return '<span class="badge badge-yellow">Parcial</span>';
   return '<span class="badge badge-red">Pendiente</span>';
 }
@@ -1943,9 +1944,9 @@ function renderGrilla(c) {
     const totalExtras = totalExtrasGral + totalExtrasMes;
     // saldo calculado en tiempo real (igual que el total mostrado), para evitar mostrar valor desactualizado de BD
     const _totalCalc = calcularTotal(p, extras, window._pagosSuministros?.[p.id]);
-    // Si pagado='SI' o saldo=0 en BD, confiar en BD (evita saldos falsos por datos históricos inconsistentes)
-    // Solo recalcular en tiempo real para pagos pendientes o parciales
-    const saldoReal = (p.pagado === 'SI' || (p.saldo||0) === 0)
+    // Recalcular el saldo en tiempo real con el total actualizado (incluye EPE/Agua/TGIU recien cargados).
+    // Si pagado='SI' Y lo abonado ya cubre el total recalculado, confiar en 0 (evita falsos pendientes).
+    const saldoReal = (p.pagado === 'SI' && (p.pagado_importe||0) >= _totalCalc - 0.5)
       ? 0
       : Math.max(0, Math.round((_totalCalc - (p.pagado_importe||0)) * 100) / 100);
     const excedente = (p.pagado_importe||0) > (p.total||0) ? Math.round(((p.pagado_importe||0) - (p.total||0)) * 100) / 100 : 0;
@@ -1972,7 +1973,7 @@ function renderGrilla(c) {
       <td class="num" id="total-${p.id}"><strong>${formatMoney(_totalCalc)}</strong></td>
       <td class="num col-mobile-hide" id="abonado-${p.id}">${(() => { const ab = p.pagado_importe || (p.total||0)-(p.saldo||0); return ab>0?`<span style="color:var(--green);font-weight:600">${formatMoney(ab)}</span>`:'—'; })()}</td>
       <td class="num" id="saldo-${p.id}">${(()=>{const _exc=(p.pagado_importe||0)-_totalCalc;return _exc>0.01?`<span style="color:var(--green);font-weight:700">+${formatMoney(_exc)}</span>`:saldoReal>0?`<span class="saldo-pendiente">${formatMoney(saldoReal)}</span>`:'<span class="saldo-ok">✓</span>';})()}</td>
-      <td id="estado-${p.id}">${getEstadoLabel(p)}</td>
+      <td id="estado-${p.id}">${getEstadoLabel(p, saldoReal)}</td>
       <td onclick="event.stopPropagation()">
         <div class="grid-actions">
           ${(!saldoReal||saldoReal===0)?'':`<button class="grid-btn grid-btn-green" onclick="editarMesConSolapa('${c.hoja}',${c.id},'${p.mes?.substring(0,7)}','s2')">✓ Cobrar</button>`}
