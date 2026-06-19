@@ -609,7 +609,7 @@
         <option value="no_pagado_proveedor">Pendientes de pago a proveedor</option>
         <option value="pagado_proveedor">Pagados a proveedor</option>
       </select>
-      <input type="text" class="search-input" id="srv-inf-buscar" placeholder="Buscar contrato…" style="width:200px" oninput="renderSrvInforme()">
+      <input type="text" class="search-input" id="srv-inf-buscar" placeholder="Buscar contrato o N° cuenta…" style="width:220px" oninput="renderSrvInforme()">
       <button class="btn btn-secondary" onclick="srvInfSelAll(true)" style="font-size:0.78rem">✓ Todos</button>
       <button class="btn btn-secondary" onclick="srvInfSelAll(false)" style="font-size:0.78rem">✕ Ninguno</button>
       <button class="btn btn-secondary" onclick="imprimirSrvInforme()" style="font-size:0.78rem">🖨️ Imprimir</button>
@@ -7928,7 +7928,8 @@ async function renderSrvInforme() {
   // Buscador
   if (buscar) filas = filas.filter(f =>
     (f.c?.titulo||f.pago?.hoja||'').toLowerCase().includes(buscar) ||
-    (f.c?.locatario||'').toLowerCase().includes(buscar)
+    (f.c?.locatario||'').toLowerCase().includes(buscar) ||
+    (f.nro||f.sum?.nro_cuenta||'').toLowerCase().includes(buscar)
   );
 
   // Orden alfabético
