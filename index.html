@@ -2904,6 +2904,24 @@ function actualizarBotonConfirmar() {
 function volverAConfiguracionActualizacion() {
   if (window._actModalSnapshot) {
     document.getElementById('modal-body').innerHTML = window._actModalSnapshot;
+    // Restaurar valores reales de los campos (innerHTML solo trae el value inicial, no el editado por el usuario)
+    if (window._actFieldValues) {
+      Object.entries(window._actFieldValues).forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if (el && val !== undefined) el.value = val;
+      });
+    }
+    if (window._actChkValues) {
+      document.querySelectorAll('.act-chk').forEach(chk => {
+        if (window._actChkValues[chk.dataset.id] !== undefined) chk.checked = window._actChkValues[chk.dataset.id];
+      });
+    }
+    if (window._actImporteValues) {
+      Object.entries(window._actImporteValues).forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if (el && val !== undefined) el.value = val;
+      });
+    }
     setTimeout(actualizarBotonConfirmar, 50);
   } else {
     abrirActualizacionAlquileres();
@@ -2911,7 +2929,19 @@ function volverAConfiguracionActualizacion() {
 }
 
 function previsualizarConfirmacion() {
+  // Guardar el HTML estructural + el estado real de cada input/checkbox (innerHTML no captura valores vivos del DOM)
   window._actModalSnapshot = document.getElementById('modal-body').innerHTML;
+  window._actFieldValues = {
+    'act-mes': document.getElementById('act-mes')?.value,
+    'act-desde': document.getElementById('act-desde')?.value,
+    'act-filtro-indice': document.getElementById('act-filtro-indice')?.value,
+    'act-filtro-perio': document.getElementById('act-filtro-perio')?.value,
+    'act-pct': document.getElementById('act-pct')?.value,
+  };
+  window._actChkValues = {};
+  document.querySelectorAll('.act-chk').forEach(chk => { window._actChkValues[chk.dataset.id] = chk.checked; });
+  window._actImporteValues = {};
+  document.querySelectorAll('[id^="importe-"]').forEach(inp => { window._actImporteValues[inp.id] = inp.value; });
   const desde = document.getElementById('act-desde')?.value;
   if (!desde) { toast('Ingresá el mes desde el que proyectar', 'error'); return; }
 
