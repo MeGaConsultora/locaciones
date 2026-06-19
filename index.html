@@ -7824,39 +7824,85 @@ async function renderSrvInforme() {
 
   // Cargar pagos_suministros del mes para este servicio
   const pagoIds = pagos.map(p => p.id);
-  let psSuministros = [];
+  let psSuministrosRaw = [];
   if (pagoIds.length) {
     try {
-      psSuministros = await sbGet('pagos_suministros',
+      psSuministrosRaw = await sbGet('pagos_suministros',
         `pago_id=in.(${pagoIds.join(',')})&select=id,pago_id,suministro_id,importe,pagado_proveedor`
       );
-      // Filtrar suministros que se rinden al propietario (no los abona la inmobiliaria)
-    psSuministros = psSuministros.filter(ps => {
-      const sum = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
-      return sum?.tipo === srvKey && !sum?.propietario_persona_id;
-    });
-    } catch(e) { psSuministros = []; }
+      psSuministrosRaw = psSuministrosRaw.filter(ps => {
+        const sum = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
+        return sum?.tipo === srvKey;
+      });
+    } catch(e) { psSuministrosRaw = []; }
   }
+  // Excluir las que se rinden al propietario (esas las paga/gestiona el propietario directamente)
+  const psSuministros = psSuministrosRaw.filter(ps => {
+    const sum = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
+    return !sum?.propietario_persona_id;
+  });
 
-  // Construir filas — una por cada registro de pagos_suministros (puede haber múltiples EPE por contrato)
-  // Fallback al sistema viejo si no hay pagos_suministros
+  // Construir filas — agrupadas por Nº de cuenta (boleta compartida = una sola fila con el total completo)
   let filas = [];
 
   if (psSuministros.length) {
-    // Sistema nuevo
-    filas = psSuministros.map(ps => {
-      const pago = DB.pagos.find(p => p.id === ps.pago_id);
-      const c = pago ? DB.contratos.find(x => x.hoja === pago.hoja) : null;
+    // Agrupar por nro_cuenta: cada cuenta puede tener varios contratos (inquilinos) + 1 parte del propietario
+    const porCuenta = {};
+    psSuministros.forEach(ps => {
       const sum = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
-      const abonado = (pago?.[campoPagado] || 0) >= (ps.importe || 0);
-      return { ps, pago, c, sum, importe: ps.importe || 0, abonado, pagadoProveedor: !!ps.pagado_proveedor };
+      const nro = sum?.nro_cuenta || `sin-cuenta-${ps.suministro_id}`;
+      if (!porCuenta[nro]) porCuenta[nro] = [];
+      porCuenta[nro].push(ps);
+    });
+    filas = Object.entries(porCuenta).map(([nro, items]) => {
+      // Importe total de la boleta = suma de TODAS las partes (inquilinos + propietario) de esta cuenta
+      // pct_inquilino + pct_propietario por fila representan partes del total; el ps.importe ya es la
+      // porcion de cada suministro segun su pct_inquilino. Reconstruimos el total de la boleta.
+      const totalBoleta = items.reduce((s, ps) => {
+        const sum = DB_SUMINISTROS.find(x => x.id === ps.suministro_id);
+        const pctInq = sum?.pct_inquilino ?? 100;
+        const pctProp = sum?.pct_propietario ?? 0;
+        const pctParte = pctInq; // ps.importe corresponde a esta porcion (pct_inquilino) del total de la cuenta
+        const totalParaEstaParte = pctParte > 0 ? (ps.importe || 0) * 100 / pctParte : 0;
+        // Solo sumamos una vez la porcion del propietario por cada fila de inquilino proporcional a su % share
+        return s + (ps.importe || 0) + (pctParte > 0 ? totalParaEstaParte * pctProp / 100 / (items.length || 1) * 0 : 0);
+      }, 0);
+      // Simplificacion: total = suma de las porciones de inquilino presentes + la porcion de propietario (una sola vez, tomada del primero que la tenga)
+      let totalInquilinos = items.reduce((s, ps) => s + (ps.importe || 0), 0);
+      let totalPropietarioParte = 0;
+      const primerSum = DB_SUMINISTROS.find(x => x.id === items[0].suministro_id);
+      if (primerSum && (primerSum.pct_propietario||0) > 0 && (primerSum.pct_inquilino||0) > 0) {
+        const totalReal = (items[0].importe || 0) * 100 / primerSum.pct_inquilino;
+        totalPropietarioParte = totalReal * primerSum.pct_propietario / 100;
+      }
+      const importeTotal = totalInquilinos + totalPropietarioParte;
+      // Contratos involucrados
+      const contratosInfo = items.map(ps => {
+        const pago = DB.pagos.find(p => p.id === ps.pago_id);
+        const c = pago ? DB.contratos.find(x => x.hoja === pago.hoja) : null;
+        return { ps, pago, c };
+      });
+      const titulos = contratosInfo.map(ci => ci.c?.titulo || ci.pago?.hoja).filter(Boolean).join(' / ');
+      // Abonado: true solo si TODOS los contratos de esta cuenta tienen su parte pagada
+      const todosAbonados = contratosInfo.every(ci => (ci.pago?.[campoPagado] || 0) >= (ci.ps.importe || 0));
+      const algunPagadoProveedor = items.some(ps => ps.pagado_proveedor);
+      return {
+        nro, items, contratosInfo,
+        c: { titulo: titulos },
+        pago: contratosInfo[0]?.pago,
+        sum: primerSum,
+        importe: Math.round(importeTotal * 100) / 100,
+        abonado: todosAbonados,
+        pagadoProveedor: algunPagadoProveedor,
+        psIds: items.map(i => i.id)
+      };
     }).filter(f => f.importe > 0);
   } else {
     // Sistema viejo — fallback
     filas = pagos.filter(p => (p[campo]||0) > 0).map(pago => {
       const c = DB.contratos.find(x => x.hoja === pago.hoja);
       const abonado = (pago[campoPagado]||0) >= (pago[campo]||0);
-      return { ps: null, pago, c, sum: null, importe: pago[campo]||0, abonado, pagadoProveedor: false };
+      return { ps: null, pago, c, sum: null, importe: pago[campo]||0, abonado, pagadoProveedor: false, psIds: [] };
     });
   }
 
@@ -7884,18 +7930,18 @@ async function renderSrvInforme() {
   totalesBar.style.display = 'flex';
 
   const rows = filas.map(f => {
-    const nroSrv = f.sum?.nro_cuenta || (f.c ? (tipo==='srv-epe' ? f.c.nro_epe : tipo==='srv-agua' ? f.c.nro_agua : f.c.nro_tgiu) : '') || '—';
-    const psId = f.ps?.id;
+    const nroSrv = f.sum?.nro_cuenta || f.nro || (f.c ? (tipo==='srv-epe' ? f.c.nro_epe : tipo==='srv-agua' ? f.c.nro_agua : f.c.nro_tgiu) : '') || '—';
+    const psIdsAttr = (f.psIds && f.psIds.length) ? f.psIds.join(',') : '';
     return `<tr style="border-bottom:1px solid #eee;${f.pagadoProveedor?'opacity:0.6':''}">
       <td style="padding:7px 10px;text-align:center">
-        ${psId ? `<input type="checkbox" class="srv-chk" data-monto="${f.importe}" data-ps-id="${psId}" ${f.abonado&&!f.pagadoProveedor?'checked':''} onchange="srvInfActualizarTotal()">` : `<input type="checkbox" class="srv-chk" data-monto="${f.importe}" ${f.abonado?'checked':''} onchange="srvInfActualizarTotal()">`}
+        ${psIdsAttr ? `<input type="checkbox" class="srv-chk" data-monto="${f.importe}" data-ps-ids="${psIdsAttr}" ${f.abonado&&!f.pagadoProveedor?'checked':''} onchange="srvInfActualizarTotal()">` : `<input type="checkbox" class="srv-chk" data-monto="${f.importe}" ${f.abonado?'checked':''} onchange="srvInfActualizarTotal()">`}
       </td>
       <td style="font-size:0.82rem"><strong>${f.c?.titulo||f.pago?.hoja||'—'}</strong></td>
       <td style="font-size:0.78rem;color:#666">${nroSrv}</td>
       <td style="text-align:right;font-size:0.82rem">${formatMoney(f.importe)}</td>
       <td style="text-align:center;font-size:0.82rem">${f.abonado ? '<span style="color:#2d7a4f">✓</span>' : '<span style="color:#aaa">—</span>'}</td>
       <td style="text-align:center">
-        ${psId ? `<input type="checkbox" class="srv-chk-proveedor" data-ps-id="${psId}" ${f.pagadoProveedor?'checked':''} onchange="marcarPagadoProveedor(${psId},this.checked)" title="Pagado a proveedor">` : '—'}
+        ${psIdsAttr ? `<input type="checkbox" class="srv-chk-proveedor" data-ps-ids="${psIdsAttr}" ${f.pagadoProveedor?'checked':''} onchange="marcarPagadoProveedorMulti('${psIdsAttr}',this.checked)" title="Pagado a proveedor">` : '—'}
       </td>
     </tr>`;
   }).join('');
@@ -7929,16 +7975,31 @@ async function marcarPagadoProveedor(psId, valor) {
   }
 }
 
+async function marcarPagadoProveedorMulti(psIdsAttr, valor) {
+  const ids = (psIdsAttr||'').split(',').map(x => parseInt(x)).filter(Boolean);
+  if (!ids.length) return;
+  try {
+    await Promise.all(ids.map(id => sbPatch('pagos_suministros', id, { pagado_proveedor: valor })));
+    toast(valor ? 'Marcado como pagado a proveedor ✓' : 'Desmarcado ✓');
+  } catch(e) {
+    toast('Error al guardar: ' + e.message, 'error');
+  }
+}
+
 async function srvInfMarcarTodosProveedor(valor) {
   const chks = [...document.querySelectorAll('.srv-chk-proveedor')];
   if (!chks.length) return;
-  const ids = chks.map(c => parseInt(c.dataset.psId)).filter(Boolean);
+  const allIds = [];
+  chks.forEach(c => {
+    const ids = (c.dataset.psIds||'').split(',').map(x => parseInt(x)).filter(Boolean);
+    allIds.push(...ids);
+  });
   try {
-    await Promise.all(ids.map(id => sbPatch('pagos_suministros', id, { pagado_proveedor: valor })));
+    await Promise.all(allIds.map(id => sbPatch('pagos_suministros', id, { pagado_proveedor: valor })));
     chks.forEach(c => c.checked = valor);
     // Actualizar opacidad de filas
     chks.forEach(c => { const tr = c.closest('tr'); if (tr) tr.style.opacity = valor ? '0.6' : '1'; });
-    toast(valor ? `${ids.length} marcados como pagados a proveedor ✓` : `${ids.length} desmarcados ✓`);
+    toast(valor ? `${chks.length} marcados como pagados a proveedor ✓` : `${chks.length} desmarcados ✓`);
   } catch(e) {
     toast('Error al guardar: ' + e.message, 'error');
   }
