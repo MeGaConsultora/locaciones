@@ -7829,7 +7829,7 @@ async function renderSrvInforme() {
   if (pagoIds.length) {
     try {
       psSuministrosRaw = await sbGet('pagos_suministros',
-        `pago_id=in.(${pagoIds.join(',')})&select=id,pago_id,suministro_id,importe,pagado_proveedor`
+        `pago_id=in.(${pagoIds.join(',')})&select=id,pago_id,suministro_id,importe,importe_propietario,pagado_proveedor`
       );
       psSuministrosRaw = psSuministrosRaw.filter(ps => {
         const sum = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
@@ -7856,26 +7856,16 @@ async function renderSrvInforme() {
       porCuenta[nro].push(ps);
     });
     filas = Object.entries(porCuenta).map(([nro, items]) => {
-      // Importe total de la boleta = suma de TODAS las partes (inquilinos + propietario) de esta cuenta
-      // pct_inquilino + pct_propietario por fila representan partes del total; el ps.importe ya es la
-      // porcion de cada suministro segun su pct_inquilino. Reconstruimos el total de la boleta.
-      const totalBoleta = items.reduce((s, ps) => {
+      // Importe total a abonar por la inmobiliaria = parte del/los inquilino/s + parte que se descuenta al propietario
+      // (importe_propietario ya viene calculado y guardado al cargar el servicio — no rinde directo, lo gestiona la inmobiliaria)
+      const totalInquilinos = items.reduce((s, ps) => s + (ps.importe || 0), 0);
+      const totalPropietarioParte = items.reduce((s, ps) => {
         const sum = DB_SUMINISTROS.find(x => x.id === ps.suministro_id);
-        const pctInq = sum?.pct_inquilino ?? 100;
-        const pctProp = sum?.pct_propietario ?? 0;
-        const pctParte = pctInq; // ps.importe corresponde a esta porcion (pct_inquilino) del total de la cuenta
-        const totalParaEstaParte = pctParte > 0 ? (ps.importe || 0) * 100 / pctParte : 0;
-        // Solo sumamos una vez la porcion del propietario por cada fila de inquilino proporcional a su % share
-        return s + (ps.importe || 0) + (pctParte > 0 ? totalParaEstaParte * pctProp / 100 / (items.length || 1) * 0 : 0);
+        // Solo sumar la parte propietario si NO rinde directo (eso ya esta filtrado mas arriba, pero por las dudas)
+        if (sum?.propietario_persona_id) return s;
+        return s + (ps.importe_propietario || 0);
       }, 0);
-      // Simplificacion: total = suma de las porciones de inquilino presentes + la porcion de propietario (una sola vez, tomada del primero que la tenga)
-      let totalInquilinos = items.reduce((s, ps) => s + (ps.importe || 0), 0);
-      let totalPropietarioParte = 0;
       const primerSum = DB_SUMINISTROS.find(x => x.id === items[0].suministro_id);
-      if (primerSum && (primerSum.pct_propietario||0) > 0 && (primerSum.pct_inquilino||0) > 0) {
-        const totalReal = (items[0].importe || 0) * 100 / primerSum.pct_inquilino;
-        totalPropietarioParte = totalReal * primerSum.pct_propietario / 100;
-      }
       const importeTotal = totalInquilinos + totalPropietarioParte;
       // Contratos involucrados
       const contratosInfo = items.map(ps => {
