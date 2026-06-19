@@ -7910,7 +7910,7 @@ async function renderSrvInforme() {
   if (estado === 'abonado') filas = filas.filter(f => f.abonado);
   else if (estado === 'adeudado') filas = filas.filter(f => !f.abonado);
   else if (estado === 'pagado_proveedor') filas = filas.filter(f => f.pagadoProveedor);
-  else if (estado === 'no_pagado_proveedor') filas = filas.filter(f => f.abonado && !f.pagadoProveedor);
+  else if (estado === 'no_pagado_proveedor') filas = filas.filter(f => !f.pagadoProveedor);
 
   // Buscador
   if (buscar) filas = filas.filter(f =>
