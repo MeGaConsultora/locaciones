@@ -529,6 +529,10 @@
       <select class="filter-select" id="filter-tipo" onchange="renderContratos()">
         <option value="">Todos los tipos</option>
       </select>
+      <select class="filter-select" id="filter-orden" onchange="renderContratos()">
+        <option value="">Orden por defecto</option>
+        <option value="recientes">Últimos creados</option>
+      </select>
       <button class="btn btn-primary" onclick="openNuevoContrato()">+ Nuevo contrato</button>
       <span class="results-count" id="count-contratos"></span>
     </div>
@@ -543,6 +547,8 @@
           <th class="num">Total mes</th>
           <th class="num">Saldo</th>
           <th>Estado</th>
+          <th style="text-align:center" title="Importe inicial de alquiler cargado">Alq.</th>
+          <th style="text-align:center" title="N° de cuenta cargados (EPE/Agua/TGIU/Seguro)">N° Serv.</th>
         </tr></thead>
         <tbody id="tbody-contratos"></tbody>
       </table>
@@ -1508,6 +1514,7 @@ function renderContratos() {
   const q = document.getElementById('search-contratos').value.toLowerCase();
   const estado = document.getElementById('filter-estado').value;
   const tipo = document.getElementById('filter-tipo').value;
+  const orden = document.getElementById('filter-orden')?.value || '';
   // Pendientes stats
   const todosPend = DB.pagos.filter(p => p.saldo && p.saldo > 0 && p.mes && p.mes.substring(0,7) <= TODAY.substring(0,7));
   const totalSaldo = todosPend.reduce((s,p) => s+(p.saldo||0), 0);
@@ -1530,14 +1537,18 @@ function renderContratos() {
     return true;
   });
 
-  const {col,dir} = sortState.contratos;
-  contratosFiltrados.sort((a,b) => { const va=(a[col]||'').toString(); const vb=(b[col]||'').toString(); return dir==='asc'?va.localeCompare(vb):vb.localeCompare(va); });
+  if (orden === 'recientes') {
+    contratosFiltrados.sort((a,b) => (b.id||0) - (a.id||0));
+  } else {
+    const {col,dir} = sortState.contratos;
+    contratosFiltrados.sort((a,b) => { const va=(a[col]||'').toString(); const vb=(b[col]||'').toString(); return dir==='asc'?va.localeCompare(vb):vb.localeCompare(va); });
+  }
 
   document.getElementById('count-contratos').textContent = `${contratosFiltrados.length} contrato${contratosFiltrados.length!==1?'s':''}`;
   const slice = contratosFiltrados.slice((PG.contratos-1)*PER_PAGE, PG.contratos*PER_PAGE);
 
   document.getElementById('tbody-contratos').innerHTML = slice.length === 0
-    ? `<tr><td colspan="10"><div class="empty-state"><div class="icon">🔍</div><p>Sin resultados</p></div></td></tr>`
+    ? `<tr><td colspan="11"><div class="empty-state"><div class="icon">🔍</div><p>Sin resultados</p></div></td></tr>`
     : slice.map(c => {
         const est = getEstado(c);
         const d = c.vigencia_hasta ? daysDiff(c.vigencia_hasta, TODAY) : null;
@@ -1562,6 +1573,17 @@ function renderContratos() {
           <td class="num">${totalMesConGastos !== null ? formatMoney(totalMesConGastos) : '—'}</td>
           <td class="num ${saldoTotalConGastos>0?'saldo-pendiente':'saldo-ok'}">${saldoTotalConGastos>0?formatMoney(saldoTotalConGastos):'✓'}</td>
           <td><span class="badge ${est==='vigente'?'badge-green':est==='rescindido'?'badge-red':'badge-gray'}">${est}</span></td>
+          <td style="text-align:center">${(c.importe_inicial||0) > 0 ? '<span style="color:var(--green)">✓</span>' : '<span style="color:#c0392b">✕</span>'}</td>
+          <td style="text-align:center;font-size:0.78rem">${(() => {
+            const sumsC = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id);
+            const tipos = ['epe','agua','tgiu','seguro'];
+            const conNro = tipos.filter(t => {
+              const s = sumsC.find(x => x.tipo === t);
+              return s ? !!(s.nro_cuenta && s.nro_cuenta.trim()) : !!(c['nro_'+t] && c['nro_'+t].trim());
+            });
+            const total = tipos.filter(t => sumsC.some(x => x.tipo === t) || (c['nro_'+t]!==undefined));
+            return conNro.length === 0 ? '<span style="color:#c0392b">0 cargados</span>' : `<span style="color:var(--green)">${conNro.length}/${tipos.length}</span>`;
+          })()}</td>
         </tr>`;
       }).join('');
 
