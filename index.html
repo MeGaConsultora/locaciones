@@ -2754,6 +2754,9 @@ function filtrarContratosActualizar() {
     if (filtroIndice && c.indice_actualizacion !== filtroIndice) return false;
     const mesesPeriodo = {'Mensual':1,'Bimestral':2,'Trimestral':3,'Cuatrimestral':4,'Semestral':6,'Anual':12}[c.periodicidad_actualizacion]||0;
     if (!mesesPeriodo) return false;
+    // No actualizar si el mes seleccionado es posterior a la vigencia del contrato
+    const vigHastaKey = c.vigencia_hasta?.substring(0,7);
+    if (vigHastaKey && mesKey > vigHastaKey) return false;
     // Prioridad 1: si existe un pago real para mesKey SIN importe_alquiler cargado (mes "futuro" pendiente de actualizar), usar eso como fuente de verdad
     const pagoDelMes = DB.pagos.find(p => p.hoja === c.hoja && p.mes?.startsWith(mesKey));
     if (pagoDelMes) {
@@ -2772,6 +2775,14 @@ function filtrarContratosActualizar() {
   if (count) count.textContent = `${contratos.length} contrato/s`;
   if (!lista) return;
 
+  // Preservar el estado de seleccion (checked/unchecked) de la lista anterior, por contrato id
+  const seleccionPrevia = {};
+  let huboSeleccionPrevia = false;
+  document.querySelectorAll('.act-chk').forEach(chk => {
+    seleccionPrevia[chk.dataset.id] = chk.checked;
+    huboSeleccionPrevia = true;
+  });
+
   if (!contratos.length) {
     lista.innerHTML = '<div class="empty-state"><p>Sin contratos que actualicen en ese mes con esos filtros</p></div>';
     return;
@@ -2789,8 +2800,10 @@ function filtrarContratosActualizar() {
     const pagoPrev = DB.pagos.filter(p => p.hoja===c.hoja && p.mes?.startsWith(mesPrevKey) && p.importe_alquiler>0)[0];
     const alqActual = pagoPrev?.importe_alquiler || DB.pagos.filter(p => p.hoja===c.hoja && p.importe_alquiler>0).sort((a,b)=>b.mes?.localeCompare(a.mes))[0]?.importe_alquiler || 0;
     const nuevo = pct > 0 ? Math.round(alqActual * (1 + pct/100)) : alqActual;
+    // Mantener el estado previo de seleccion si existia; si es la primera vez (lista nueva), tildado por defecto
+    const estabaChecked = huboSeleccionPrevia ? (seleccionPrevia[c.id] !== undefined ? seleccionPrevia[c.id] : true) : true;
     return `<div style="background:var(--cream);border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem;display:grid;grid-template-columns:auto 1fr auto auto auto;align-items:center;gap:1rem;flex-wrap:wrap">
-      <input type="checkbox" class="act-chk" data-id="${c.id}" checked style="width:16px;height:16px;cursor:pointer" onchange="actualizarBotonConfirmar()">
+      <input type="checkbox" class="act-chk" data-id="${c.id}" ${estabaChecked?'checked':''} style="width:16px;height:16px;cursor:pointer" onchange="actualizarBotonConfirmar()">
       <div>
         <strong style="font-size:0.88rem">${c.titulo||c.hoja}</strong>
         <div style="font-size:0.75rem;color:#888">${c.periodicidad_actualizacion} · ${c.indice_actualizacion||'—'}</div>
@@ -2812,6 +2825,7 @@ function filtrarContratosActualizar() {
 
 async function abrirActualizacionAlquileres() {
   document.getElementById('informes-menu').style.display = 'none';
+  window._actModalSnapshot = null;
   const periodicidades = [...new Set(DB.contratos.filter(c=>c.periodicidad_actualizacion&&c.periodicidad_actualizacion!=='Sin actualización'&&!c.fecha_rescision).map(c=>c.periodicidad_actualizacion))].sort();
   const indices = [...new Set(DB.contratos.filter(c=>c.indice_actualizacion&&!c.fecha_rescision).map(c=>c.indice_actualizacion))].sort();
 
@@ -2887,7 +2901,17 @@ function actualizarBotonConfirmar() {
   }
 }
 
+function volverAConfiguracionActualizacion() {
+  if (window._actModalSnapshot) {
+    document.getElementById('modal-body').innerHTML = window._actModalSnapshot;
+    setTimeout(actualizarBotonConfirmar, 50);
+  } else {
+    abrirActualizacionAlquileres();
+  }
+}
+
 function previsualizarConfirmacion() {
+  window._actModalSnapshot = document.getElementById('modal-body').innerHTML;
   const desde = document.getElementById('act-desde')?.value;
   if (!desde) { toast('Ingresá el mes desde el que proyectar', 'error'); return; }
 
@@ -2973,7 +2997,7 @@ function previsualizarConfirmacion() {
       </table>
     </div>
     <div class="form-actions">
-      <button class="btn btn-secondary" onclick="abrirActualizacionAlquileres()">← Volver</button>
+      <button class="btn btn-secondary" onclick="volverAConfiguracionActualizacion()">← Volver</button>
       <button class="btn btn-primary" style="background:#e53935" onclick="ejecutarActualizacionDesdeStr('${datosStr}','${desde}')">
         ✓ CONFIRMAR Y PROYECTAR
       </button>
