@@ -2717,9 +2717,11 @@ async function proyectarPeriodo(hoja, desdeKey, importe, periodicidad, diaVenc, 
     const serviciosExistentes = (p.monto_epe||0) + (p.monto_agua||0) + (p.monto_tgiu||0) +
       (p.monto_seguro||0) + (p.monto_internet||0) + (p.monto_expensas||0) + (p.monto_otros||0);
     const nuevoTotal = importe + serviciosExistentes;
-    const yaAbonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
-    const nuevoSaldo = p.pagado === 'SI' ? 0 : Math.max(0, nuevoTotal - yaAbonado);
-    const nuevoPagado = p.pagado === 'SI' ? 'SI' : (yaAbonado > 0 ? 'PARCIAL' : (p.pagado || 'NO'));
+    // Usar siempre pagado_importe real (nunca confiar ciegamente en el flag pagado='SI',
+    // que puede estar desactualizado/inconsistente de un estado previo)
+    const yaAbonado = p.pagado_importe || 0;
+    const nuevoSaldo = Math.max(0, Math.round((nuevoTotal - yaAbonado) * 100) / 100);
+    const nuevoPagado = nuevoSaldo <= 0 ? 'SI' : (yaAbonado > 0 ? 'PARCIAL' : 'NO');
 
     // Calculate comision from contract
     const contratoP = DB.contratos.find(x => x.hoja === hoja);
