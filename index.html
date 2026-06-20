@@ -138,6 +138,10 @@
   .stat-sub { font-size:0.75rem; color:#999; margin-top:4px; }
 
   .toolbar { display:flex; gap:0.75rem; margin-bottom:1.5rem; flex-wrap:wrap; align-items:center; }
+  .checklist-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:0.6rem; }
+  .checklist-chip { display:flex; align-items:center; gap:6px; border-radius:20px; padding:6px 12px; cursor:pointer; font-size:0.8rem; transition:all 0.15s; min-width:0; }
+  @media(max-width:760px) { .checklist-grid { grid-template-columns:repeat(2, 1fr); } }
+  @media(max-width:480px) { .checklist-grid { grid-template-columns:1fr; } }
   .search-input {
     flex:1; min-width:220px; padding:0.65rem 1rem;
     border:1.5px solid var(--border); border-radius:8px;
@@ -1806,12 +1810,12 @@ function renderChecklistContrato(c) {
         <strong style="font-size:0.9rem;color:var(--ink)">📋 Estado de firma del contrato</strong>
         <span style="font-size:0.78rem;color:${todoCompleto?'var(--green)':'#888'};font-weight:600">${completados}/${total} ${todoCompleto?'✓ Completo':'completados'}</span>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:0.6rem">
+      <div class="checklist-grid">
         ${CHECKLIST_ETAPAS.map(e => {
           const checked = !!c[e.key];
-          return `<label style="display:flex;align-items:center;gap:6px;background:${checked?'#e8f5e9':'#f5f0e8'};border:1.5px solid ${checked?'var(--green)':'var(--border)'};border-radius:20px;padding:6px 12px;cursor:pointer;font-size:0.8rem;transition:all 0.15s;${checked?'color:#1d5a37;font-weight:600':'color:#666'}">
-            <input type="checkbox" ${checked?'checked':''} onchange="toggleChecklistItem(${c.id},'${e.key}',this.checked)" style="cursor:pointer;width:14px;height:14px;accent-color:var(--green)">
-            ${checked?'✓ ':''}${e.label}
+          return `<label class="checklist-chip" style="background:${checked?'#e8f5e9':'#f5f0e8'};border:1.5px solid ${checked?'var(--green)':'var(--border)'};${checked?'color:#1d5a37;font-weight:600':'color:#666'}">
+            <input type="checkbox" ${checked?'checked':''} onchange="toggleChecklistItem(${c.id},'${e.key}',this.checked)" style="cursor:pointer;width:14px;height:14px;accent-color:var(--green);flex-shrink:0">
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${checked?'✓ ':''}${e.label}</span>
           </label>`;
         }).join('')}
       </div>
