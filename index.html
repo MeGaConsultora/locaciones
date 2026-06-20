@@ -1966,9 +1966,9 @@ function renderGrilla(c) {
     const totalExtras = totalExtrasGral + totalExtrasMes;
     // saldo calculado en tiempo real (igual que el total mostrado), para evitar mostrar valor desactualizado de BD
     const _totalCalc = calcularTotal(p, extras, window._pagosSuministros?.[p.id]);
-    // Recalcular el saldo en tiempo real con el total actualizado (incluye EPE/Agua/TGIU recien cargados).
-    // Si pagado='SI' Y lo abonado ya cubre el total recalculado, confiar en 0 (evita falsos pendientes).
-    const saldoReal = (p.pagado === 'SI' && (p.pagado_importe||0) >= _totalCalc - 0.5)
+    // Si pagado='SI' o saldo=0 en BD, confiar en BD (evita saldos falsos por datos históricos inconsistentes)
+    // Solo recalcular en tiempo real para pagos pendientes o parciales
+    const saldoReal = (p.pagado === 'SI' || (p.saldo||0) === 0)
       ? 0
       : Math.max(0, Math.round((_totalCalc - (p.pagado_importe||0)) * 100) / 100);
     const excedente = (p.pagado_importe||0) > (p.total||0) ? Math.round(((p.pagado_importe||0) - (p.total||0)) * 100) / 100 : 0;
