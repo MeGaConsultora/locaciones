@@ -1774,6 +1774,7 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
         : `<button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px" onclick="abrirAsignarInmueble(${c.id})">＋ Asignar inmueble</button>`}
       </span></div>
     </div>
+    <div id="checklist-contrato">${renderChecklistContrato(c)}</div>
     <div id="honorarios-row"></div>
     <div id="grilla-container"><div class="loading-overlay">Cargando grilla de pagos...</div></div>
   `;
@@ -1784,6 +1785,50 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
     if (btn) { mostrarSolapa(tabInicial, btn); }
   }
   await recargarGrilla(c);
+}
+
+const CHECKLIST_ETAPAS = [
+  { key: 'chk_redactado', label: 'Redactado' },
+  { key: 'chk_impreso', label: 'Impreso' },
+  { key: 'chk_firma_inquilino', label: 'Firmado por inquilino' },
+  { key: 'chk_firma_garante', label: 'Firmado por garante/s' },
+  { key: 'chk_firma_propietario', label: 'Firmado por propietario' },
+  { key: 'chk_archivado', label: 'Archivado' },
+];
+
+function renderChecklistContrato(c) {
+  const completados = CHECKLIST_ETAPAS.filter(e => c[e.key]).length;
+  const total = CHECKLIST_ETAPAS.length;
+  const todoCompleto = completados === total;
+  return `
+    <div style="background:white;border-radius:12px;box-shadow:var(--shadow);padding:1rem 1.4rem;margin-bottom:1.2rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.8rem;flex-wrap:wrap;gap:0.5rem">
+        <strong style="font-size:0.9rem;color:var(--ink)">📋 Estado de firma del contrato</strong>
+        <span style="font-size:0.78rem;color:${todoCompleto?'var(--green)':'#888'};font-weight:600">${completados}/${total} ${todoCompleto?'✓ Completo':'completados'}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:0.6rem">
+        ${CHECKLIST_ETAPAS.map(e => {
+          const checked = !!c[e.key];
+          return `<label style="display:flex;align-items:center;gap:6px;background:${checked?'#e8f5e9':'#f5f0e8'};border:1.5px solid ${checked?'var(--green)':'var(--border)'};border-radius:20px;padding:6px 12px;cursor:pointer;font-size:0.8rem;transition:all 0.15s;${checked?'color:#1d5a37;font-weight:600':'color:#666'}">
+            <input type="checkbox" ${checked?'checked':''} onchange="toggleChecklistItem(${c.id},'${e.key}',this.checked)" style="cursor:pointer;width:14px;height:14px;accent-color:var(--green)">
+            ${checked?'✓ ':''}${e.label}
+          </label>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+
+async function toggleChecklistItem(contratoId, key, valor) {
+  try {
+    await sbPatch('contratos', contratoId, { [key]: valor });
+    const c = DB.contratos.find(x => x.id === contratoId);
+    if (c) c[key] = valor;
+    const cont = document.getElementById('checklist-contrato');
+    if (cont && c) cont.innerHTML = renderChecklistContrato(c);
+    toast(valor ? 'Marcado ✓' : 'Desmarcado');
+  } catch(e) {
+    toast('Error al guardar: ' + e.message, 'error');
+  }
 }
 
 async function recargarGrilla(c) {
