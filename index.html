@@ -1841,15 +1841,19 @@ async function subirArchivoContrato(contratoId, inputEl) {
     const path = `contratos-docs/${contratoId}_${Date.now()}.${ext}`;
     const arrayBuffer = await file.arrayBuffer();
     const res = await fetch(`${SB_URL}/storage/v1/object/contratos-archivos/${path}`, {
-      method: 'POST',
+      method: 'PUT',
       headers: {
         'apikey': SB_KEY,
         'Authorization': `Bearer ${SB_KEY}`,
         'Content-Type': file.type || 'application/octet-stream',
+        'x-upsert': 'true',
       },
       body: arrayBuffer
     });
-    if (!res.ok) throw new Error('Error al subir: ' + res.status);
+    if (!res.ok) {
+      const errText = await res.text().catch(()=>'');
+      throw new Error(`Error al subir (${res.status}): ${errText}`);
+    }
     await sbPatch('contratos', contratoId, { archivo_contrato_path: path, archivo_contrato_nombre: file.name });
     const c = DB.contratos.find(x => x.id === contratoId);
     if (c) { c.archivo_contrato_path = path; c.archivo_contrato_nombre = file.name; }
