@@ -1804,10 +1804,19 @@ function renderChecklistContrato(c) {
   const completados = CHECKLIST_ETAPAS.filter(e => c[e.key]).length;
   const total = CHECKLIST_ETAPAS.length;
   const todoCompleto = completados === total;
+  const tieneArchivo = !!c.archivo_contrato_path;
   return `
     <div style="background:white;border-radius:12px;box-shadow:var(--shadow);padding:1rem 1.4rem;margin-bottom:1.2rem">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.8rem;flex-wrap:wrap;gap:0.5rem">
-        <strong style="font-size:0.9rem;color:var(--ink)">📋 Estado de firma del contrato</strong>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <strong style="font-size:0.9rem;color:var(--ink)">📋 Estado de firma del contrato</strong>
+          ${tieneArchivo
+            ? `<button class="btn btn-secondary" style="font-size:0.75rem;padding:4px 10px" onclick="verArchivoContrato(${c.id})">📄 Ver contrato</button>
+               <button class="btn btn-secondary" style="font-size:0.75rem;padding:4px 10px;color:#c0392b" onclick="document.getElementById('input-archivo-contrato-${c.id}').click()">🔄 Reemplazar</button>`
+            : `<button class="btn btn-secondary" style="font-size:0.75rem;padding:4px 10px" onclick="document.getElementById('input-archivo-contrato-${c.id}').click()">📎 Adjuntar contrato (Word/PDF)</button>`
+          }
+          <input type="file" id="input-archivo-contrato-${c.id}" accept=".doc,.docx,.pdf" style="display:none" onchange="subirArchivoContrato(${c.id}, this)">
+        </div>
         <span style="font-size:0.78rem;color:${todoCompleto?'var(--green)':'#888'};font-weight:600">${completados}/${total} ${todoCompleto?'✓ Completo':'completados'}</span>
       </div>
       <div class="checklist-grid">
@@ -1820,6 +1829,43 @@ function renderChecklistContrato(c) {
         }).join('')}
       </div>
     </div>`;
+}
+
+async function subirArchivoContrato(contratoId, inputEl) {
+  const file = inputEl.files?.[0];
+  if (!file) return;
+  if (file.size > 20 * 1024 * 1024) { toast('El archivo supera los 20MB', 'error'); return; }
+  toast('Subiendo archivo...', 'info');
+  try {
+    const ext = file.name.split('.').pop();
+    const path = `contratos-docs/${contratoId}_${Date.now()}.${ext}`;
+    const arrayBuffer = await file.arrayBuffer();
+    const res = await fetch(`${SB_URL}/storage/v1/object/contratos-archivos/${path}`, {
+      method: 'POST',
+      headers: {
+        'apikey': SB_KEY,
+        'Authorization': `Bearer ${SB_KEY}`,
+        'Content-Type': file.type || 'application/octet-stream',
+      },
+      body: arrayBuffer
+    });
+    if (!res.ok) throw new Error('Error al subir: ' + res.status);
+    await sbPatch('contratos', contratoId, { archivo_contrato_path: path, archivo_contrato_nombre: file.name });
+    const c = DB.contratos.find(x => x.id === contratoId);
+    if (c) { c.archivo_contrato_path = path; c.archivo_contrato_nombre = file.name; }
+    const cont = document.getElementById('checklist-contrato');
+    if (cont && c) cont.innerHTML = renderChecklistContrato(c);
+    toast('Contrato adjuntado ✓', 'success');
+  } catch(e) {
+    toast('Error al subir archivo: ' + e.message, 'error');
+  }
+}
+
+function verArchivoContrato(contratoId) {
+  const c = DB.contratos.find(x => x.id === contratoId);
+  if (!c?.archivo_contrato_path) return;
+  const url = `${SB_URL}/storage/v1/object/public/contratos-archivos/${c.archivo_contrato_path}`;
+  window.open(url, '_blank');
 }
 
 async function toggleChecklistItem(contratoId, key, valor) {
