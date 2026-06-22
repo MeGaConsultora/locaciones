@@ -9480,16 +9480,16 @@ function _renderEPEPreview(datos) {
       <button onclick="document.querySelectorAll('.epe-chk-row:not([disabled])').forEach(c=>c.checked=false)" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer">✗ Deseleccionar todos</button>
     </div>
     <div style="overflow-x:auto;max-height:380px;overflow-y:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:0.83rem">
+      <table id="epe-tabla" style="width:100%;border-collapse:collapse;font-size:0.83rem">
         <thead><tr style="background:var(--ink2);color:white;position:sticky;top:0">
           <th style="padding:6px 8px;text-align:center">✓</th>
-          <th style="padding:6px 8px;text-align:left">N° Cliente</th>
-          <th style="padding:6px 8px;text-align:left">Contrato</th>
+          <th style="padding:6px 8px;text-align:left;cursor:pointer;user-select:none" onclick="ordenarTablaEPE('cuenta')" title="Ordenar por N° Cliente">N° Cliente <span id="epe-sort-cuenta"></span></th>
+          <th style="padding:6px 8px;text-align:left;cursor:pointer;user-select:none" onclick="ordenarTablaEPE('contrato')" title="Ordenar por Contrato">Contrato <span id="epe-sort-contrato"></span></th>
           <th style="padding:6px 8px;text-align:right">Boleta</th>
           <th style="padding:6px 8px;text-align:right">Cargado</th>
           <th style="padding:6px 8px;text-align:right">A cargar</th>
         </tr></thead>
-        <tbody>
+        <tbody id="epe-tabla-body">
           ${datos.map((d, i) => {
             const sum = d.suministro_id ? DB_SUMINISTROS.find(s => s.id === d.suministro_id) : null;
             const contrato = sum ? DB.contratos.find(c => c.id === parseInt(sum.contrato_id) && getEstado(c) === 'vigente') : null;
@@ -9497,15 +9497,15 @@ function _renderEPEPreview(datos) {
             const pct = sum ? (sum.pct_inquilino || 100) : 100;
             const aCargar = tieneImporte ? Math.round(d.importe * pct / 100 * 100) / 100 : 0;
             const cargado = d.importe_cargado || null;
-            // Diferencia: resaltar si cargado != aCargar (con tolerancia de $1)
             const hayDiferencia = cargado !== null && tieneImporte && Math.abs(cargado - aCargar) > 1;
             const rowColor = !contrato ? '#fff8f8' : hayDiferencia ? '#fff3cd' : !tieneImporte ? '#f5f5f5' : '';
-            return `<tr style="border-bottom:1px solid #eee;background:${rowColor}">
+            const contratoLabel = contrato ? (contrato.titulo || contrato.hoja) : '';
+            return `<tr style="border-bottom:1px solid #eee;background:${rowColor}" data-cuenta="${d.nro_cuenta||''}" data-contrato="${contratoLabel}">
               <td style="padding:6px 8px;text-align:center">
                 <input type="checkbox" class="epe-chk-row" data-idx="${i}" ${contrato && tieneImporte ? 'checked' : ''} ${!contrato ? 'disabled' : ''} style="width:15px;height:15px">
               </td>
               <td style="padding:6px 8px;font-weight:600">${d.nro_cuenta || '—'}</td>
-              <td style="padding:6px 8px">${contrato ? (contrato.titulo || contrato.hoja) : '<span style="color:var(--accent)">Sin contrato</span>'}</td>
+              <td style="padding:6px 8px">${contrato ? contratoLabel : '<span style="color:var(--accent)">Sin contrato</span>'}</td>
               <td style="padding:6px 8px;text-align:right">${tieneImporte ? formatMoney(d.importe) + (d.es_2do_vto ? ' <span style="font-size:0.7rem;color:#856404" title="2do vencimiento">②</span>' : '') : '<span style="color:#aaa">—</span>'}</td>
               <td style="padding:6px 8px;text-align:right;${hayDiferencia ? 'color:var(--accent);font-weight:600' : 'color:#888'}">${cargado !== null ? formatMoney(cargado) : '—'}</td>
               <td style="padding:6px 8px;text-align:right;color:var(--green)">${aCargar ? formatMoney(aCargar) : '—'}</td>
@@ -9519,6 +9519,30 @@ function _renderEPEPreview(datos) {
       <button class="btn btn-secondary" onclick="recargarDatosEPE()">🔄 Recargar</button>
       <button class="btn btn-green" onclick="confirmarImportarEPE()">✓ Cargar seleccionados</button>
     </div>`;
+}
+
+window._epeSortCol = null;
+window._epeSortAsc = true;
+function ordenarTablaEPE(col) {
+  if (window._epeSortCol === col) {
+    window._epeSortAsc = !window._epeSortAsc;
+  } else {
+    window._epeSortCol = col;
+    window._epeSortAsc = true;
+  }
+  const tbody = document.getElementById('epe-tabla-body');
+  if (!tbody) return;
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  rows.sort((a, b) => {
+    const va = (a.dataset[col] || '').toLowerCase();
+    const vb = (b.dataset[col] || '').toLowerCase();
+    return window._epeSortAsc ? va.localeCompare(vb, 'es') : vb.localeCompare(va, 'es');
+  });
+  rows.forEach(r => tbody.appendChild(r));
+  ['cuenta','contrato'].forEach(c => {
+    const el = document.getElementById('epe-sort-'+c);
+    if (el) el.textContent = c === col ? (window._epeSortAsc ? ' ▲' : ' ▼') : '';
+  });
 }
 
 async function recargarDatosEPE() {
@@ -9975,22 +9999,23 @@ function mostrarResultadosPDF(resultados, mes, srv) {
       <button onclick="toggleTodosPDF(false)" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer">✗ Deseleccionar todos</button>
     </div>
     <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:0.83rem">
+      <table id="pdf-tabla" style="width:100%;border-collapse:collapse;font-size:0.83rem">
         <thead><tr style="background:var(--ink2);color:white">
           <th style="padding:6px 8px;text-align:center">✓</th>
           <th style="padding:6px 8px;text-align:left">Pág.</th>
-          <th style="padding:6px 8px;text-align:left">N° Cuenta</th>
-          <th style="padding:6px 8px;text-align:left">Contrato</th>
+          <th style="padding:6px 8px;text-align:left;cursor:pointer;user-select:none" onclick="ordenarTablaPDF('cuenta')" title="Ordenar por N° Cuenta">N° Cuenta <span id="pdf-sort-cuenta"></span></th>
+          <th style="padding:6px 8px;text-align:left;cursor:pointer;user-select:none" onclick="ordenarTablaPDF('contrato')" title="Ordenar por Contrato">Contrato <span id="pdf-sort-contrato"></span></th>
           <th style="padding:6px 8px;text-align:right">Importe</th>
           <th style="padding:6px 8px;text-align:right">A cargar</th>
         </tr></thead>
-        <tbody>
+        <tbody id="pdf-tabla-body">
           ${resultados.map((r, i) => {
             const sums = r.contrato ? DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === r.contrato.id && s.tipo === srv && (s.pct_inquilino||0) > 0) : [];
             const pct = sums.length > 0 ? sums.reduce((t,s) => t + (s.pct_inquilino||0), 0) : (r.contrato ? (r.contrato[`pct_${srv}`] ?? 100) : 100);
             const aCargar = r.importe ? Math.round(r.importe * pct / 100 * 100) / 100 : 0;
             const rowColor = !r.cuenta ? '#f5f5f5' : !r.contrato ? '#fff8f8' : '';
-            return `<tr style="border-bottom:1px solid #eee;background:${rowColor}">
+            const contratoLabel = r.contrato ? r.contrato.titulo : '';
+            return `<tr style="border-bottom:1px solid #eee;background:${rowColor}" data-cuenta="${r.cuenta||''}" data-contrato="${contratoLabel}">
               <td style="padding:6px 8px;text-align:center">
                 <input type="checkbox" class="pdf-chk" data-idx="${i}" ${r.seleccionado ? 'checked' : ''} ${!r.contrato ? 'disabled' : ''} style="width:15px;height:15px">
               </td>
@@ -10034,6 +10059,30 @@ function mostrarResultadosPDF(resultados, mes, srv) {
 
 function toggleTodosPDF(sel) {
   document.querySelectorAll('.pdf-chk:not([disabled])').forEach(chk => chk.checked = sel);
+}
+
+window._pdfSortCol = null;
+window._pdfSortAsc = true;
+function ordenarTablaPDF(col) {
+  if (window._pdfSortCol === col) {
+    window._pdfSortAsc = !window._pdfSortAsc;
+  } else {
+    window._pdfSortCol = col;
+    window._pdfSortAsc = true;
+  }
+  const tbody = document.getElementById('pdf-tabla-body');
+  if (!tbody) return;
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  rows.sort((a, b) => {
+    const va = (a.dataset[col] || '').toLowerCase();
+    const vb = (b.dataset[col] || '').toLowerCase();
+    return window._pdfSortAsc ? va.localeCompare(vb, 'es') : vb.localeCompare(va, 'es');
+  });
+  rows.forEach(r => tbody.appendChild(r));
+  ['cuenta','contrato'].forEach(c => {
+    const el = document.getElementById('pdf-sort-'+c);
+    if (el) el.textContent = c === col ? (window._pdfSortAsc ? ' ▲' : ' ▼') : '';
+  });
 }
 
 async function confirmarImportarPDF() {
