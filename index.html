@@ -7435,9 +7435,13 @@ async function actualizarContrato(id) {
           let [y, m] = ultimoMes.split('-').map(Number);
           const [ey, em] = nuevaHasta.substring(0,7).split('-').map(Number);
           m++; if (m > 12) { m = 1; y++; }
+          const impNuevo = parseMonto(document.getElementById('f-importe-inicial')?.value) || 0;
+          let esPrimerMesNuevo = true;
           while (y < ey || (y === ey && m <= em)) {
             const mesStr = `${y}-${String(m).padStart(2,'0')}-01`;
-            mesesNuevos.push({ hoja, mes: mesStr, corresponde_a_mes: mesStr, importe_alquiler: 0, total: 0, saldo: 0, pagado: '0' });
+            const imp = esPrimerMesNuevo ? impNuevo : 0;
+            mesesNuevos.push({ hoja, mes: mesStr, corresponde_a_mes: mesStr, importe_alquiler: imp, total: imp, saldo: imp, pagado: '0' });
+            esPrimerMesNuevo = false;
             m++; if (m > 12) { m = 1; y++; }
           }
           if (mesesNuevos.length > 0) {
