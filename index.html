@@ -5486,6 +5486,14 @@ async function verDetalleDeuda(hoja, contratoId, mesKey) {
     ...extras.map(e => ({ label: e.concepto||'Extra', monto: parseFloat(e.importe)||0 }))
   ].filter(i => i.monto > 0);
 
+  // Calcular interés punitorio al día de hoy (igual que el GP)
+  const interesRate = c?.interes_punitorio || 0;
+  const venceStr = p.fecha_pago_hasta?.substring(0,10);
+  const interesVal = (interesRate > 0 && venceStr)
+    ? calcularIntereses(p.importe_alquiler||0, venceStr, TODAY, interesRate)
+    : 0;
+  if (interesVal > 0) items.push({ label: `Interés punitorio (${interesRate}% diario s/alquiler)`, monto: interesVal });
+
   const totalItems = items.reduce((s,i) => s + (i.monto||0), 0);
   const yaAbonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
   const saldo = Math.max(0, totalItems - yaAbonado);
