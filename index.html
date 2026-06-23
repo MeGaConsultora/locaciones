@@ -7411,15 +7411,10 @@ async function actualizarContrato(id) {
       return;
     }
 
-    // Re-project if checkbox is checked
+    // Re-project flag — se ejecuta después del loadAll() para que DB.contratos esté actualizado
     const reimportar = document.getElementById('f-reimportar')?.checked;
     const nuevoImporte = parseMonto(document.getElementById('f-importe-inicial')?.value);
-    if (reimportar && nuevoImporte > 0) {
-      const cActualizado = { ...DB.contratos.find(x=>x.id===id), ...body };
-      const desdeKey = (cActualizado.vigencia_desde || TODAY).substring(0,7);
-      await proyectarPeriodo(cActualizado.hoja||cActualizado.titulo, desdeKey, nuevoImporte, cActualizado.periodicidad_actualizacion, cActualizado.dia_vencimiento||10, cActualizado.modalidad_pago||'ADELANTADO');
-      toast('Período re-proyectado ✓');
-    }
+    const reimportarDesde = (body.vigencia_desde || '').substring(0,7);
     
     // Check for months outside new vigencia ONLY if dates changed
     const nuevaDesde = document.getElementById('f-desde').value;
@@ -7488,6 +7483,16 @@ async function actualizarContrato(id) {
     }
 
     await loadAll();
+
+    // Ahora DB.contratos está actualizado — proyectar igual que en contrato nuevo
+    if (reimportar && nuevoImporte > 0 && reimportarDesde) {
+      const cFresh = DB.contratos.find(x=>x.id===id);
+      if (cFresh && cFresh.periodicidad_actualizacion && cFresh.periodicidad_actualizacion !== 'Sin actualización') {
+        await proyectarPeriodo(cFresh.hoja||cFresh.titulo, reimportarDesde, nuevoImporte, cFresh.periodicidad_actualizacion, cFresh.dia_vencimiento||10, cFresh.modalidad_pago||'ADELANTADO');
+        toast('Período re-proyectado ✓');
+      }
+    }
+
     openContrato(id);
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
