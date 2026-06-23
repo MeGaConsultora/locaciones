@@ -11513,6 +11513,10 @@ async function guardarInmueble(id) {
     toast('Inmueble actualizado ✓');
     await loadAll();
     if (window._volverAContrato && window._contratoIdEditar) {
+      // Sincronizar tipo_inmueble en el contrato con el nuevo tipo del inmueble
+      if (body.tipo) {
+        try { await sbPatch('contratos', window._contratoIdEditar, { tipo_inmueble: body.tipo }); } catch(e) {}
+      }
       window._volverAContrato = false;
       const cid = window._contratoIdEditar;
       window._contratoIdEditar = null;
