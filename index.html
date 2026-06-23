@@ -4521,7 +4521,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       </div>
       <div class="form-actions" style="justify-content:space-between">
         ${((p.total||0) > (p.saldo||0) || (p.pagado && p.pagado !== '0')) ? `<button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="revertirCobro('${hoja}',${contratoId},'${mesKey}',${comisionPct})">↩ Revertir cobro</button>` : '<div></div>'}
-        <button class="btn btn-secondary" onclick="verDetalleDeuda('${hoja}',${contratoId},'${mesKey}')" style="margin-right:0.5rem">📋 Detalle de deuda</button>
+        <button class="btn btn-secondary" onclick="verDetalleDeuda('${hoja}',${contratoId},'${mesKey}',document.getElementById('gp-interes-chk')?.checked||false)" style="margin-right:0.5rem">📋 Detalle de deuda</button>
         <button class="btn btn-green" style="white-space:normal;text-align:center" onclick="confirmarCobroInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct})">✓ Confirmar cobro + Imprimir recibo</button>
       </div>`}
     </div>
@@ -5456,7 +5456,7 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
-async function verDetalleDeuda(hoja, contratoId, mesKey) {
+async function verDetalleDeuda(hoja, contratoId, mesKey, conIntereses = false) {
   const mes = mesKey+'-01';
   const hojaEncoded = encodeURIComponent(hoja);
   const existing = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
@@ -5486,13 +5486,15 @@ async function verDetalleDeuda(hoja, contratoId, mesKey) {
     ...extras.map(e => ({ label: e.concepto||'Extra', monto: parseFloat(e.importe)||0 }))
   ].filter(i => i.monto > 0);
 
-  // Calcular interés punitorio al día de hoy (igual que el GP)
-  const interesRate = c?.interes_punitorio || 0;
-  const venceStr = p.fecha_pago_hasta?.substring(0,10);
-  const interesVal = (interesRate > 0 && venceStr)
-    ? calcularIntereses(p.importe_alquiler||0, venceStr, TODAY, interesRate)
-    : 0;
-  if (interesVal > 0) items.push({ label: `Interés punitorio (${interesRate}% diario s/alquiler)`, monto: interesVal });
+  // Incluir interés punitorio solo si el checkbox del GP estaba tildado
+  if (conIntereses) {
+    const interesRate = c?.interes_punitorio || 0;
+    const venceStr = p.fecha_pago_hasta?.substring(0,10);
+    const interesVal = (interesRate > 0 && venceStr)
+      ? calcularIntereses(p.importe_alquiler||0, venceStr, TODAY, interesRate)
+      : 0;
+    if (interesVal > 0) items.push({ label: `Interés punitorio (${interesRate}% diario s/alquiler)`, monto: interesVal });
+  }
 
   const totalItems = items.reduce((s,i) => s + (i.monto||0), 0);
   const yaAbonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
