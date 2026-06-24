@@ -764,7 +764,10 @@
   <div id="panel-admin" class="panel">
     <div class="toolbar">
       <h2 style="font-family:'DM Serif Display',serif;font-size:1.3rem">Gestión de usuarios</h2>
-      <button class="btn btn-primary" onclick="loadUsuarios()">↻ Actualizar</button>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <input type="text" id="usuarios-buscar" placeholder="Buscar por inquilino..." class="search-input" style="width:220px;padding:6px 10px;font-size:0.85rem" oninput="filtrarUsuarios(this.value)">
+        <button class="btn btn-primary" onclick="loadUsuarios()">↻ Actualizar</button>
+      </div>
     </div>
     <div class="table-wrap">
       <table class="admin-table">
@@ -8845,6 +8848,17 @@ document.addEventListener('keydown', e => {
 // ============================================================
 // ADMIN USUARIOS
 // ============================================================
+function filtrarUsuarios(q) {
+  const rows = document.querySelectorAll('#tbody-usuarios tr[data-inquilino]');
+  const term = q.toLowerCase().trim();
+  rows.forEach(row => {
+    const inq = (row.dataset.inquilino || '').toLowerCase();
+    const nombre = (row.dataset.nombre || '').toLowerCase();
+    const email = (row.dataset.email || '').toLowerCase();
+    row.style.display = (!term || inq.includes(term) || nombre.includes(term) || email.includes(term)) ? '' : 'none';
+  });
+}
+
 async function loadUsuarios() {
   try {
     // Make sure personas are loaded
@@ -8857,8 +8871,9 @@ async function loadUsuarios() {
     if (!usuarios.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:#aaa">Sin usuarios registrados</td></tr>'; return; }
     tbody.innerHTML = usuarios.map(u => {
       const persona = u.persona_id ? DB_PERSONAS.find(p=>p.id===u.persona_id) : null;
+      const inquilinoStr = persona ? `${persona.apellido||''} ${persona.nombre||''}` : '';
       return `
-      <tr>
+      <tr data-inquilino="${inquilinoStr}" data-nombre="${u.nombre||''}" data-email="${u.email||''}">
         <td><strong>${u.nombre||'—'}</strong></td>
         <td>${u.email}</td>
         <td style="font-size:0.78rem;color:#888">${u.created_at ? new Date(u.created_at).toLocaleDateString('es-AR') : '—'}</td>
