@@ -4373,15 +4373,19 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
   }
 
   const extrasInqAll = extrasDelMes.filter(e => e.a_cargo_de !== 'propietario');
-  // Filtrar extras ya cubiertos por pagado_importe
-  // Los ítems regulares se cubren primero; lo que sobra de pagado_importe cubre los extras
-  const totalItemsRegulares = (p?.importe_alquiler||0) + (p?.monto_epe||0) + (p?.monto_agua||0) +
-    (p?.monto_tgiu||0) + (p?.monto_seguro||0) + (p?.monto_internet||0) + (p?.monto_expensas||0);
-  let pagadoRestanteParaExtras = Math.max(0, (p?.pagado_importe||0) - totalItemsRegulares);
+  // Filtrar extras ya cubiertos: usar pagado_xxx por ítem si existe, sino pagado_importe
+  const pagadoItemsRegulares = ['alquiler','epe','agua','tgiu','seguro','internet','expensas']
+    .reduce((s,k) => s + (parseFloat(p?.[k==='alquiler'?'pagado_alquiler':'pagado_'+k])||0), 0);
+  const tieneItemsPagadosXX = ['alquiler','epe','agua','tgiu','seguro','internet','expensas']
+    .some(k => (p?.[k==='alquiler'?'pagado_alquiler':'pagado_'+k]||0) > 0);
+  const pagadoTotalParaExtras = tieneItemsPagadosXX
+    ? Math.max(0, (p?.pagado_importe||0) - pagadoItemsRegulares)
+    : 0;
+  let pagadoRestanteParaExtras = pagadoTotalParaExtras;
   const extrasInq = extrasInqAll.filter(e => {
     const imp = (e.tipo === 'credito' ? -1 : 1) * (parseFloat(e.importe)||0);
     if (imp <= 0) return true; // créditos siempre mostrar
-    if (pagadoRestanteParaExtras >= imp) {
+    if (pagadoRestanteParaExtras >= imp - 0.01) {
       pagadoRestanteParaExtras -= imp;
       return false; // ya cubierto
     }
