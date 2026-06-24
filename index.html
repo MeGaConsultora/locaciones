@@ -5237,7 +5237,7 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       // pagado_importe is immutable — saldo = total - pagado_importe
       const pagadoImporte = existing[0].pagado_importe || 0;
       const nuevoSaldo = Math.round(Math.max(0, total - pagadoImporte) * 100) / 100;
-      const nuevoPagado = nuevoSaldo <= 0 ? 'SI' : (pagadoImporte > 0 ? 'PARCIAL' : (existing[0].pagado||'NO'));
+      const nuevoPagado = nuevoSaldo <= 0 ? 'SI' : (pagadoImporte > 0 ? 'PARCIAL' : (existing[0].pagado === 'SI' && pagadoImporte === 0 ? 'NO' : (existing[0].pagado||'NO')));
       const internetVal = applyFieldPct('gp-internet');
       const expensasVal = applyFieldPct('gp-expensas');
       // Only update monto_xxx fields if they are editable (not using pagos_suministros)
