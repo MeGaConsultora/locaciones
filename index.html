@@ -5667,7 +5667,11 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   if (totalCobrado <= 0) { toast('Seleccioná al menos un ítem','error'); return; }
 
   // Distribute payment across items in order
-  const montoRegular = totalCobrado - honorariosCobrado;
+  // Excluir honorarios Y extras del monto a imputar — los extras son conceptos separados
+  const montoExtras = [...document.querySelectorAll('[id^="cobro-chk-extra-"]')]
+    .filter(chk => chk.checked)
+    .reduce((s, chk) => s + (parseFloat(chk.dataset.signo||'1') * (parseFloat(chk.value)||0)), 0);
+  const montoRegular = totalCobrado - honorariosCobrado - montoExtras;
   // Correct order: alquiler → epe → agua → tgiu → expensas → seguro → internet
   const orden = ['alquiler','epe','agua','tgiu','expensas','seguro','internet'];
   const pagadoPorItem = {};
@@ -7771,7 +7775,7 @@ function imprimirRecibo(data) {
       </table>
       <div style="padding:0 14px 6px">
         ${data.nuevoSaldo > 0 ? `<div style="background:#fff3cd;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#856404">⚠ Saldo pendiente: <strong>${formatMoney(data.nuevoSaldo)}</strong>
-        ${data.itemsPendientes && data.itemsPendientes.length > 0 ? '<br><span style="font-size:0.7rem">Pendiente: ' + data.itemsPendientes.map(it => it.label + ' ' + formatMoney(it.saldo)).join(' · ') + '</span>' : ''}
+        ${data.itemsPendientes && data.itemsPendientes.length > 0 ? '<br><span style="font-size:0.7rem">Pendiente: ' + data.itemsPendientes.map(it => it.label + ' $' + formatMoney(it.saldo)).join(' · ') + '</span>' : ''}
       </div>` : '<div style="background:#d4edda;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#155724">✓ Mes cancelado en su totalidad</div>'}
         ${data.saldoHonorarios > 0 ? `<div style="background:#f5f0e8;border-radius:4px;padding:5px 10px;font-size:0.72rem;color:#856404;margin-top:4px">📌 Honorarios pendientes: <strong>${formatMoney(data.saldoHonorarios)}</strong></div>` : ''}
       </div>
