@@ -4372,7 +4372,21 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
     try { extrasDelMes = await sbGet('pagos_extras', `pago_id=eq.${p.id}&order=id.asc`); } catch(e) {}
   }
 
-  const extrasInq = extrasDelMes.filter(e => e.a_cargo_de !== 'propietario');
+  const extrasInqAll = extrasDelMes.filter(e => e.a_cargo_de !== 'propietario');
+  // Filtrar extras ya cubiertos por pagado_importe
+  // Los ítems regulares se cubren primero; lo que sobra de pagado_importe cubre los extras
+  const totalItemsRegulares = (p?.importe_alquiler||0) + (p?.monto_epe||0) + (p?.monto_agua||0) +
+    (p?.monto_tgiu||0) + (p?.monto_seguro||0) + (p?.monto_internet||0) + (p?.monto_expensas||0);
+  let pagadoRestanteParaExtras = Math.max(0, (p?.pagado_importe||0) - totalItemsRegulares);
+  const extrasInq = extrasInqAll.filter(e => {
+    const imp = (e.tipo === 'credito' ? -1 : 1) * (parseFloat(e.importe)||0);
+    if (imp <= 0) return true; // créditos siempre mostrar
+    if (pagadoRestanteParaExtras >= imp) {
+      pagadoRestanteParaExtras -= imp;
+      return false; // ya cubierto
+    }
+    return true; // pendiente
+  });
   const extrasProp = extrasDelMes.filter(e => e.a_cargo_de === 'propietario' || e.propietario_persona_id);
   const alq = p?.importe_alquiler||0;
   const comisionMonto = alq * (comisionPct/100);
@@ -7777,7 +7791,7 @@ function imprimirRecibo(data) {
       </table>
       <div style="padding:0 14px 6px">
         ${data.nuevoSaldo > 0 ? `<div style="background:#fff3cd;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#856404">⚠ Saldo pendiente: <strong>${formatMoney(data.nuevoSaldo)}</strong>
-        ${data.itemsPendientes && data.itemsPendientes.length > 0 ? '<br><span style="font-size:0.7rem">Pendiente: ' + data.itemsPendientes.map(it => it.label + ' $' + formatMoney(it.saldo)).join(' · ') + '</span>' : ''}
+        ${data.itemsPendientes && data.itemsPendientes.length > 0 ? '<br><span style="font-size:0.7rem">Pendiente: ' + data.itemsPendientes.map(it => it.label + ' ' + formatMoney(it.saldo)).join(' · ') + '</span>' : ''}
       </div>` : '<div style="background:#d4edda;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#155724">✓ Mes cancelado en su totalidad</div>'}
         ${data.saldoHonorarios > 0 ? `<div style="background:#f5f0e8;border-radius:4px;padding:5px 10px;font-size:0.72rem;color:#856404;margin-top:4px">📌 Honorarios pendientes: <strong>${formatMoney(data.saldoHonorarios)}</strong></div>` : ''}
       </div>
