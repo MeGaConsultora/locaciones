@@ -5667,11 +5667,13 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   if (totalCobrado <= 0) { toast('Seleccioná al menos un ítem','error'); return; }
 
   // Distribute payment across items in order
-  // Excluir honorarios Y extras del monto a imputar — los extras son conceptos separados
+  // Excluir honorarios Y extras del monto a imputar en ítems — los extras son conceptos separados
+  // Pero pagado_importe sigue usando totalCobrado completo (incluye extras)
   const montoExtras = [...document.querySelectorAll('[id^="cobro-chk-extra-"]')]
     .filter(chk => chk.checked)
     .reduce((s, chk) => s + (parseFloat(chk.dataset.signo||'1') * (parseFloat(chk.value)||0)), 0);
-  const montoRegular = totalCobrado - honorariosCobrado - montoExtras;
+  const montoRegular = totalCobrado - honorariosCobrado - montoExtras; // solo para distribuir en ítems
+  const montoRegularTotal = totalCobrado - honorariosCobrado; // para pagado_importe (incluye extras)
   // Correct order: alquiler → epe → agua → tgiu → expensas → seguro → internet
   const orden = ['alquiler','epe','agua','tgiu','expensas','seguro','internet'];
   const pagadoPorItem = {};
@@ -5749,12 +5751,12 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   const extrasP = extrasActuales[p.id]||[];
   const psDataP = window._pagosSuministros?.[p.id];
   const totalReal = calcularTotal(p, extrasP, psDataP);
-  const yaAbonadoReal = (p.pagado_importe||0) + montoRegular;
+  const yaAbonadoReal = (p.pagado_importe||0) + montoRegularTotal;
   const nuevoSaldo = Math.round(Math.max(0, totalReal - yaAbonadoReal) * 100) / 100;
   const nroMes = pagosActuales.findIndex(x=>x.id===p.id)+1;
   const fechaMovimiento = document.getElementById('gp-fecha-pago')?.value || TODAY;
 
-  const nuevoPagadoImporte = Math.round(((p.pagado_importe||0) + montoRegular) * 100) / 100;
+  const nuevoPagadoImporte = Math.round(((p.pagado_importe||0) + montoRegularTotal) * 100) / 100;
   await sbPatch('pagos', p.id, {
     pagado_importe: nuevoPagadoImporte,
     saldo: nuevoSaldo,
