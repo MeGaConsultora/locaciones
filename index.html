@@ -2065,11 +2065,15 @@ function renderGrilla(c) {
     const totalExtras = totalExtrasGral + totalExtrasMes;
     // saldo calculado en tiempo real (igual que el total mostrado), para evitar mostrar valor desactualizado de BD
     const _totalCalc = calcularTotal(p, extras, window._pagosSuministros?.[p.id]);
-    // Si pagado='SI' o saldo=0 en BD, confiar en BD (evita saldos falsos por datos históricos inconsistentes)
-    // Solo recalcular en tiempo real para pagos pendientes o parciales
-    const saldoReal = (p.pagado === 'SI' || (p.saldo||0) === 0)
-      ? 0
-      : Math.max(0, Math.round((_totalCalc - (p.pagado_importe||0)) * 100) / 100);
+    // Si pagado='SI' pero pagado_importe < total calculado, hay un suministro agregado post-pago — mostrar saldo real
+    // En los demás casos con pagado='SI' o saldo=0 en BD, confiar en BD
+    const _pagadoImporte = p.pagado_importe || 0;
+    const _hayDiferencia = p.pagado === 'SI' && _pagadoImporte > 0 && _totalCalc > _pagadoImporte + 0.01;
+    const saldoReal = _hayDiferencia
+      ? Math.round((_totalCalc - _pagadoImporte) * 100) / 100
+      : (p.pagado === 'SI' || (p.saldo||0) === 0)
+        ? 0
+        : Math.max(0, Math.round((_totalCalc - _pagadoImporte) * 100) / 100);
     const excedente = (p.pagado_importe||0) > (p.total||0) ? Math.round(((p.pagado_importe||0) - (p.total||0)) * 100) / 100 : 0;
     const extrasGralLabel = extrasGral.length > 0 ? extrasGral.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
     const extrasMesLabel = extrasMes.length > 0 ? extrasMes.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
@@ -5237,7 +5241,7 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       // pagado_importe is immutable — saldo = total - pagado_importe
       const pagadoImporte = existing[0].pagado_importe || 0;
       const nuevoSaldo = Math.round(Math.max(0, total - pagadoImporte) * 100) / 100;
-      const nuevoPagado = nuevoSaldo <= 0 ? 'SI' : (pagadoImporte > 0 ? 'PARCIAL' : (existing[0].pagado === 'SI' && pagadoImporte === 0 ? 'NO' : (existing[0].pagado||'NO')));
+      const nuevoPagado = nuevoSaldo <= 0 ? 'SI' : (pagadoImporte > 0 ? 'PARCIAL' : (existing[0].pagado||'NO'));
       const internetVal = applyFieldPct('gp-internet');
       const expensasVal = applyFieldPct('gp-expensas');
       // Only update monto_xxx fields if they are editable (not using pagos_suministros)
