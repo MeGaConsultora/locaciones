@@ -5753,7 +5753,6 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   const nuevoPagadoImporte = Math.round(((p.pagado_importe||0) + montoRegular) * 100) / 100;
   await sbPatch('pagos', p.id, {
     pagado_importe: nuevoPagadoImporte,
-    total: Math.round(totalReal * 100) / 100,  // sincronizar total con extras incluidos
     saldo: nuevoSaldo,
     pagado: nuevoSaldo===0 ? 'SI' : 'PARCIAL',
     pago_nro: String(nroMes),
@@ -7772,7 +7771,7 @@ function imprimirRecibo(data) {
       </table>
       <div style="padding:0 14px 6px">
         ${data.nuevoSaldo > 0 ? `<div style="background:#fff3cd;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#856404">⚠ Saldo pendiente: <strong>${formatMoney(data.nuevoSaldo)}</strong>
-        ${data.itemsPendientes && data.itemsPendientes.length > 0 ? '<br><span style="font-size:0.7rem">Pendiente: ' + data.itemsPendientes.map(it => it.label + ' $' + formatMoney(it.saldo)).join(' · ') + '</span>' : ''}
+        ${data.itemsPendientes && data.itemsPendientes.length > 0 ? '<br><span style="font-size:0.7rem">Pendiente: ' + data.itemsPendientes.map(it => it.label + ' ' + formatMoney(it.saldo)).join(' · ') + '</span>' : ''}
       </div>` : '<div style="background:#d4edda;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#155724">✓ Mes cancelado en su totalidad</div>'}
         ${data.saldoHonorarios > 0 ? `<div style="background:#f5f0e8;border-radius:4px;padding:5px 10px;font-size:0.72rem;color:#856404;margin-top:4px">📌 Honorarios pendientes: <strong>${formatMoney(data.saldoHonorarios)}</strong></div>` : ''}
       </div>
