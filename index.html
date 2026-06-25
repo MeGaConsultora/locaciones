@@ -3625,9 +3625,15 @@ async function cargarExtrasGral(mes, filtro) {
   const panel = document.getElementById('srv-extras-gral');
   if (!panel) return;
 
-  // Get all vigente contracts with 'otro' suministros
+  // Get vigente or recently-expired contracts with 'otro' suministros that have pagos in selected month
+  const mes01 = mes.length === 7 ? mes + '-01' : mes;
   const contratosConOtro = DB.contratos.filter(c => {
-    if (getEstado(c) !== 'vigente') return false;
+    const estado = getEstado(c);
+    if (estado !== 'vigente') {
+      // Para vencidos: incluir solo si tiene pagos en el mes seleccionado
+      const tienePagoEnMes = DB.pagos.some(p => p.hoja === (c.hoja||c.titulo) && p.mes === mes01);
+      if (!tienePagoEnMes) return false;
+    }
     const tieneOtro = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === c.id && s.tipo === 'otro');
     if (!tieneOtro) return false;
     if (filtro) { const nrosCuenta = DB_SUMINISTROS.filter(s=>parseInt(s.contrato_id)===c.id).map(s=>s.nro_cuenta||'').join(' ').toLowerCase(); if (!(c.titulo||c.hoja||'').toLowerCase().includes(filtro) && !nrosCuenta.includes(filtro)) return false; }
@@ -3641,7 +3647,6 @@ async function cargarExtrasGral(mes, filtro) {
 
   // Load existing extras for this month for these contracts
   const hojas = contratosConOtro.map(c => c.hoja);
-  const mes01 = mes.length === 7 ? mes + '-01' : mes;
   let extrasDelMes = [];
   try {
     // Fetch pagos for this month for relevant contracts
