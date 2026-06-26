@@ -6183,32 +6183,36 @@ function renderReporteTotal() {
 
   cont.innerHTML = `
     <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+      <table style="width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed">
+        <colgroup>
+          <col style="width:18%"><col style="width:18%"><col style="width:18%">
+          <col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:10%">
+        </colgroup>
         <thead><tr style="background:var(--ink2);color:white;position:sticky;top:0">
-          <th style="padding:8px 10px;text-align:left">Contrato</th>
-          <th style="padding:8px 10px;text-align:left">Propietario</th>
-          <th style="padding:8px 10px;text-align:left">Inquilino</th>
-          <th style="padding:8px 10px;text-align:right">Total facturado</th>
-          <th style="padding:8px 10px;text-align:right">Total cobrado</th>
-          <th style="padding:8px 10px;text-align:right">Saldo pendiente</th>
-          <th style="padding:8px 10px;text-align:center">Estado</th>
+          <th style="padding:6px 6px;text-align:left">Contrato</th>
+          <th style="padding:6px 6px;text-align:left">Propietario</th>
+          <th style="padding:6px 6px;text-align:left">Inquilino</th>
+          <th style="padding:6px 6px;text-align:right">Total facturado</th>
+          <th style="padding:6px 6px;text-align:right">Total cobrado</th>
+          <th style="padding:6px 6px;text-align:right">Saldo pendiente</th>
+          <th style="padding:6px 6px;text-align:center">Estado</th>
         </tr></thead>
         <tbody>
           ${rows.map(r => `<tr style="border-bottom:1px solid #eee;cursor:pointer;background:${r.saldoPendiente>0?'#fff8f0':''}" onclick="openContrato(${r.c.id})">
-            <td style="padding:7px 10px;font-weight:600">${r.c.titulo||r.c.hoja}</td>
-            <td style="padding:7px 10px;color:#666">${r.c.locador||'—'}</td>
-            <td style="padding:7px 10px;color:#666">${r.c.locatario||'—'}</td>
-            <td style="padding:7px 10px;text-align:right">${formatMoney(r.totalFacturado)}</td>
-            <td style="padding:7px 10px;text-align:right">${formatMoney(r.totalCobrado)}</td>
-            <td style="padding:7px 10px;text-align:right;font-weight:600;color:${r.saldoPendiente>0?'#e63946':'#2d6a4f'}">${r.saldoPendiente>0?formatMoney(r.saldoPendiente):'✓ Al día'}</td>
-            <td style="padding:7px 10px;text-align:center"><span class="badge ${r.est==='vigente'?'badge-green':r.est==='rescindido'?'badge-red':'badge-gray'}">${r.est}</span></td>
+            <td style="padding:5px 6px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.c.titulo||r.c.hoja}</td>
+            <td style="padding:5px 6px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.c.locador||'—'}</td>
+            <td style="padding:5px 6px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.c.locatario||'—'}</td>
+            <td style="padding:5px 6px;text-align:right">${formatMoney(r.totalFacturado)}</td>
+            <td style="padding:5px 6px;text-align:right">${formatMoney(r.totalCobrado)}</td>
+            <td style="padding:5px 6px;text-align:right;font-weight:600;color:${r.saldoPendiente>0?'#e63946':'#2d6a4f'}">${r.saldoPendiente>0?formatMoney(r.saldoPendiente):'✓ Al día'}</td>
+            <td style="padding:5px 6px;text-align:center"><span class="badge ${r.est==='vigente'?'badge-green':r.est==='rescindido'?'badge-red':'badge-gray'}">${r.est}</span></td>
           </tr>`).join('')}
         </tbody>
         <tfoot><tr style="background:#f5f5f5;font-weight:700;border-top:2px solid var(--border)">
-          <td colspan="3" style="padding:8px 10px">TOTALES (${rows.length} contratos)</td>
-          <td style="padding:8px 10px;text-align:right">${formatMoney(totFacturado)}</td>
-          <td style="padding:8px 10px;text-align:right">${formatMoney(totCobrado)}</td>
-          <td style="padding:8px 10px;text-align:right;color:${totSaldo>0?'#e63946':'#2d6a4f'}">${formatMoney(totSaldo)}</td>
+          <td colspan="3" style="padding:5px 6px">TOTALES (${rows.length} contratos)</td>
+          <td style="padding:5px 6px;text-align:right">${formatMoney(totFacturado)}</td>
+          <td style="padding:5px 6px;text-align:right">${formatMoney(totCobrado)}</td>
+          <td style="padding:5px 6px;text-align:right;color:${totSaldo>0?'#e63946':'#2d6a4f'}">${formatMoney(totSaldo)}</td>
           <td></td>
         </tr></tfoot>
       </table>
@@ -6225,18 +6229,57 @@ function verReporteMensual() {
   ventana.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
     <title>MeGa Consultora — Reportes mensuales</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>* { margin:0; padding:0; box-sizing:border-box; } body { font-family:'DM Sans',sans-serif; padding:20px; }
-    .no-print { text-align:center; padding:12px 0; } .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; font-size:0.95rem; cursor:pointer; }
-    table { width:100%; border-collapse:collapse; margin-top:12px; font-size:0.82rem; }
-    th { background:#1a1a2e; color:white; padding:7px 10px; text-align:left; font-size:0.73rem; text-transform:uppercase; }
-    td { padding:6px 10px; border-bottom:1px solid #eee; }
-    h2 { font-size:1.1rem; margin-bottom:4px; } p { font-size:0.82rem; color:#888; margin-bottom:8px; }
-    @media print { .no-print { display:none; } body { padding:10px; } }
+    <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'DM Sans',sans-serif; padding:6px; font-size:9px; }
+    .no-print { text-align:center; padding:6px 0; }
+    .no-print button { background:#1a1a2e; color:white; border:none; padding:5px 16px; border-radius:6px; font-size:0.85rem; cursor:pointer; }
+    .report-header { display:flex; align-items:baseline; gap:1.5rem; flex-wrap:wrap; border-bottom:2px solid #1a1a2e; padding-bottom:4px; margin-bottom:6px; }
+    .report-header h2 { font-size:0.9rem; white-space:nowrap; }
+    .report-header .meta { display:flex; gap:1rem; flex-wrap:wrap; font-size:0.75rem; color:#444; }
+    .report-header .meta span strong { color:#1a1a2e; }
+    .report-header .meta span.red strong { color:#e63946; }
+    .report-stats-grid { display:none; }
+    table { width:100%; border-collapse:collapse; table-layout:fixed; font-size:8px; }
+    colgroup col:first-child { width:13%; }
+    colgroup col { width:9.7%; }
+    th { background:#1a1a2e; color:white; padding:3px 2px; text-align:right; font-size:7px; text-transform:uppercase; white-space:nowrap; overflow:hidden; }
+    th:first-child { text-align:left; }
+    td { padding:2px 2px; border-bottom:1px solid #eee; text-align:right; white-space:nowrap; }
+    td:first-child { text-align:left; overflow:hidden; text-overflow:ellipsis; }
+    tfoot td { font-weight:700; background:#e8eaf0; border-top:2px solid #1a1a2e; }
+    .r { text-align:right; }
+    @media print {
+      .no-print { display:none; }
+      body { padding:4px; }
+      @page { margin:6mm; size:A4 landscape; }
+    }
     </style></head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir</button></div>
-    <h2>MeGa Consultora — Reporte mensual ${mes}/${anio}</h2>
-    <p>Fecha: ${new Date().toLocaleDateString('es-AR')}</p>
+    <div class="report-header">
+      <h2>MeGa Consultora — Reporte mensual ${mes}/${anio}</h2>
+      <div class="meta" id="meta-inline"></div>
+    </div>
     ${contenido}
+    <script>
+      // Extract stats from report-stats-grid and show inline
+      const grid = document.querySelector('.report-stats-grid');
+      if (grid) {
+        const cards = grid.querySelectorAll('.stat-card');
+        const meta = document.getElementById('meta-inline');
+        cards.forEach(c => {
+          const label = c.querySelector('.stat-label')?.textContent||'';
+          const val = c.querySelector('.stat-val')?.textContent||'';
+          if (label && val && label !== 'Mes') {
+            const span = document.createElement('span');
+            const isRed = c.querySelector('.stat-val')?.style?.color?.includes('e63946') || val.includes('-');
+            span.className = isRed ? 'red' : '';
+            span.innerHTML = label + ': <strong>' + val + '</strong>';
+            meta.appendChild(span);
+          }
+        });
+      }
+    <\/script>
     </body></html>`);
   ventana.document.close();
 }
@@ -6249,18 +6292,21 @@ function verReporteTotales() {
   const ventana = window.open('', '_blank');
   ventana.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
     <title>MeGa Consultora — Reportes totales</title>
-    <style>* { margin:0; padding:0; box-sizing:border-box; } body { font-family:sans-serif; padding:20px; font-size:13px; }
-    .no-print { text-align:center; padding:12px 0; } .no-print button { background:#1a1a2e; color:white; border:none; padding:8px 24px; border-radius:8px; cursor:pointer; }
-    table { width:100%; border-collapse:collapse; margin-top:8px; }
-    th { background:#1a1a2e; color:white; padding:6px 8px; text-align:left; font-size:11px; text-transform:uppercase; }
-    td { padding:5px 8px; border-bottom:1px solid #eee; }
+    <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:sans-serif; padding:12px; font-size:11px; }
+    .no-print { text-align:center; padding:8px 0; }
+    .no-print button { background:#1a1a2e; color:white; border:none; padding:6px 20px; border-radius:6px; cursor:pointer; }
+    table { width:100%; border-collapse:collapse; margin-top:6px; table-layout:fixed; font-size:0.72rem; }
+    th { background:#1a1a2e; color:white; padding:4px 3px; text-align:left; font-size:0.65rem; text-transform:uppercase; white-space:nowrap; overflow:hidden; }
+    td { padding:3px 3px; border-bottom:1px solid #eee; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     tfoot td { font-weight:700; background:#f5f5f5; border-top:2px solid #ccc; }
-    .totales-header { display:flex; gap:2rem; padding:8px 0; margin-bottom:8px; border-bottom:2px solid #1a1a2e; font-size:12px; flex-wrap:wrap; }
-    h2 { font-size:16px; margin-bottom:4px; } p { font-size:12px; color:#888; margin-bottom:4px; }
-    .badge-green { background:#d4edda; color:#155724; padding:2px 8px; border-radius:10px; font-size:11px; }
-    .badge-red { background:#f8d7da; color:#721c24; padding:2px 8px; border-radius:10px; font-size:11px; }
-    .badge-gray { background:#e2e3e5; color:#383d41; padding:2px 8px; border-radius:10px; font-size:11px; }
-    @media print { .no-print { display:none; } }
+    .totales-header { display:flex; gap:1.5rem; padding:4px 0; margin-bottom:6px; border-bottom:2px solid #1a1a2e; font-size:11px; flex-wrap:wrap; }
+    h2 { font-size:13px; margin-bottom:2px; } p { font-size:11px; color:#888; margin-bottom:2px; }
+    .badge-green { background:#d4edda; color:#155724; padding:1px 6px; border-radius:8px; font-size:10px; }
+    .badge-red { background:#f8d7da; color:#721c24; padding:1px 6px; border-radius:8px; font-size:10px; }
+    .badge-gray { background:#e2e3e5; color:#383d41; padding:1px 6px; border-radius:8px; font-size:10px; }
+    @media print { .no-print { display:none; } @page { margin:8mm; size:A4 landscape; } }
     </style></head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir</button></div>
     <h2>MeGa Consultora — Reportes totales</h2>
