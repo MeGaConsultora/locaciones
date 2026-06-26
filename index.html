@@ -6085,47 +6085,53 @@ async function renderInforme() {
       <div class="stat-card"><div class="stat-label">Comisiones</div><div class="stat-val" style="font-size:1.1rem">${formatMoney(totComision)}</div></div>
       <div class="stat-card"><div class="stat-label">Alquileres activos</div><div class="stat-val">${vigentes}</div></div>
     </div>
-    <div class="table-wrap">
-      <table>
+    <div class="table-wrap" style="overflow-x:auto">
+      <table style="width:100%;table-layout:fixed;font-size:0.78rem">
+        <colgroup>
+          <col style="width:16%">
+          <col style="width:9%"><col style="width:9%"><col style="width:9%">
+          <col style="width:8%"><col style="width:8%"><col style="width:8%">
+          <col style="width:7%"><col style="width:7%"><col style="width:7%">
+        </colgroup>
         <thead><tr style="background:#1877F2;color:white">
-          <th>Contrato</th>
-          <th class="r">Total mes</th>
-          <th class="r">Abonado</th>
-          <th class="r">Saldo</th>
-          <th class="r">Comisión</th>
-          <th class="r">EPE</th>
-          <th class="r">Agua</th>
-          <th class="r">TGIU</th>
-          <th class="r">Seguro</th>
-          <th class="r">Extras</th>
+          <th style="padding:5px 6px">Contrato</th>
+          <th class="r" style="padding:5px 4px">Total mes</th>
+          <th class="r" style="padding:5px 4px">Abonado</th>
+          <th class="r" style="padding:5px 4px">Saldo</th>
+          <th class="r" style="padding:5px 4px">Comisión</th>
+          <th class="r" style="padding:5px 4px">EPE</th>
+          <th class="r" style="padding:5px 4px">Agua</th>
+          <th class="r" style="padding:5px 4px">TGIU</th>
+          <th class="r" style="padding:5px 4px">Seguro</th>
+          <th class="r" style="padding:5px 4px">Extras</th>
         </tr></thead>
         <tbody>
           ${rows.map(r => `
             <tr style="background:${r.rowColor};cursor:pointer" onclick="openContrato(${r.c?.id||0})">
-              <td><strong>${r.p.hoja}</strong></td>
-              <td class="r">${formatMoney(r.totalReal)}</td>
-              <td class="r" style="color:var(--green)">${r.abonado>0?formatMoney(r.abonado):'—'}</td>
-              <td class="r" style="color:${r.saldo>0?'var(--accent)':'var(--green)'}">${r.saldo>0?formatMoney(r.saldo):'✓'}</td>
-              <td class="r">${r.comision>0?formatMoney(r.comision):'—'}</td>
-              <td class="r">${r.p.monto_epe>0?formatMoney(r.p.monto_epe):'—'}</td>
-              <td class="r">${r.p.monto_agua>0?formatMoney(r.p.monto_agua):'—'}</td>
-              <td class="r">${r.p.monto_tgiu>0?formatMoney(r.p.monto_tgiu):'—'}</td>
-              <td class="r">${r.p.monto_seguro>0?formatMoney(r.p.monto_seguro):'—'}</td>
-              <td class="r">${r.extrasInqTotal!=0?formatMoney(r.extrasInqTotal):'—'}</td>
+              <td style="padding:5px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><strong>${r.p.hoja}</strong></td>
+              <td class="r" style="padding:5px 4px">${formatMoney(r.totalReal)}</td>
+              <td class="r" style="padding:5px 4px;color:var(--green)">${r.abonado>0?formatMoney(r.abonado):'—'}</td>
+              <td class="r" style="padding:5px 4px;color:${r.saldo>0?'var(--accent)':'var(--green)'}">${r.saldo>0?formatMoney(r.saldo):'✓'}</td>
+              <td class="r" style="padding:5px 4px">${r.comision>0?formatMoney(r.comision):'—'}</td>
+              <td class="r" style="padding:5px 4px">${r.p.monto_epe>0?formatMoney(r.p.monto_epe):'—'}</td>
+              <td class="r" style="padding:5px 4px">${r.p.monto_agua>0?formatMoney(r.p.monto_agua):'—'}</td>
+              <td class="r" style="padding:5px 4px">${r.p.monto_tgiu>0?formatMoney(r.p.monto_tgiu):'—'}</td>
+              <td class="r" style="padding:5px 4px">${r.p.monto_seguro>0?formatMoney(r.p.monto_seguro):'—'}</td>
+              <td class="r" style="padding:5px 4px">${r.extrasInqTotal!=0?formatMoney(r.extrasInqTotal):'—'}</td>
             </tr>
           `).join('')}
         </tbody>
         <tfoot><tr style="background:#1877F2;color:white;font-weight:700">
-          <td>TOTALES</td>
-          <td class="r">${formatMoney(totTotal)}</td>
-          <td class="r">${formatMoney(totAbonado)}</td>
-          <td class="r">${formatMoney(totSaldo)}</td>
-          <td class="r">${formatMoney(totComision)}</td>
-          <td class="r">${formatMoney(totEpe)}</td>
-          <td class="r">${formatMoney(totAgua)}</td>
-          <td class="r">${formatMoney(totTgiu)}</td>
-          <td class="r">${formatMoney(totSeguro)}</td>
-          <td class="r">${formatMoney(totExtras)}</td>
+          <td style="padding:5px 6px">TOTALES</td>
+          <td class="r" style="padding:5px 4px">${formatMoney(totTotal)}</td>
+          <td class="r" style="padding:5px 4px">${formatMoney(totAbonado)}</td>
+          <td class="r" style="padding:5px 4px">${formatMoney(totSaldo)}</td>
+          <td class="r" style="padding:5px 4px">${formatMoney(totComision)}</td>
+          <td class="r" style="padding:5px 4px">${formatMoney(totEpe)}</td>
+          <td class="r" style="padding:5px 4px">${formatMoney(totAgua)}</td>
+          <td class="r" style="padding:5px 4px">${formatMoney(totTgiu)}</td>
+          <td class="r" style="padding:5px 4px">${formatMoney(totSeguro)}</td>
+          <td class="r" style="padding:5px 4px">${formatMoney(totExtras)}</td>
         </tfoot>
       </table>
     </div>
