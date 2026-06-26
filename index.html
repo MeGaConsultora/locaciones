@@ -6033,7 +6033,7 @@ async function renderInforme() {
     const totalReal = p.total || (p.importe_alquiler||0) + (p.monto_epe||0) + (p.monto_agua||0) + (p.monto_tgiu||0) + (p.monto_seguro||0) + (p.monto_internet||0) + (p.monto_expensas||0) + extrasInqTotal;
     const abonado = p.pagado_importe || Math.max(0, totalReal - (p.saldo||0));
     const saldo = p.saldo||0;
-    const comision = p.comision_8||0;
+    const comision = p.comision_8 || Math.round((p.importe_alquiler||0) * ((c?.comision_porcentaje||0)/100) * 100) / 100;
     const rowColor = saldo <= 0 ? '#e8f5e9' : abonado > 0 ? '#fff8e1' : '#ffebee';
     return { p, c, extrasInq, extrasInqTotal, extrasUnicos, abonado, saldo, comision, rowColor, totalReal };
   }).sort((a,b) => (a.p.hoja||'').localeCompare(b.p.hoja||''));
