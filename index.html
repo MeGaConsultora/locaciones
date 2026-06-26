@@ -4380,7 +4380,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
     try { extrasDelMes = await sbGet('pagos_extras', `pago_id=eq.${p.id}&order=id.asc`); } catch(e) {}
   }
 
-  const extrasInqAll = extrasDelMes.filter(e => e.a_cargo_de !== 'propietario');
+  const extrasInqAll = extrasDelMes.filter(e => e.a_cargo_de !== 'propietario' && !e.cobrado);
   // Filtrar extras ya cubiertos: usar pagado_xxx por ítem si existe, sino pagado_importe
   const pagadoItemsRegulares = ['alquiler','epe','agua','tgiu','seguro','internet','expensas']
     .reduce((s,k) => s + (parseFloat(p?.[k==='alquiler'?'pagado_alquiler':'pagado_'+k])||0), 0);
@@ -4539,6 +4539,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
           <label>Pago a cuenta (importe libre)</label>
           <input id="gp-acuenta" type="number" placeholder="0" style="margin-top:4px" oninput="recalcCobro()">
           <input id="gp-acuenta-concepto" type="text" placeholder="Concepto (ej: A cuenta mayo 26)" style="margin-top:4px">
+          <div id="gp-acuenta-desglose" style="display:none;margin-top:6px;font-size:0.78rem;color:#856404;background:#fffbea;border:1px solid #f0d060;border-radius:6px;padding:6px 10px;line-height:1.6"></div>
         </div>
       </div>
       <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem;font-size:1rem">
@@ -5005,7 +5006,7 @@ function recalcIntereses() {
   
   if (interes > 0) {
     if (infoEl) infoEl.textContent = `= ${formatMoney(interes)}`;
-    if (labelEl) labelEl.textContent = `Agregar intereses al cobro (${formatMoney(interes)})`;
+    if (labelEl) labelEl.textContent = `Agregar intereses al cobro`;
     if (chkEl) { chkEl.dataset.interes = interes; }
   } else {
     if (infoEl) infoEl.textContent = 'Sin mora';
@@ -5029,12 +5030,10 @@ function recalcCobro() {
     const signo = parseFloat(c.dataset.signo || '1');
     const val = parseFloat(c.value)||0;
     if (c.checked) total += signo * val;
-    // Find the amount span in the same row (last span child of parent div)
     const parentDiv = c.closest('div');
     if (parentDiv) {
       const spans = parentDiv.querySelectorAll('span');
       spans.forEach(sp => {
-        // Only hide/show the amount span (not badge spans)
         if (!sp.querySelector('input') && sp !== c) {
           sp.style.display = c.checked ? '' : 'none';
         }
@@ -5042,12 +5041,53 @@ function recalcCobro() {
     }
   });
   const acuenta = parseFloat(document.getElementById('gp-acuenta')?.value)||0;
-  total += acuenta;
-  // Add interest if checked
   const interesChk = document.getElementById('gp-interes-chk');
-  if (interesChk?.checked) {
-    total += parseFloat(interesChk.dataset.interes||0);
+  const desgloseEl = document.getElementById('gp-acuenta-desglose');
+
+  // Si hay pago a cuenta E intereses tildados: separar alquiler e intereses dentro del pago a cuenta
+  let interesEfectivo = 0;
+  if (acuenta > 0 && interesChk?.checked) {
+    const c = window._gpContratoActual;
+    const tasaDiaria = (c?.interes_punitorio || 0) / 100;
+    const fechaPago = document.getElementById('gp-fecha-pago')?.value || TODAY;
+    const vence = window._gpPagoActual?.fecha_pago_hasta?.substring(0,10);
+    if (tasaDiaria > 0 && vence && fechaPago > vence) {
+      const p = window._gpPagoActual;
+      const pagadoAlquilerAntes = p?.pagado_alquiler || 0;
+      const saldoAlquiler = Math.max(0, (p?.importe_alquiler||0) - pagadoAlquilerAntes);
+      const tasa = (c.interes_punitorio||0) / 100;
+      const primerDiaHabil = (() => { let d = new Date(vence+'T12:00:00'); d.setDate(d.getDate()+1); while(d.getDay()===0||d.getDay()===6) d.setDate(d.getDate()+1); return d; })();
+      const diasMora = Math.max(0, Math.floor((new Date(fechaPago+'T12:00:00') - primerDiaHabil) / 86400000) + 1);
+      const tasaCompuesta = Math.pow(1 + tasa, diasMora) - 1;
+      let alquilerImputado;
+      if (pagadoAlquilerAntes > 0) {
+        // Ya pagó algo: intereses sobre el saldo pendiente
+        interesEfectivo = calcularIntereses(saldoAlquiler, vence, fechaPago, c.interes_punitorio||0);
+        alquilerImputado = Math.min(Math.round((acuenta - interesEfectivo) * 100) / 100, saldoAlquiler);
+      } else {
+        // Pago inicial: intereses dentro del pago a cuenta
+        alquilerImputado = Math.round(acuenta / (1 + tasaCompuesta) * 100) / 100;
+        interesEfectivo = Math.round((acuenta - alquilerImputado) * 100) / 100;
+      }
+      if (desgloseEl && interesEfectivo > 0) {
+        desgloseEl.style.display = '';
+        desgloseEl.innerHTML = `Del pago a cuenta: <strong>Alquiler ${formatMoney(alquilerImputado)}</strong> + <strong>Intereses ${formatMoney(interesEfectivo)}</strong> (${diasMora} días × ${c.interes_punitorio}%)`;
+        desgloseEl.dataset.alquiler = alquilerImputado;
+        desgloseEl.dataset.interes = interesEfectivo;
+      }
+    } else {
+      if (desgloseEl) desgloseEl.style.display = 'none';
+      interesEfectivo = parseFloat(interesChk.dataset.interes||0);
+    }
+  } else {
+    if (desgloseEl) desgloseEl.style.display = 'none';
+    if (interesChk?.checked) interesEfectivo = parseFloat(interesChk.dataset.interes||0);
   }
+
+  // Si hay desglose (interés dentro del pago a cuenta), el interés ya está incluido en acuenta
+  // No sumar interesEfectivo de nuevo
+  const interesYaEnACuenta = acuenta > 0 && interesChk?.checked && desgloseEl?.style.display !== 'none';
+  total += acuenta + (interesYaEnACuenta ? 0 : interesEfectivo);
   const el = document.getElementById('gp-total-cobro');
   if (el) el.textContent = formatMoney(total);
 }
@@ -5663,41 +5703,52 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   });
   const acuenta = parseFloat(document.getElementById('gp-acuenta')?.value)||0;
   const acuentaConcepto = document.getElementById('gp-acuenta-concepto')?.value||'A cuenta';
-  if (acuenta > 0) { totalCobrado += acuenta; itemsRecibo.push({label: acuentaConcepto, monto: acuenta}); }
+  const interesChk = document.getElementById('gp-interes-chk');
+  const desgloseEl = document.getElementById('gp-acuenta-desglose');
+
+  // Si hay pago a cuenta con intereses y desglose calculado, separar alquiler e intereses
+  let interesDesdeACuenta = 0;
+  let acuentaAlquiler = acuenta;
+  if (acuenta > 0 && interesChk?.checked && desgloseEl?.style.display !== 'none' && desgloseEl?.dataset.interes > 0) {
+    interesDesdeACuenta = Math.round(parseFloat(desgloseEl.dataset.interes) * 100) / 100;
+    acuentaAlquiler = Math.round(parseFloat(desgloseEl.dataset.alquiler) * 100) / 100;
+    totalCobrado += acuenta;
+    itemsRecibo.push({label: acuentaConcepto, monto: acuentaAlquiler});
+    itemsRecibo.push({label: 'Interés punitorio', monto: interesDesdeACuenta});
+  } else {
+    if (acuenta > 0) { totalCobrado += acuenta; itemsRecibo.push({label: acuentaConcepto, monto: acuenta}); }
+    // Add interest if checked (sin pago a cuenta o sin mora)
+    if (interesChk?.checked) {
+      const interesVal = parseFloat(interesChk.dataset.interes||0);
+      if (interesVal > 0) {
+        totalCobrado += interesVal;
+        itemsRecibo.push({label: 'Interés punitorio', monto: interesVal});
+      }
+    }
+  }
 
   // Validate payment does not exceed total (excluding honorarios which is tracked separately)
   const yaAbonado = p.pagado_importe || (p.total||0) - (p.saldo||0);
-  // Incluir extras débito pendientes en el máximo pagable
   const extrasPendientes = [...document.querySelectorAll('[id^="cobro-chk-"]:not(#cobro-chk-honorarios)')]
     .filter(chk => chk.checked && parseInt(chk.dataset.signo||1) === 1)
     .reduce((s, chk) => s + (parseFloat(chk.value)||0), 0);
   const maxPagable = Math.max((p.total||0) - yaAbonado, 0) + extrasPendientes;
   const totalSinHonorarios = totalCobrado - honorariosCobrado;
-  // Excedente: lo que pagó el inquilino por encima del total real del mes
-  const extrasActP = extrasActuales[p.id]||[];
-  const psDataActP = window._pagosSuministros?.[p.id];
-  const totalRealMes = calcularTotal(p, extrasActP, psDataActP);
-  const yaAbonadoAntes = p.pagado_importe || 0;
-  const excedente = Math.round(Math.max(0, (yaAbonadoAntes + totalSinHonorarios) - totalRealMes) * 100) / 100;
-  
-  // Add interest if checked
-  const interesChk = document.getElementById('gp-interes-chk');
-  if (interesChk?.checked) {
-    const interesVal = parseFloat(interesChk.dataset.interes||0);
-    if (interesVal > 0) {
-      totalCobrado += interesVal;
-      itemsRecibo.push({label: 'Interés punitorio', monto: interesVal});
-    }
-  }
-
   if (totalCobrado <= 0) { toast('Seleccioná al menos un ítem','error'); return; }
+  // excedente se calcula después de guardar el extra de intereses (para incluirlo en totalRealMes)
+  let excedente = 0;
 
   // Distribute payment across items in order
   // Excluir honorarios Y extras del monto a imputar en ítems — los extras son conceptos separados
   // Pero pagado_importe sigue usando totalCobrado completo (incluye extras)
-  const montoExtras = [...document.querySelectorAll('[id^="cobro-chk-extra-"]')]
+  const montoExtrasChk = [...document.querySelectorAll('[id^="cobro-chk-extra-"]')]
     .filter(chk => chk.checked)
     .reduce((s, chk) => s + (parseFloat(chk.dataset.signo||'1') * (parseFloat(chk.value)||0)), 0);
+  // Los intereses también son un concepto separado — no se distribuyen en ítems regulares
+  // Si el interés viene del desglose del pago a cuenta, ya está separado en interesDesdeACuenta
+  const interesValDistrib = interesDesdeACuenta > 0 ? interesDesdeACuenta : 
+    (document.getElementById('gp-interes-chk')?.checked ? parseFloat(document.getElementById('gp-interes-chk')?.dataset?.interes||0) : 0);
+  const montoExtras = montoExtrasChk + interesValDistrib;
   const montoRegular = totalCobrado - honorariosCobrado - montoExtras; // solo para distribuir en ítems
   const montoRegularTotal = totalCobrado - honorariosCobrado; // para pagado_importe (incluye extras)
   // Correct order: alquiler → epe → agua → tgiu → expensas → seguro → internet
@@ -5756,22 +5807,32 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     }
   }
 
-  // Si hay intereses punitorios, crear extra débito para que sumen al total del mes
+  // Si hay intereses punitorios, crear extra débito por el importe efectivamente cobrado
+  // Si hay desglose (pago a cuenta), usar interesDesdeACuenta; sino usar interesChkVal
   const interesChkVal = interesChk?.checked ? parseFloat(interesChk.dataset.interes||0) : 0;
-  if (interesChkVal > 0) {
+  const interesEfectivoFinal = interesDesdeACuenta > 0 ? interesDesdeACuenta : interesChkVal;
+  if (interesEfectivoFinal > 0) {
     try {
       await sbPost('pagos_extras', {
         pago_id: p.id,
         concepto: 'Interés punitorio',
-        importe: Math.round(interesChkVal * 100) / 100,
+        importe: Math.round(interesEfectivoFinal * 100) / 100,
         tipo: 'debito',
-        a_cargo_de: 'inquilino'
+        a_cargo_de: 'inquilino',
+        cobrado: true
       });
       // Actualizar extrasActuales en memoria
       if (!extrasActuales[p.id]) extrasActuales[p.id] = [];
-      extrasActuales[p.id].push({ pago_id: p.id, concepto: 'Interés punitorio', importe: interesChkVal, tipo: 'debito', a_cargo_de: 'inquilino' });
+      extrasActuales[p.id].push({ pago_id: p.id, concepto: 'Interés punitorio', importe: interesEfectivoFinal, tipo: 'debito', a_cargo_de: 'inquilino', cobrado: true });
     } catch(e) { console.error('Error guardando interés punitorio como extra:', e); }
   }
+
+  // Calcular excedente AHORA que extrasActuales ya incluye el interés
+  const extrasActP = extrasActuales[p.id]||[];
+  const psDataActP = window._pagosSuministros?.[p.id];
+  const totalRealMes = calcularTotal(p, extrasActP, psDataActP);
+  const yaAbonadoAntes = p.pagado_importe || 0;
+  excedente = Math.round(Math.max(0, (yaAbonadoAntes + totalSinHonorarios) - totalRealMes) * 100) / 100;
 
   // Calcular nuevoSaldo desde el total real (con extras, incluyendo interés si se creó)
   const extrasP = extrasActuales[p.id]||[];
