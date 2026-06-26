@@ -2889,6 +2889,7 @@ function filtrarContratosActualizar() {
 
   if (!contratos.length) {
     lista.innerHTML = '<div class="empty-state"><p>Sin contratos que actualicen en ese mes con esos filtros</p></div>';
+    actualizarBotonConfirmar();
     return;
   }
 
@@ -3026,7 +3027,7 @@ function volverAConfiguracionActualizacion() {
         if (el && val !== undefined) el.value = val;
       });
     }
-    setTimeout(actualizarBotonConfirmar, 50);
+    setTimeout(() => { filtrarContratosActualizar(); actualizarBotonConfirmar(); }, 50);
   } else {
     abrirActualizacionAlquileres();
   }
@@ -3153,7 +3154,7 @@ async function ejecutarActualizacionDesdeStr(datosStr, desde) {
   }
   toast(`${actualizados} meses actualizados ✓`);
   await loadAll();
-  closeModal();
+  volverAConfiguracionActualizacion();
 }
 
 async function confirmarActualizacion() {
