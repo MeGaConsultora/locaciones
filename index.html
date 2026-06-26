@@ -3730,6 +3730,7 @@ async function cargarExtrasGral(mes, filtro) {
             </div>
             <input type="text" id="eg-input-${g.conceptoKey}-${c.id}"
               data-grupo-key="${g.conceptoKey}" data-contrato-id="${c.id}"
+              data-concepto="${g.concepto}" data-suministro-id="${g.suministros?.[0]?.id||''}"
               value="${sugerido}" placeholder="$ importe total"
               style="width:140px;padding:5px 8px;border:1.5px solid ${pctOk?'var(--border)':'#ffc107'};border-radius:6px;font-size:0.85rem;text-align:right"
               ${!pctOk ? 'disabled title="Corregí los % en el contrato primero"' : ''}
@@ -3749,6 +3750,7 @@ async function cargarExtrasGral(mes, filtro) {
             </div>
             <input type="text" id="eg-input-${g.conceptoKey}-${c.id}"
               data-grupo-key="${g.conceptoKey}" data-contrato-id="${c.id}" data-ya-cargado="1"
+              data-concepto="${g.concepto}" data-suministro-id="${g.suministros?.[0]?.id||''}"
               value="${totalCargado}" placeholder="$ importe total"
               style="width:140px;padding:5px 8px;border:1.5px solid var(--green);border-radius:6px;font-size:0.85rem;text-align:right"
               oninput="this.style.borderColor=this.value?'var(--green)':'#f0c040'"
@@ -3760,7 +3762,7 @@ async function cargarExtrasGral(mes, filtro) {
   `;
 }
 
-async function guardarExtraGralItem(inputId) {
+async function guardarExtraGralItem(inputId, skipReload = false) {
   const input = document.getElementById(inputId);
   if (!input) return;
   const importeTotal = parseMonto(input.value);
@@ -3799,12 +3801,14 @@ async function guardarExtraGralItem(inputId) {
       const propPerId = aCargoDe === 'propietario' ? (s.descuenta_persona_id || s.propietario_persona_id || null) : null;
       const yaExiste = extrasExistentes.find(e => parseInt(e.suministro_id) === parseInt(s.id) && e.a_cargo_de !== 'propietario');
       const yaExisteProp = extrasExistentes.find(e => parseInt(e.suministro_id) === parseInt(s.id) && e.a_cargo_de === 'propietario');
+      // Usar el existente correcto según a_cargo_de
+      const yaExisteMatch = aCargoDe === 'propietario' ? yaExisteProp : yaExiste;
 
-      if (yaExiste) {
+      if (yaExisteMatch) {
         if (!importeTotal) {
-          await sbDelete('pagos_extras', yaExiste.id);
+          await sbDelete('pagos_extras', yaExisteMatch.id);
         } else {
-          await sbPatch('pagos_extras', yaExiste.id, { importe, concepto, a_cargo_de: aCargoDe, propietario_persona_id: propPerId });
+          await sbPatch('pagos_extras', yaExisteMatch.id, { importe, concepto, a_cargo_de: aCargoDe, propietario_persona_id: propPerId });
         }
       } else if (importeTotal) {
         await sbPost('pagos_extras', {
@@ -3860,63 +3864,30 @@ async function guardarExtraGralItem(inputId) {
       await sbPatch('pagos', pagoId, { total: newTotal, saldo: newSaldo, pagado: newPagado });
     }
     toast(`Guardado ✓ — ${breakdown}`);
-    const mesActual = document.getElementById('srv-mes')?.value;
-    const filtroActual = document.getElementById('srv-buscar')?.value || '';
-    if (mesActual) await cargarExtrasGral(mesActual, filtroActual);
+    if (!skipReload) {
+      const mesActual = document.getElementById('srv-mes')?.value;
+      const filtroActual = document.getElementById('srv-buscar')?.value || '';
+      if (mesActual) await cargarExtrasGral(mesActual, filtroActual);
+    }
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
 async function guardarExtrasGral() {
   const mesKey = document.getElementById('srv-mes')?.value;
   if (!mesKey) return;
-  const mes01 = mesKey + '-01';
   const inputs = document.querySelectorAll('[id^="eg-input-"]');
   let guardados = 0;
   for (const input of inputs) {
     const importe = parseMonto(input.value);
-    const extraId = input.dataset.extraId ? parseInt(input.dataset.extraId) : null;
-    // Skip if empty and no existing record to clear
-    if (!importe && !extraId) continue;
-    const suministroId = parseInt(input.dataset.suministroId);
-    const contratoId = parseInt(input.dataset.contratoId);
-    const concepto = input.dataset.concepto;
+    if (!importe && !input.dataset.yaCargado) continue;
     try {
-      // Get pago for this contract/month
-      const c = DB.contratos.find(x => x.id === contratoId);
-      if (!c) continue;
-      const enc = encodeURIComponent(c.hoja);
-      const pagos = await sbGet('pagos', `hoja=eq.${enc}&mes=eq.${mes01}&limit=1&select=id`);
-      if (!pagos.length) { toast(`Sin mes cargado para ${c.titulo||c.hoja}`, 'error'); continue; }
-      const pagoId = pagos[0].id;
-      const body = { pago_id: pagoId, concepto, importe, suministro_id: suministroId, a_cargo_de: 'inquilino' };
-      if (extraId) {
-        if (!importe) {
-          await sbDelete('pagos_extras', extraId);
-        } else {
-          await sbPatch('pagos_extras', extraId, { importe });
-        }
-      } else {
-        await sbPost('pagos_extras', body);
-      }
-      // Recalcular total y saldo del pago
-      const pagoActualizado = (await sbGet('pagos', `id=eq.${pagoId}&limit=1`))[0];
-      if (pagoActualizado) {
-        const todosExtras = await sbGet('pagos_extras', `pago_id=eq.${pagoId}`);
-        const extrasTotal = todosExtras
-          .filter(e => e.a_cargo_de !== 'propietario')
-          .reduce((s,e) => s + ((e.tipo==='credito' ? -1 : 1) * (parseFloat(e.importe)||0)), 0);
-        const servicios = await getTotalServiciosPago(pagoId, null, 0);
-        const newTotal = (pagoActualizado.importe_alquiler||0) + servicios + extrasTotal;
-        const pagadoImporte = pagoActualizado.pagado_importe || 0;
-        const newSaldo = Math.max(0, newTotal - pagadoImporte);
-        const newPagado = newSaldo <= 0 ? 'SI' : (pagadoImporte > 0 ? 'PARCIAL' : (pagoActualizado.pagado||'NO'));
-        await sbPatch('pagos', pagoId, { total: newTotal, saldo: newSaldo, pagado: newPagado });
-      }
+      await guardarExtraGralItem(input.id, true); // skipReload=true
       guardados++;
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
   if (guardados) toast(`${guardados} extra/s guardado/s ✓`);
-  await cargarExtrasGral(mes01.substring(0,7), '');
+  // Recargar una sola vez al final
+  await cargarExtrasGral(mesKey, document.getElementById('srv-buscar')?.value || '');
 }
 
 async function guardarServicioItem(inputId) {
