@@ -8909,6 +8909,7 @@ function doLogout() {
   HEADERS['Authorization'] = `Bearer ${SB_KEY}`;
   document.getElementById('login-email').value = '';
   document.getElementById('login-pass').value = '';
+  document.getElementById('tab-admin').style.display = 'none';
   showLoginScreen();
 }
 
