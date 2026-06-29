@@ -8856,7 +8856,7 @@ async function verificarAprobacion() {
     // Use user token for all subsequent requests
     updateAuthHeaders(currentUser.token);
     document.getElementById('user-name').textContent = u.nombre || u.email;
-    if (u.admin) document.getElementById('tab-admin').style.display = 'block';
+    if (u.admin || u.rol === 'admin') document.getElementById('tab-admin').style.display = 'block';
     hideLoginScreen();
     loadAll();
   } catch(e) {
@@ -9240,14 +9240,13 @@ async function toggleAdmin(id, esAdmin) {
 }
 
 async function darDeBaja(id, email) {
-  if (!confirm(`¿Dar de baja a ${email}? No podrá iniciar sesión.`)) return;
+  if (!confirm(`¿Eliminar el usuario ${email}? Esta acción no se puede deshacer.`)) return;
   try {
     await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${id}`, {
-      method: 'PATCH',
-      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${currentUser.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ aprobado: false })
+      method: 'DELETE',
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${currentUser.token}` }
     });
-    toast('Usuario dado de baja ✓');
+    toast('Usuario eliminado ✓');
     loadUsuarios();
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
