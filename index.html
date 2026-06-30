@@ -6347,6 +6347,20 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
   const [fy,fm,fd] = TODAY.split('-');
   const fechaHoy = `${fd}/${fm}/${fy}`;
 
+  // Número de recibo = cantidad de meses transcurridos desde vigencia_desde hasta mesKey (inclusive)
+  // Total de meses = duración completa del contrato
+  let nroRecibo = null;
+  let totalMesesContrato = null;
+  if (c?.vigencia_desde) {
+    const [vy, vm] = c.vigencia_desde.substring(0,7).split('-').map(Number);
+    const [my, mm] = mesKey.split('-').map(Number);
+    nroRecibo = (my - vy) * 12 + (mm - vm) + 1;
+    if (c?.vigencia_hasta) {
+      const [hy, hm] = c.vigencia_hasta.substring(0,7).split('-').map(Number);
+      totalMesesContrato = (hy - vy) * 12 + (hm - vm) + 1;
+    }
+  }
+
   const inm = c?.inmueble_id ? DB_INMUEBLES?.find(x => x.id === c.inmueble_id) : null;
   const inmuebleDir = inm ? formatDireccion(inm) : (c?.titulo || '—');
   const propietarioNombre = c?.locador || '';
@@ -6356,7 +6370,7 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     <div style="font-family:'DM Sans',Arial,sans-serif;width:100%;max-width:680px;margin:0 auto;padding:24px;border:2px solid #1a1a2e;border-radius:8px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:2px solid #1a1a2e;padding-bottom:12px">
         <div><div style="font-size:1.4rem;font-weight:700;color:#1a1a2e">MeGa Consultora</div><div style="font-size:0.8rem;color:#666">Recibo de Rendición al Propietario</div></div>
-        <div style="text-align:right"><div style="font-size:0.72rem;color:#888">Fecha</div><div style="font-size:1.1rem;font-weight:700">${fechaHoy}</div></div>
+        <div style="text-align:right">${nroRecibo ? `<div style="font-size:0.72rem;color:#888">Recibo mes N°</div><div style="font-size:1.1rem;font-weight:700;color:#c8483a">${String(nroRecibo).padStart(4,'0')}${totalMesesContrato ? `<span style="font-size:0.62rem;font-weight:600;color:#888"> de ${String(totalMesesContrato).padStart(4,'0')}</span>` : ''}</div>` : ''}<div style="font-size:0.72rem;color:#888;margin-top:4px">Fecha</div><div style="font-size:1rem;font-weight:700">${fechaHoy}</div></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;font-size:0.85rem">
         <div><span style="font-size:0.7rem;text-transform:uppercase;color:#888;display:block">Propietario</span><strong>${c?.locador||'—'}</strong></div>
@@ -7862,10 +7876,19 @@ async function confirmarPago(pagoId, hoja, nroMes) {
       if (gc) gc.pagado_inquilino = gastosPagado;
     }
 
+    // Total de meses del contrato (para Recibo mes N° de XXXX)
+    let totalMesesContrato = null;
+    if (contrato?.vigencia_desde && contrato?.vigencia_hasta) {
+      const [vy, vm] = contrato.vigencia_desde.substring(0,7).split('-').map(Number);
+      const [hy, hm] = contrato.vigencia_hasta.substring(0,7).split('-').map(Number);
+      totalMesesContrato = (hy - vy) * 12 + (hm - vm) + 1;
+    }
+
     // Generar recibo
     imprimirRecibo({
       contrato,
       nroMes,
+      totalMesesContrato,
       mes: pagoActual.mes,
       fechaPago,
       itemsAbonados,
@@ -7898,8 +7921,8 @@ function imprimirRecibo(data) {
           <div style="font-size:0.72rem;color:#666;margin-top:1px">Gestión Inmobiliaria</div>
         </div>
         <div style="text-align:right">
-          <div style="font-size:0.65rem;color:#888;text-transform:uppercase;letter-spacing:.06em">Recibo Nº</div>
-          <div style="font-size:1.3rem;font-weight:700;color:#c8483a">${String(data.nroMes).padStart(4,'0')}</div>
+          <div style="font-size:0.65rem;color:#888;text-transform:uppercase;letter-spacing:.06em">Recibo mes Nº</div>
+          <div style="font-size:1.3rem;font-weight:700;color:#c8483a">${String(data.nroMes).padStart(4,'0')}${data.totalMesesContrato ? `<span style="font-size:0.7rem;font-weight:600;color:#888"> de ${String(data.totalMesesContrato).padStart(4,'0')}</span>` : ''}</div>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;font-size:0.78rem;padding:0 14px">
@@ -10739,10 +10762,24 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPers
   const inmuebleDir = inm ? formatDireccion(inm) : (c?.titulo || '—');
   const fechaHoy = (() => { const d = new Date(); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; })();
 
+  // Número de recibo = cantidad de meses transcurridos desde vigencia_desde hasta el mes del pago (inclusive)
+  // Total de meses = duración completa del contrato
+  let nroRecibo = null;
+  let totalMesesContrato = null;
+  if (c?.vigencia_desde && p?.mes) {
+    const [vy, vm] = c.vigencia_desde.substring(0,7).split('-').map(Number);
+    const [my, mm] = p.mes.substring(0,7).split('-').map(Number);
+    nroRecibo = (my - vy) * 12 + (mm - vm) + 1;
+    if (c?.vigencia_hasta) {
+      const [hy, hm] = c.vigencia_hasta.substring(0,7).split('-').map(Number);
+      totalMesesContrato = (hy - vy) * 12 + (hm - vm) + 1;
+    }
+  }
+
   return `<div style="font-family:'DM Sans',Arial,sans-serif;width:100%;max-width:680px;margin:0 auto;padding:18px;border:2px solid #1a1a2e;border-radius:8px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;border-bottom:2px solid #1a1a2e;padding-bottom:10px">
       <div><div style="font-size:1.2rem;font-weight:700;color:#1a1a2e">MeGa Consultora</div><div style="font-size:0.75rem;color:#666">Recibo de Rendición al Propietario</div></div>
-      <div style="text-align:right"><div style="font-size:0.68rem;color:#888">Fecha</div><div style="font-size:1rem;font-weight:700">${fechaHoy}</div></div>
+      <div style="text-align:right">${nroRecibo ? `<div style="font-size:0.68rem;color:#888">Recibo mes N°</div><div style="font-size:1rem;font-weight:700;color:#c8483a">${String(nroRecibo).padStart(4,'0')}${totalMesesContrato ? `<span style="font-size:0.58rem;font-weight:600;color:#888"> de ${String(totalMesesContrato).padStart(4,'0')}</span>` : ''}</div>` : ''}<div style="font-size:0.68rem;color:#888;margin-top:3px">Fecha</div><div style="font-size:0.92rem;font-weight:700">${fechaHoy}</div></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:0.8rem">
       <div><span style="font-size:0.65rem;text-transform:uppercase;color:#888;display:block">Propietario</span><strong>${propNombre}</strong></div>
