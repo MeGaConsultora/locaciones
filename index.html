@@ -9242,9 +9242,10 @@ async function toggleAdmin(id, esAdmin) {
 async function darDeBaja(id, email) {
   if (!confirm(`¿Eliminar el usuario ${email}? Esta acción no se puede deshacer.`)) return;
   try {
-    await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${id}`, {
-      method: 'DELETE',
-      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${currentUser.token}` }
+    await fetch(`${SB_URL}/rest/v1/rpc/eliminar_usuario`, {
+      method: 'POST',
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${currentUser.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario_id: id })
     });
     toast('Usuario eliminado ✓');
     loadUsuarios();
