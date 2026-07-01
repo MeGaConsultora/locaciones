@@ -467,6 +467,7 @@
               <button onclick="selectInforme('srv-epe')">⚡ EPE a abonar</button>
               <button onclick="selectInforme('srv-agua')">💧 Agua a abonar</button>
               <button onclick="selectInforme('srv-tgiu')">🏛️ TGIU a abonar</button>
+              <button onclick="selectInforme('srv-seguro')">🛡️ Seguros</button>
             </div>
           </div>
           <button onclick="selectInforme('reporte-total')">📋 Reportes totales</button>
@@ -624,6 +625,34 @@
     </div>
     <div id="srv-inf-contenido">
       <div class="empty-state"><div class="icon">📊</div><p>Seleccioná año y mes</p></div>
+    </div>
+  </div>
+
+  <!-- INFORME DE SEGUROS -->
+  <div id="panel-informe-seguro" class="panel" style="display:none">
+    <div class="toolbar" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+      <strong style="font-size:0.95rem">🛡️ Seguros</strong>
+      <select class="filter-select" id="seg-inf-anio" style="width:auto">
+        <option value="">-- Año --</option>
+      </select>
+      <select class="filter-select" id="seg-inf-mes" style="width:auto">
+        <option value="">-- Mes --</option>
+        <option value="01">Enero</option><option value="02">Febrero</option>
+        <option value="03">Marzo</option><option value="04">Abril</option>
+        <option value="05">Mayo</option><option value="06">Junio</option>
+        <option value="07">Julio</option><option value="08">Agosto</option>
+        <option value="09">Septiembre</option><option value="10">Octubre</option>
+        <option value="11">Noviembre</option><option value="12">Diciembre</option>
+      </select>
+      <button class="btn btn-primary" onclick="renderInformeSeguro()" style="font-size:0.82rem">📋 Generar Informe</button>
+      <div id="seg-inf-toolbar-resultados" style="display:none;gap:0.5rem;align-items:center;margin-left:auto">
+        <span style="font-size:0.82rem;color:#666"><strong id="seg-inf-count">0</strong> registros</span>
+        <button class="btn btn-secondary" onclick="imprimirInformeSeguro()" style="font-size:0.78rem">🖨️ Imprimir</button>
+        <button class="btn btn-secondary" onclick="exportarInformeSeguroXLSX()" style="font-size:0.78rem">📊 Exportar a Excel</button>
+      </div>
+    </div>
+    <div id="seg-inf-contenido">
+      <div class="empty-state"><div class="icon">🛡️</div><p>Seleccioná año y mes, luego hacé clic en "Generar Informe"</p></div>
     </div>
   </div>
 
@@ -8173,7 +8202,7 @@ function selectInforme(tipo) {
   document.getElementById('informes-menu').style.display = 'none';
 
   // First hide ALL main panels (same as showTab)
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -8193,6 +8222,7 @@ function selectInforme(tipo) {
   else if (tipo === 'numeracion-servicios') panelId = 'panel-numeracion-servicios';
   else if (tipo === 'consorcios') panelId = 'panel-consorcios';
   else if (tipo === 'srv-epe' || tipo === 'srv-agua' || tipo === 'srv-tgiu') panelId = 'panel-srv-informe';
+  else if (tipo === 'srv-seguro') panelId = 'panel-informe-seguro';
 
   const el = document.getElementById(panelId);
   if (el) { el.style.display = 'block'; el.classList.add('active'); }
@@ -8209,6 +8239,9 @@ function selectInforme(tipo) {
     document.getElementById('srv-inf-titulo').textContent = labels[tipo];
     populateSrvInformeAnios();
     renderSrvInforme();
+  }
+  else if (tipo === 'srv-seguro') {
+    populateSeguroAnios();
   }
   else { populateInformeAnios(); renderInforme(); }
 }
@@ -8482,11 +8515,176 @@ function srvInfSelAll(sel) {
   srvInfActualizarTotal();
 }
 
+// ============================================================
+// INFORME DE SEGUROS
+// ============================================================
+function populateSeguroAnios() {
+  const sel = document.getElementById('seg-inf-anio');
+  if (!sel) return;
+  const anioActual = parseInt(TODAY.substring(0,4));
+  const aniosContratos = DB.contratos.flatMap(c => [c.vigencia_desde?.substring(0,4), c.vigencia_hasta?.substring(0,4)]).filter(Boolean);
+  const anios = [...new Set([...aniosContratos, String(anioActual), String(anioActual+1)])].sort().reverse();
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">-- Año --</option>' + anios.map(a => `<option value="${a}" ${a===cur?'selected':''}>${a}</option>`).join('');
+  if (!cur) sel.value = String(anioActual);
+  const mesSel = document.getElementById('seg-inf-mes');
+  if (mesSel && !mesSel.value) mesSel.value = TODAY.substring(5,7);
+}
+
+function renderInformeSeguro() {
+  const anio = document.getElementById('seg-inf-anio')?.value;
+  const mes = document.getElementById('seg-inf-mes')?.value;
+  const cont = document.getElementById('seg-inf-contenido');
+  const toolbarResultados = document.getElementById('seg-inf-toolbar-resultados');
+  if (!anio || !mes) { toast('Seleccioná año y mes', 'error'); return; }
+  const mesKey = `${anio}-${mes}`;
+
+  const filas = [];
+  DB.contratos.forEach(c => {
+    if (c.fecha_rescision) return; // nunca mostrar contratos rescindidos
+    const estado = getEstado(c);
+    if (estado !== 'vigente') {
+      // permitir contratos vencidos dentro del mismo mes seleccionado (vencieron ese mes)
+      if (!c.vigencia_hasta) return;
+      if (c.vigencia_hasta.substring(0,7) !== mesKey) return;
+    }
+    // solo contratos que ya habían comenzado en el mes seleccionado
+    if (c.vigencia_desde && c.vigencia_desde.substring(0,7) > mesKey) return;
+
+    const segs = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === 'seguro'
+      && ((parseFloat(s.pct_inquilino)||0) > 0 || (parseFloat(s.pct_propietario)||0) > 0 || (parseFloat(s.monto_fijo)||0) > 0));
+    if (!segs.length) return;
+
+    const inm = DB_INMUEBLES.find(x => x.id === c.inmueble_id);
+    const cp = DB_CONTRATO_PERSONAS.find(x => parseInt(x.contrato_id) === parseInt(c.id) && x.rol === 'inquilino');
+    const inquilino = cp ? DB_PERSONAS.find(p => p.id === cp.persona_id) : null;
+
+    segs.forEach(seg => {
+      filas.push({
+        calle: inm?.calle || '',
+        numero: inm?.numero || 'S/N',
+        piso: inm?.piso || '',
+        dpto: inm?.dpto || '',
+        nombre: inquilino ? formatNombrePersona(inquilino) : (c.titulo || c.hoja || '—'),
+        mail: inquilino?.email || '',
+        tel: inquilino?.telefono || '',
+        plan: seg.nro_cuenta || seg.nombre || ''
+      });
+    });
+  });
+
+  filas.sort((a,b) => (a.calle||'').localeCompare(b.calle||''));
+  window._seguroInformeFilas = filas;
+
+  if (!filas.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">🛡️</div><p>No hay contratos con seguro en el período seleccionado</p></div>';
+    if (toolbarResultados) toolbarResultados.style.display = 'none';
+    return;
+  }
+
+  if (toolbarResultados) toolbarResultados.style.display = 'flex';
+  const countEl = document.getElementById('seg-inf-count');
+  if (countEl) countEl.textContent = filas.length;
+
+  const rows = filas.map(f => `
+    <tr style="border-bottom:1px solid #eee">
+      <td style="padding:7px 10px;font-size:0.82rem">${f.calle||'—'}</td>
+      <td style="padding:7px 10px;font-size:0.82rem;text-align:center">${f.numero||'—'}</td>
+      <td style="padding:7px 10px;font-size:0.82rem;text-align:center">${f.piso||''}</td>
+      <td style="padding:7px 10px;font-size:0.82rem;text-align:center">${f.dpto||''}</td>
+      <td style="padding:7px 10px;font-size:0.82rem"><strong>${f.nombre||'—'}</strong></td>
+      <td style="padding:7px 10px;font-size:0.82rem">${f.mail||'—'}</td>
+      <td style="padding:7px 10px;font-size:0.82rem">${f.tel||'—'}</td>
+      <td style="padding:7px 10px;font-size:0.82rem;text-align:center">${f.plan||'—'}</td>
+    </tr>`).join('');
+
+  cont.innerHTML = `<table style="width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)" id="seg-inf-tabla">
+    <thead><tr style="background:#1877F2;color:white">
+      <th style="padding:8px 10px;text-align:left;font-size:0.72rem;text-transform:uppercase">Calle</th>
+      <th style="padding:8px 10px;text-align:center;font-size:0.72rem;text-transform:uppercase">N°</th>
+      <th style="padding:8px 10px;text-align:center;font-size:0.72rem;text-transform:uppercase">Piso</th>
+      <th style="padding:8px 10px;text-align:center;font-size:0.72rem;text-transform:uppercase">Dto</th>
+      <th style="padding:8px 10px;text-align:left;font-size:0.72rem;text-transform:uppercase">Nombre Inquilino / Razón Social</th>
+      <th style="padding:8px 10px;text-align:left;font-size:0.72rem;text-transform:uppercase">Mail inquilino</th>
+      <th style="padding:8px 10px;text-align:left;font-size:0.72rem;text-transform:uppercase">TE inquilino</th>
+      <th style="padding:8px 10px;text-align:center;font-size:0.72rem;text-transform:uppercase">Plan Seguro</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function imprimirInformeSeguro() {
+  const anio = document.getElementById('seg-inf-anio')?.value;
+  const mes = document.getElementById('seg-inf-mes')?.value;
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const fechaMes = mes ? meses[parseInt(mes)-1] + ' ' + anio : '';
+  const tabla = document.getElementById('seg-inf-tabla');
+  if (!tabla) { toast('Generá el informe primero', 'error'); return; }
+
+  let iframe = document.getElementById('print-iframe');
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'print-iframe';
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none';
+    document.body.appendChild(iframe);
+  }
+  const doc = iframe.contentDocument || iframe.contentWindow.document;
+  doc.open();
+  doc.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8"><title>Seguros — ${fechaMes}</title>
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family:Arial,sans-serif; padding:20px; font-size:11px; }
+      h2 { font-size:16px; margin-bottom:4px; }
+      .sub { color:#666; font-size:11px; margin-bottom:16px; }
+      table { width:100%; border-collapse:collapse; }
+      thead tr { background:#1a1a2e; color:white; }
+      th { padding:6px 8px; text-align:left; font-size:9px; text-transform:uppercase; }
+      td { padding:5px 8px; border-bottom:1px solid #eee; font-size:10px; }
+    </style>
+  </head><body>
+    <h2>🛡️ Seguros — Listado de contratos</h2>
+    <div class="sub">${fechaMes} · ${document.getElementById('seg-inf-count')?.textContent||0} registros</div>
+    ${tabla.outerHTML}
+  </body></html>`);
+  doc.close();
+  setTimeout(() => iframe.contentWindow.print(), 300);
+}
+
+function exportarInformeSeguroXLSX() {
+  const filas = window._seguroInformeFilas || [];
+  if (!filas.length) { toast('Generá el informe primero', 'error'); return; }
+  const anio = document.getElementById('seg-inf-anio')?.value;
+  const mes = document.getElementById('seg-inf-mes')?.value;
+
+  const data = filas.map(f => ({
+    'Calle': f.calle || '',
+    'N°': f.numero || 'S/N',
+    'Piso': f.piso || '',
+    'Dto': f.dpto || '',
+    'Nombre Inquilino / Razón Social': f.nombre || '',
+    'Mail inquilino (requerido)': f.mail || '',
+    'TE inquilino': f.tel || '',
+    'Plan Seguro': f.plan || ''
+  }));
+
+  try {
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws['!cols'] = [ {wch:26}, {wch:8}, {wch:8}, {wch:8}, {wch:30}, {wch:28}, {wch:16}, {wch:12} ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Seguros');
+    XLSX.writeFile(wb, `Seguros_${anio}-${mes}.xlsx`);
+    toast('Excel descargado ✓');
+  } catch(e) {
+    toast('Error al generar el Excel: ' + e.message, 'error');
+  }
+}
+
 function showTab(name, btn) {
   // Close Gestión dropdown
   document.getElementById('informes-menu').style.display = 'none';
   // Hide ALL panels using both class and inline style
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -9322,7 +9520,7 @@ document.addEventListener('visibilitychange', () => {
 // ============================================================
 // Initialize panel visibility
 (function() {
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) el.style.display = id === 'dashboard' ? 'block' : 'none';
@@ -11312,7 +11510,14 @@ async function guardarSuministros(contratoId) {
   const nuevoIds = nuevos.filter(x => x.id).map(x => x.id);
   const aEliminar = existentes.filter(x => !nuevoIds.includes(x.id));
   for (const s of aEliminar) {
-    try { await sbDelete('contrato_suministros', s.id); } catch(e) {}
+    try {
+      await sbDelete('contrato_suministros', s.id);
+      const idx = DB_SUMINISTROS.findIndex(x => x.id === s.id);
+      if (idx >= 0) DB_SUMINISTROS.splice(idx, 1);
+    } catch(e) {
+      toast('No se pudo eliminar el suministro "' + (s.nro_cuenta || s.nombre || s.tipo) + '": ' + e.message, 'error');
+      console.error('Error eliminando suministro', s, e);
+    }
   }
 
   // Update existing or insert new
