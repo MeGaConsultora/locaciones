@@ -632,10 +632,10 @@
   <div id="panel-informe-seguro" class="panel" style="display:none">
     <div class="toolbar" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
       <strong style="font-size:0.95rem">🛡️ Seguros</strong>
-      <select class="filter-select" id="seg-inf-anio" style="width:auto">
+      <select class="filter-select" id="seg-inf-anio" style="width:auto" onchange="renderInformeSeguro()">
         <option value="">-- Año --</option>
       </select>
-      <select class="filter-select" id="seg-inf-mes" style="width:auto">
+      <select class="filter-select" id="seg-inf-mes" style="width:auto" onchange="renderInformeSeguro()">
         <option value="">-- Mes --</option>
         <option value="01">Enero</option><option value="02">Febrero</option>
         <option value="03">Marzo</option><option value="04">Abril</option>
@@ -8242,6 +8242,7 @@ function selectInforme(tipo) {
   }
   else if (tipo === 'srv-seguro') {
     populateSeguroAnios();
+    renderInformeSeguro();
   }
   else { populateInformeAnios(); renderInforme(); }
 }
