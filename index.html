@@ -2098,7 +2098,7 @@ function renderGrilla(c) {
       ${serviciosInquilino.epe?`<td class="num col-mobile-hide">${getMonto('epe')>0?formatMoney(getMonto('epe')):'—'}</td>`:''}
       ${serviciosInquilino.agua?`<td class="num col-mobile-hide">${getMonto('agua')>0?formatMoney(getMonto('agua')):'—'}</td>`:''}
       ${serviciosInquilino.tgiu?`<td class="num col-mobile-hide">${getMonto('tgiu')>0?formatMoney(getMonto('tgiu')):'—'}</td>`:''}
-      ${serviciosInquilino.seguro?`<td class="num col-mobile-hide">${getMonto('seguro')>0?formatMoney(getMonto('seguro')):'—'}</td>`:''}
+      ${serviciosInquilino.seguro?`<td class="num col-mobile-hide">${getMonto('seguro')!=0?formatMoney(getMonto('seguro')):'—'}</td>`:''}
       ${serviciosInquilino.internet?`<td class="num col-mobile-hide">${getMonto('internet')>0?formatMoney(getMonto('internet')):'—'}</td>`:''}
       ${serviciosInquilino.expensas?`<td class="num col-mobile-hide">${getMonto('expensas')>0?formatMoney(getMonto('expensas')):'—'}</td>`:''}
       <td class="col-mobile-hide" style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${extrasGralLabel}">${totalExtrasGral > 0 ? formatMoney(totalExtrasGral) : '—'}</td>
