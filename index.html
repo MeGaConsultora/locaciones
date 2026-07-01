@@ -2231,10 +2231,8 @@ function calcularTotal(p, extras, psData) {
       const sum = (DB_SUMINISTROS||[]).find(s => 
         parseInt(s.contrato_id) === contratoId && s.tipo === srv && (s.pct_inquilino||0) > 0
       );
-      if (sum) {
-        // monto_xxx ya viene con el porcentaje aplicado, sumar directo
-        servicios += (p['monto_'+srv]||0);
-      }
+      // Sumar siempre — si hay monto cargado, es porque corresponde al inquilino
+      servicios += (p['monto_'+srv]||0);
     });
   } else {
     servicios = (p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0);
@@ -6001,8 +5999,8 @@ async function renderInforme() {
   // Get pagos for this month
   // pagosTodos: todos los pagos del mes (para % cobrado total)
   const pagosTodos = DB.pagos.filter(p => p.mes && p.mes.startsWith(mesKey));
-  // pagosMes: solo con alquiler cargado (para conteo "Alquileres activos" y tabla)
-  let pagosMes = pagosTodos.filter(p => (p.importe_alquiler||0) > 0);
+  // pagosMes: con alquiler o con servicios cargados
+  let pagosMes = pagosTodos.filter(p => (p.importe_alquiler||0) > 0 || (p.monto_epe||0) > 0 || (p.monto_agua||0) > 0 || (p.monto_tgiu||0) > 0 || (p.total||0) > 0);
 
   // Apply deuda filter
   if (deudaFiltro === 'pendiente') {
