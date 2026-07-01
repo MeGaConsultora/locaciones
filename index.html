@@ -5747,23 +5747,36 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   const tieneChecksMarcados = Object.keys(itemsTildados).length > 0;
   let restante = montoRegular;
 
+  // Helper: get item amount from pagos field or pagos_suministros
+  const getItemMonto = (item) => {
+    const montoDirecto = parseFloat(p[`monto_${item}`] || (item==='alquiler'?p.importe_alquiler:0)) || 0;
+    if (montoDirecto > 0) return montoDirecto;
+    // Buscar en pagos_suministros si no está en el campo directo
+    const psData = window._pagosSuministros?.[p.id] || [];
+    return psData.filter(s => s.tipo === item).reduce((sum, s) => sum + (parseFloat(s.importe)||0), 0);
+  };
+
   if (tieneChecksMarcados) {
     // Step 1: assign exact amounts to ticked items
     for (const [item, monto] of Object.entries(itemsTildados)) {
       const yaPagado = parseFloat(p[`pagado_${item}`]) || 0;
-      const saldoItem = Math.max(0, (parseFloat(p[`monto_${item}`] || (item==='alquiler'?p.importe_alquiler:0))||0) - yaPagado);
+      const montoItem = getItemMonto(item);
+      const saldoItem = Math.max(0, montoItem - yaPagado);
       const pagar = Math.min(monto, saldoItem);
       if (pagar > 0) {
         pagadoPorItem[`pagado_${item}`] = yaPagado + pagar;
         restante -= pagar;
       }
     }
-    // Step 2: distribute remaining a-cuenta balance in order, skipping ticked and fully paid items
-    if (restante > 0) {
+    // Step 2: distribute remaining a-cuenta balance ONLY to unticked items
+    // Si restante proviene de ítems tildados ya pagados, no imputar a otros ítems
+    const montoTildadosReales = Object.entries(itemsTildados).reduce((s, [item, monto]) => s + monto, 0);
+    const soloExcedenteReal = restante > montoTildadosReales * 0.01; // hay excedente real
+    if (restante > 0.01 && soloExcedenteReal) {
       for (const item of orden) {
         if (restante <= 0) break;
         if (itemsTildados[item] !== undefined) continue; // already assigned
-        const monto = parseFloat(p[`monto_${item}`] || (item==='alquiler'?p.importe_alquiler:0)) || 0;
+        const monto = getItemMonto(item);
         const yaPagado = parseFloat(pagadoPorItem[`pagado_${item}`] ?? p[`pagado_${item}`]) || 0;
         const saldoItem = Math.max(0, monto - yaPagado);
         if (saldoItem <= 0) continue;
