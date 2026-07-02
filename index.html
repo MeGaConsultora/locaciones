@@ -645,6 +645,10 @@
         <option value="11">Noviembre</option><option value="12">Diciembre</option>
       </select>
       <button class="btn btn-primary" onclick="renderInformeSeguro()" style="font-size:0.82rem">📋 Generar Informe</button>
+      <select class="filter-select" id="seg-inf-orden" style="width:auto" onchange="pintarTablaSeguro()">
+        <option value="calle">Ordenar por Calle</option>
+        <option value="nombre">Ordenar por Nombre Inquilino</option>
+      </select>
       <div id="seg-inf-toolbar-resultados" style="display:none;gap:0.5rem;align-items:center;margin-left:auto">
         <span style="font-size:0.82rem;color:#666"><strong id="seg-inf-count">0</strong> registros</span>
         <button class="btn btn-secondary" onclick="imprimirInformeSeguro()" style="font-size:0.78rem">🖨️ Imprimir</button>
@@ -8532,7 +8536,7 @@ function populateSeguroAnios() {
   if (mesSel && !mesSel.value) mesSel.value = TODAY.substring(5,7);
 }
 
-function renderInformeSeguro() {
+async function renderInformeSeguro() {
   const anio = document.getElementById('seg-inf-anio')?.value;
   const mes = document.getElementById('seg-inf-mes')?.value;
   const cont = document.getElementById('seg-inf-contenido');
@@ -8540,45 +8544,65 @@ function renderInformeSeguro() {
   if (!anio || !mes) { toast('Seleccioná año y mes', 'error'); return; }
   const mesKey = `${anio}-${mes}`;
 
-  const filas = [];
-  DB.contratos.forEach(c => {
-    if (c.fecha_rescision) return; // nunca mostrar contratos rescindidos
-    const estado = getEstado(c);
-    if (estado !== 'vigente') {
-      // permitir contratos vencidos dentro del mismo mes seleccionado (vencieron ese mes)
-      if (!c.vigencia_hasta) return;
-      if (c.vigencia_hasta.substring(0,7) !== mesKey) return;
-    }
-    // solo contratos que ya habían comenzado en el mes seleccionado
-    if (c.vigencia_desde && c.vigencia_desde.substring(0,7) > mesKey) return;
+  cont.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>';
+  if (toolbarResultados) toolbarResultados.style.display = 'none';
 
-    const segs = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === 'seguro'
-      && ((parseFloat(s.pct_inquilino)||0) > 0 || (parseFloat(s.pct_propietario)||0) > 0 || (parseFloat(s.monto_fijo)||0) > 0));
-    if (!segs.length) return;
+  const pagos = DB.pagos.filter(p => p.mes?.startsWith(mesKey));
+  const pagoIds = pagos.map(p => p.id);
+
+  let psSuministros = [];
+  if (pagoIds.length) {
+    try {
+      const raw = await sbGet('pagos_suministros', `pago_id=in.(${pagoIds.join(',')})&select=id,pago_id,suministro_id,importe,importe_propietario`);
+      psSuministros = raw.filter(ps => {
+        const sum = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
+        return sum?.tipo === 'seguro' && ((parseFloat(ps.importe)||0) > 0 || (parseFloat(ps.importe_propietario)||0) > 0);
+      });
+    } catch(e) { psSuministros = []; }
+  }
+
+  const filas = [];
+  psSuministros.forEach(ps => {
+    const seg = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
+    const pago = DB.pagos.find(p => p.id === ps.pago_id);
+    const c = pago ? DB.contratos.find(x => x.hoja === pago.hoja) : null;
+    if (!c || c.fecha_rescision) return;
 
     const inm = DB_INMUEBLES.find(x => x.id === c.inmueble_id);
     const cp = DB_CONTRATO_PERSONAS.find(x => parseInt(x.contrato_id) === parseInt(c.id) && x.rol === 'inquilino');
     const inquilino = cp ? DB_PERSONAS.find(p => p.id === cp.persona_id) : null;
 
-    segs.forEach(seg => {
-      filas.push({
-        calle: inm?.calle || '',
-        numero: inm?.numero || 'S/N',
-        piso: inm?.piso || '',
-        dpto: inm?.dpto || '',
-        nombre: inquilino ? formatNombrePersona(inquilino) : (c.titulo || c.hoja || '—'),
-        mail: inquilino?.email || '',
-        tel: inquilino?.telefono || '',
-        plan: seg.nro_cuenta || seg.nombre || ''
-      });
+    filas.push({
+      calle: inm?.calle || '',
+      numero: inm?.numero || 'S/N',
+      piso: inm?.piso || '',
+      dpto: inm?.dpto || '',
+      nombre: inquilino ? formatNombrePersona(inquilino) : (c.titulo || c.hoja || '—'),
+      mail: inquilino?.email || '',
+      tel: inquilino?.telefono || '',
+      plan: seg?.nro_cuenta || seg?.nombre || '',
+      importe: (parseFloat(ps.importe)||0) + (parseFloat(ps.importe_propietario)||0)
     });
   });
 
-  filas.sort((a,b) => (a.calle||'').localeCompare(b.calle||''));
   window._seguroInformeFilas = filas;
+  pintarTablaSeguro();
+}
+
+function pintarTablaSeguro() {
+  const cont = document.getElementById('seg-inf-contenido');
+  const toolbarResultados = document.getElementById('seg-inf-toolbar-resultados');
+  const orden = document.getElementById('seg-inf-orden')?.value || 'calle';
+  const filas = [...(window._seguroInformeFilas || [])];
+
+  if (orden === 'nombre') {
+    filas.sort((a,b) => (a.nombre||'').localeCompare(b.nombre||''));
+  } else {
+    filas.sort((a,b) => (a.calle||'').localeCompare(b.calle||''));
+  }
 
   if (!filas.length) {
-    cont.innerHTML = '<div class="empty-state"><div class="icon">🛡️</div><p>No hay contratos con seguro en el período seleccionado</p></div>';
+    cont.innerHTML = '<div class="empty-state"><div class="icon">🛡️</div><p>No hay seguros con importe cargado para el período seleccionado</p></div>';
     if (toolbarResultados) toolbarResultados.style.display = 'none';
     return;
   }
