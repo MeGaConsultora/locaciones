@@ -7718,6 +7718,24 @@ async function actualizarContrato(id) {
       }
     }
 
+    // Reactivar acceso al portal "Mi Alquiler" si el/los inquilino/s habían
+    // quedado con aprobado=false por verificarAccesosVencidos() (contrato
+    // vencido sin renovar todavía), y ahora el contrato se extendió a una
+    // fecha futura. No reactiva nada si la nueva vigencia sigue vencida
+    // (ej: corrección de fechas históricas), solo cuando vuelve a estar vigente.
+    if (fechasChanged && nuevaHasta && nuevaHasta >= TODAY) {
+      try {
+        const personasInq = await sbGet('contrato_personas', `contrato_id=eq.${id}&rol=eq.inquilino`);
+        for (const cp of personasInq) {
+          const usuariosInactivos = await sbGet('usuarios', `persona_id=eq.${cp.persona_id}&aprobado=eq.false&limit=1`);
+          if (usuariosInactivos.length > 0) {
+            await sbPatch('usuarios', usuariosInactivos[0].id, { aprobado: true });
+            toast(`Acceso al portal reactivado: ${usuariosInactivos[0].nombre || usuariosInactivos[0].email} ✓`);
+          }
+        }
+      } catch(e) { console.error('Error reactivando acceso al portal:', e); }
+    }
+
     if (nuevaDesde && nuevaHasta && fechasChanged) {
       const contrato = DB.contratos.find(x=>x.id===id);
       if (contrato) {
