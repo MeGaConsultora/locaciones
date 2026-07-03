@@ -1399,6 +1399,12 @@ function formatMoney(n) {
   if (n == null || isNaN(n)) return '—';
   return '$\u00A0' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+function redondear2(n) {
+  // Evita residuos de punto flotante (ej: 0.000000002) que hacen reaparecer
+  // items ya pagados como pendientes en la pantalla de Generar Pago.
+  if (n == null || isNaN(n)) return 0;
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
 function toggleMasMenu(id, force) {
   const d = document.getElementById(id);
   if (!d) return;
@@ -4609,9 +4615,8 @@ function mostrarSolapa(id, btn) {
   if (btnSrv) btnSrv.style.display = isExtrasGral ? 'none' : '';
 }
 
-function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
-  if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
-
+function obtenerItemsPendientesGP(p, contratoId) {
+  if (!p) return [];
   const ps = window._pagosSuministros?.[p?.id] || {};
   const getSrvMonto = (tipo) => {
     const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === tipo);
@@ -4646,18 +4651,18 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
       tieneItemsPagados = true;
     }
   }
-  
+
   let items;
   if (tieneItemsPagados) {
     items = [
-      { id:'alquiler', label:'Alquiler', val: Math.max(0,(p.importe_alquiler||0)-(parseFloat(p.pagado_alquiler)||0)) },
-      { id:'epe',      label:'EPE',      val: Math.max(0,epe-(parseFloat(p.pagado_epe)||0)) },
-      { id:'agua',     label:'Agua',     val: Math.max(0,agua-(parseFloat(p.pagado_agua)||0)) },
-      { id:'tgiu',     label:'TGIU',     val: Math.max(0,tgiu-(parseFloat(p.pagado_tgiu)||0)) },
-      { id:'seguro',   label:'Seguro',   val: Math.max(0,seguro-(parseFloat(p.pagado_seguro)||0)) },
-      { id:'internet', label:'Internet', val: Math.max(0,internet-(parseFloat(p.pagado_internet)||0)) },
-      { id:'expensas', label:'Expensas', val: Math.max(0,expensas-(parseFloat(p.pagado_expensas)||0)) },
-    ].filter(i => i.val > 0);
+      { id:'alquiler', label:'Alquiler', val: redondear2(Math.max(0,(p.importe_alquiler||0)-(parseFloat(p.pagado_alquiler)||0))) },
+      { id:'epe',      label:'EPE',      val: redondear2(Math.max(0,epe-(parseFloat(p.pagado_epe)||0))) },
+      { id:'agua',     label:'Agua',     val: redondear2(Math.max(0,agua-(parseFloat(p.pagado_agua)||0))) },
+      { id:'tgiu',     label:'TGIU',     val: redondear2(Math.max(0,tgiu-(parseFloat(p.pagado_tgiu)||0))) },
+      { id:'seguro',   label:'Seguro',   val: redondear2(Math.max(0,seguro-(parseFloat(p.pagado_seguro)||0))) },
+      { id:'internet', label:'Internet', val: redondear2(Math.max(0,internet-(parseFloat(p.pagado_internet)||0))) },
+      { id:'expensas', label:'Expensas', val: redondear2(Math.max(0,expensas-(parseFloat(p.pagado_expensas)||0))) },
+    ].filter(i => i.val > 0.004);
   } else {
     // No per-item tracking — distribute ya-abonado (total-saldo) across items in sequence
     const yaAbonadoGP = Math.max(0, (p.total||0) - (p.saldo||0));
@@ -4668,7 +4673,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
     for (const it of ordenGP) {
       const bruto = brutosGP[it]||0;
       const cubierto = Math.min(restGP, bruto);
-      saldosGP[it] = Math.max(0, bruto - cubierto);
+      saldosGP[it] = redondear2(Math.max(0, bruto - cubierto));
       restGP -= cubierto;
     }
     items = [
@@ -4679,8 +4684,36 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
       { id:'seguro',   label:'Seguro',   val: saldosGP['seguro'] },
       { id:'internet', label:'Internet', val: saldosGP['internet'] },
       { id:'expensas', label:'Expensas', val: saldosGP['expensas'] },
-    ].filter(i => i.val > 0);
+    ].filter(i => i.val > 0.004);
   }
+  return items;
+}
+
+function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
+  if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
+
+  const ps = window._pagosSuministros?.[p?.id] || {};
+  const getSrvMonto = (tipo) => {
+    const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === tipo);
+    if (sums.length > 0) {
+      // Desde junio 2026: usar solo pagos_suministros, sin fallback a monto_xxx
+      return sums.reduce((t, s) => {
+        const entry = ps[s.id];
+        if (entry === undefined) return t;
+        return t + (typeof entry === 'object' ? (entry.inq||0) : (entry||0));
+      }, 0);
+    }
+    return p['monto_'+tipo] || 0;
+  };
+  const epe = getSrvMonto('epe'), agua = getSrvMonto('agua'), tgiu = getSrvMonto('tgiu');
+  const seguro = getSrvMonto('seguro'), internet = getSrvMonto('internet'), expensas = getSrvMonto('expensas');
+
+  const items = obtenerItemsPendientesGP(p, contratoId);
+
+  // Use per-item pagado if available (obtenerItemsPendientesGP may have reconstructed
+  // pagado_x fields for legacy fully-paid records, so this is checked after that call)
+  let tieneItemsPagados = ['alquiler','epe','agua','tgiu','seguro','internet','expensas']
+    .some(k => p[`pagado_${k}`] > 0);
 
   // Build paid items (for revert buttons)
   const allItemDefs = [
@@ -4709,7 +4742,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
     ` : ''}
     ${paidItems.map(it => `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:4px 0;border-bottom:1px solid #f5f0e8;background:#f9f9f9">
-        <span style="font-size:0.85rem;color:var(--green);flex:1">✓ ${it.label} — ${formatMoney(it.pagado)}${it.pagado < it.monto ? ' (parcial, debe ' + formatMoney(it.monto-it.pagado) + ')' : ''}</span>
+        <span style="font-size:0.85rem;color:var(--green);flex:1">✓ ${it.label} — ${formatMoney(it.pagado)}${(it.monto-it.pagado) > 0.004 ? ' (parcial, debe ' + formatMoney(it.monto-it.pagado) + ')' : ''}</span>
         <button onclick="revertirItem('${p.id}','${it.id}',${it.pagado},${it.monto},'${_gpHoja}',${contratoId},'${mesKey}',${_gpComision||8})" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.75rem">↩</button>
       </div>
     `).join('')}
@@ -5784,9 +5817,15 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   const getItemMonto = (item) => {
     const montoDirecto = parseFloat(p[`monto_${item}`] || (item==='alquiler'?p.importe_alquiler:0)) || 0;
     if (montoDirecto > 0) return montoDirecto;
-    // Buscar en pagos_suministros si no está en el campo directo
-    const psData = window._pagosSuministros?.[p.id] || [];
-    return psData.filter(s => s.tipo === item).reduce((sum, s) => sum + (parseFloat(s.importe)||0), 0);
+    // Buscar en pagos_suministros si no está en el campo directo.
+    // window._pagosSuministros[p.id] es un objeto keyed por suministro_id: {inq, prop} — no un array.
+    const psMap = window._pagosSuministros?.[p.id] || {};
+    const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === item);
+    return sums.reduce((sum, s) => {
+      const entry = psMap[s.id];
+      if (entry === undefined) return sum;
+      return sum + (typeof entry === 'object' ? (entry.inq||0) : (entry||0));
+    }, 0);
   };
 
   if (tieneChecksMarcados) {
