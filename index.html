@@ -5800,20 +5800,8 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   const orden = ['alquiler','epe','agua','tgiu','expensas','seguro','internet'];
   const pagadoPorItem = {};
 
-  // Get ticked items and their amounts
-  const itemsTildados = {};
-  for (const item of orden) {
-    const chk = document.getElementById(`cobro-chk-${item}`);
-    if (chk?.checked) {
-      const val = parseFloat(document.getElementById(`val-${item}`)?.value || chk.value) || 0;
-      if (val > 0) itemsTildados[item] = val;
-    }
-  }
-
-  const tieneChecksMarcados = Object.keys(itemsTildados).length > 0;
-  let restante = montoRegular;
-
   // Helper: get item amount from pagos field or pagos_suministros
+  // (definido ANTES de leer los checkboxes, para poder recalcular en vivo)
   const getItemMonto = (item) => {
     const montoDirecto = parseFloat(p[`monto_${item}`] || (item==='alquiler'?p.importe_alquiler:0)) || 0;
     if (montoDirecto > 0) return montoDirecto;
@@ -5827,6 +5815,36 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
       return sum + (typeof entry === 'object' ? (entry.inq||0) : (entry||0));
     }, 0);
   };
+
+  // Get ticked items and their amounts.
+  // IMPORTANTE: para ítems no editables (todos, por ahora — no hay ninguno con
+  // input "val-xxx" habilitado), NO se usa el valor "congelado" en el checkbox
+  // al momento de renderizar la pantalla; se recalcula en vivo el saldo
+  // pendiente actual con getItemMonto(). Esto evita que un importe que cambió
+  // entre que se abrió la pantalla y que se confirmó el cobro (ej: ajuste de
+  // alquiler, excedente de un mes anterior aplicado, boleta reimportada)
+  // quede parcialmente sin registrar, como pasó con el alquiler de
+  // Vaschetti-Bertram.
+  const itemsTildados = {};
+  for (const item of orden) {
+    const chk = document.getElementById(`cobro-chk-${item}`);
+    if (chk?.checked) {
+      const valInput = document.getElementById(`val-${item}`);
+      let val;
+      if (valInput) {
+        // Ítem editable: respetar el importe que el usuario ingresó a mano
+        val = parseFloat(valInput.value) || 0;
+      } else {
+        // Ítem no editable: usar el saldo pendiente ACTUAL, no el valor congelado
+        const yaPagadoActual = parseFloat(p[`pagado_${item}`]) || 0;
+        val = redondear2(Math.max(0, getItemMonto(item) - yaPagadoActual));
+      }
+      if (val > 0) itemsTildados[item] = val;
+    }
+  }
+
+  const tieneChecksMarcados = Object.keys(itemsTildados).length > 0;
+  let restante = montoRegular;
 
   if (tieneChecksMarcados) {
     // Step 1: assign exact amounts to ticked items
