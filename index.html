@@ -2264,7 +2264,7 @@ function calcularTotal(p, extras, psData) {
     const srvViejos = ['epe','agua','tgiu','seguro','internet','expensas'];
     srvViejos.forEach(srv => {
       if (tiposCubiertos.has(srv)) return; // ya cubierto por pagos_suministros
-      if (!(p['monto_'+srv] > 0)) return; // sin valor en sistema viejo
+      if (!p['monto_'+srv]) return; // sin valor en sistema viejo (0, null o undefined — los negativos SÍ cuentan, son descuentos reales)
       if (!contratoId) return; // no se pudo identificar el contrato
       // Buscar suministro del tipo en el contrato con pct_inquilino > 0
       const sum = (DB_SUMINISTROS||[]).find(s => 
