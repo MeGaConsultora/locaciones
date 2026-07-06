@@ -492,6 +492,7 @@
       <button onclick="abrirActualizacionAlquileres()">🔄 Actualizar alquileres</button>
       <button onclick="selectInforme('recibos-emitir')">🖨️ Recibos Propietarios</button>
       <button onclick="abrirReciboRapido()">🧾 Recibo rápido</button>
+      <button onclick="selectInforme('historial-pagos')">📝 Historial de pagos</button>
     </div>
   </div>
   <button class="tab-btn" onclick="showTab('inmuebles',this)">🏠 Inmuebles</button>
@@ -657,6 +658,27 @@
     </div>
     <div id="seg-inf-contenido">
       <div class="empty-state"><div class="icon">🛡️</div><p>Seleccioná año y mes, luego hacé clic en "Generar Informe"</p></div>
+    </div>
+  </div>
+
+  <!-- HISTORIAL DE PAGOS -->
+  <div id="panel-historial-pagos" class="panel" style="display:none">
+    <div class="toolbar" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+      <strong style="font-size:0.95rem">📝 Historial de pagos</strong>
+      <label style="font-size:0.78rem;color:#666">Desde
+        <input type="date" class="filter-select" id="hp-desde" style="width:auto" onchange="renderHistorialPagos()">
+      </label>
+      <label style="font-size:0.78rem;color:#666">Hasta
+        <input type="date" class="filter-select" id="hp-hasta" style="width:auto" onchange="renderHistorialPagos()">
+      </label>
+      <input type="text" class="search-input" id="hp-buscar" placeholder="Buscar contrato / inquilino..." style="width:220px" oninput="renderHistorialPagos()">
+      <button class="btn btn-primary" onclick="renderHistorialPagos()" style="font-size:0.82rem">🔍 Buscar</button>
+      <div id="hp-toolbar-resultados" style="display:none;gap:0.5rem;align-items:center;margin-left:auto">
+        <span style="font-size:0.82rem;color:#666"><strong id="hp-count">0</strong> registros · <strong id="hp-total">$0</strong></span>
+      </div>
+    </div>
+    <div id="hp-contenido">
+      <div class="empty-state"><div class="icon">📝</div><p>Elegí un rango de fechas y hacé clic en "Buscar"</p></div>
     </div>
   </div>
 
@@ -5724,10 +5746,18 @@ async function previsualizarReciboInquilino(hoja, contratoId, mesKey, comisionPc
 }
 
 async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
+  // Abrir la ventana del recibo YA, de forma sincrónica, antes de cualquier
+  // espera de red. Si se abre recién al final (después de varios awaits para
+  // guardar el pago), el navegador puede dejar de reconocer esto como parte
+  // del clic del usuario y bloquear el popup silenciosamente — quedando en
+  // blanco (about:blank). Esto pasa sobre todo con conexión lenta/inestable
+  // (ej: corte de luz). Se cierra más abajo si no llega a usarse.
+  const _ventanaRecibo = window.open('', '_blank');
+
   const mes = mesKey+'-01';
   const hojaEncoded = encodeURIComponent(hoja);
   const existing = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
-  if (!existing.length) { toast('Guardá los importes primero','error'); return; }
+  if (!existing.length) { _ventanaRecibo?.close(); toast('Guardá los importes primero','error'); return; }
   const p = existing[0];
   const c = DB.contratos.find(x=>x.id===contratoId);
 
@@ -5779,7 +5809,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     .reduce((s, chk) => s + (parseFloat(chk.value)||0), 0);
   const maxPagable = Math.max((p.total||0) - yaAbonado, 0) + extrasPendientes;
   const totalSinHonorarios = totalCobrado - honorariosCobrado;
-  if (totalCobrado <= 0) { toast('Seleccioná al menos un ítem','error'); return; }
+  if (totalCobrado <= 0) { _ventanaRecibo?.close(); toast('Seleccioná al menos un ítem','error'); return; }
   // excedente se calcula después de guardar el extra de intereses (para incluirlo en totalRealMes)
   let excedente = 0;
 
@@ -6071,7 +6101,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     nuevoSaldo,
     itemsPendientes,
     saldoHonorarios
-  });
+  }, _ventanaRecibo);
 
   const cObj = DB.contratos.find(x=>x.id===contratoId);
   if (cObj) {
@@ -7912,6 +7942,11 @@ function recalcularTotal() {
 }
 
 async function confirmarPago(pagoId, hoja, nroMes) {
+  // Ver nota en confirmarCobroInquilino: abrir la ventana ya, antes de
+  // cualquier espera de red, para que el navegador no la bloquee si el
+  // guardado tarda (conexión lenta/inestable).
+  const _ventanaRecibo = window.open('', '_blank');
+
   const checks = document.querySelectorAll('[id^="chk-"]');
   let totalAbonado = 0;
   const itemsAbonados = [];
@@ -7922,7 +7957,7 @@ async function confirmarPago(pagoId, hoja, nroMes) {
     }
   });
 
-  if (totalAbonado === 0) { toast('Seleccioná al menos un ítem','error'); return; }
+  if (totalAbonado === 0) { _ventanaRecibo?.close(); toast('Seleccioná al menos un ítem','error'); return; }
 
   const fechaPago = document.getElementById('p-fecha').value;
   const contrato = DB.contratos.find(c => c.hoja === hoja);
@@ -8017,16 +8052,17 @@ async function confirmarPago(pagoId, hoja, nroMes) {
       itemsAbonados,
       totalAbonado,
       nuevoSaldo
-    });
+    }, _ventanaRecibo);
 
     closeModal();
     await loadAll();
   } catch(e) {
+    _ventanaRecibo?.close();
     toast('Error: ' + e.message, 'error');
   }
 }
 
-function imprimirRecibo(data) {
+function imprimirRecibo(data, ventanaPreabierta) {
   const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const fechaMes = data.mes ? (() => { const [y,m,d]=data.mes.split('-'); return `${meses[parseInt(m)-1]} ${y}`; })() : '';
   const fechaPago = data.fechaPago ? (() => { const [y,m,d]=data.fechaPago.split('-'); return `${d}/${m}/${y}`; })() : '';
@@ -8085,7 +8121,8 @@ function imprimirRecibo(data) {
   `;
 
 
-  const ventana = window.open('', 'Recibo Nº '+String(data.nroMes).padStart(4,'0'));
+  const ventana = ventanaPreabierta || window.open('', 'Recibo Nº '+String(data.nroMes).padStart(4,'0'));
+  if (!ventana) { toast('El navegador bloqueó la ventana del recibo. Habilitá pop-ups para este sitio e intentá de nuevo.', 'error'); return; }
   ventana.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8">
 <link rel="icon" type="image/x-icon" href="https://megaconsultora.github.io/locaciones/favicon.ico">
@@ -8281,7 +8318,7 @@ function selectInforme(tipo) {
   document.getElementById('informes-menu').style.display = 'none';
 
   // First hide ALL main panels (same as showTab)
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -8302,6 +8339,7 @@ function selectInforme(tipo) {
   else if (tipo === 'consorcios') panelId = 'panel-consorcios';
   else if (tipo === 'srv-epe' || tipo === 'srv-agua' || tipo === 'srv-tgiu') panelId = 'panel-srv-informe';
   else if (tipo === 'srv-seguro') panelId = 'panel-informe-seguro';
+  else if (tipo === 'historial-pagos') panelId = 'panel-historial-pagos';
 
   const el = document.getElementById(panelId);
   if (el) { el.style.display = 'block'; el.classList.add('active'); }
@@ -8322,6 +8360,13 @@ function selectInforme(tipo) {
   else if (tipo === 'srv-seguro') {
     populateSeguroAnios();
     renderInformeSeguro();
+  }
+  else if (tipo === 'historial-pagos') {
+    const desdeEl = document.getElementById('hp-desde');
+    const hastaEl = document.getElementById('hp-hasta');
+    if (desdeEl && !desdeEl.value) desdeEl.value = TODAY.substring(0,10);
+    if (hastaEl && !hastaEl.value) hastaEl.value = TODAY.substring(0,10);
+    renderHistorialPagos();
   }
   else { populateInformeAnios(); renderInforme(); }
 }
@@ -8780,11 +8825,149 @@ function exportarInformeSeguroXLSX() {
   }
 }
 
+// ============================================================
+// HISTORIAL DE PAGOS
+// ============================================================
+async function renderHistorialPagos() {
+  const desde = document.getElementById('hp-desde')?.value;
+  const hasta = document.getElementById('hp-hasta')?.value;
+  const busqueda = (document.getElementById('hp-buscar')?.value || '').trim().toLowerCase();
+  const cont = document.getElementById('hp-contenido');
+  const toolbarResultados = document.getElementById('hp-toolbar-resultados');
+
+  if (!desde || !hasta) { toast('Elegí un rango de fechas', 'error'); return; }
+
+  cont.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Buscando...</p></div>';
+  if (toolbarResultados) toolbarResultados.style.display = 'none';
+
+  let movs = [];
+  try {
+    movs = await sbGet('movimientos_pagos', `fecha=gte.${desde}&fecha=lte.${hasta}&order=fecha.desc,id.desc&select=*`);
+  } catch(e) {
+    cont.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Error al buscar: ${e.message}</p></div>`;
+    return;
+  }
+
+  // Enriquecer con datos del contrato
+  let filas = movs.map(m => {
+    const c = DB.contratos.find(x => x.hoja === m.hoja) || DB.contratos.find(x => x.id === m.contrato_id);
+    const inm = c ? DB_INMUEBLES.find(x => x.id === c.inmueble_id) : null;
+    const cp = c ? DB_CONTRATO_PERSONAS.find(x => parseInt(x.contrato_id) === c.id && x.rol === 'inquilino') : null;
+    const inquilino = cp ? DB_PERSONAS.find(p => p.id === cp.persona_id) : null;
+    let items = [];
+    try { items = JSON.parse(m.items || '[]'); } catch(e) {}
+    return {
+      mov: m,
+      contrato: c,
+      direccion: inm ? formatDireccion(inm) : (c?.titulo || m.hoja || '—'),
+      inquilino: inquilino ? formatNombrePersona(inquilino) : '—',
+      items
+    };
+  });
+
+  if (busqueda) {
+    filas = filas.filter(f =>
+      (f.direccion||'').toLowerCase().includes(busqueda) ||
+      (f.inquilino||'').toLowerCase().includes(busqueda) ||
+      (f.mov.hoja||'').toLowerCase().includes(busqueda)
+    );
+  }
+
+  if (!filas.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">📝</div><p>No hay pagos registrados en ese rango</p></div>';
+    if (toolbarResultados) toolbarResultados.style.display = 'none';
+    return;
+  }
+
+  if (toolbarResultados) toolbarResultados.style.display = 'flex';
+  const countEl = document.getElementById('hp-count');
+  const totalEl = document.getElementById('hp-total');
+  if (countEl) countEl.textContent = filas.length;
+  if (totalEl) totalEl.textContent = formatMoney(filas.reduce((s,f) => s + (f.mov.monto||0), 0));
+
+  const rows = filas.map(f => {
+    const m = f.mov;
+    // Hora: usar created_at si existe y trae componente horario; si no, mostrar solo la fecha
+    let hora = '—';
+    if (m.created_at) {
+      const d = new Date(m.created_at);
+      if (!isNaN(d)) hora = d.toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' });
+    }
+    const mesLabel = m.mes ? (() => { const [y,mm]=m.mes.substring(0,7).split('-'); const meses=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']; return `${meses[parseInt(mm)-1]} ${y}`; })() : '—';
+    return `
+    <tr style="border-bottom:1px solid #eee">
+      <td style="padding:7px 10px;font-size:0.8rem;white-space:nowrap">${formatDate(m.fecha, true)}</td>
+      <td style="padding:7px 10px;font-size:0.8rem;text-align:center">${hora}</td>
+      <td style="padding:7px 10px;font-size:0.82rem"><strong>${f.inquilino}</strong><br><span style="font-size:0.72rem;color:#888">${f.direccion}</span></td>
+      <td style="padding:7px 10px;font-size:0.78rem;text-align:center">${mesLabel}</td>
+      <td style="padding:7px 10px;font-size:0.8rem;max-width:220px">${(m.concepto||'').replace(/</g,'&lt;')}</td>
+      <td style="padding:7px 10px;font-size:0.85rem;text-align:right"><strong>${formatMoney(m.monto)}</strong></td>
+      <td style="padding:7px 10px;text-align:center">
+        ${f.contrato ? `<button class="btn btn-secondary" style="font-size:0.72rem;padding:4px 8px" onclick="reimprimirReciboMovimiento(${m.id})">🖨️ Reimprimir</button>` : '—'}
+      </td>
+    </tr>`;
+  }).join('');
+
+  cont.innerHTML = `<table style="width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)" id="hp-tabla">
+    <thead><tr style="background:#1877F2;color:white">
+      <th style="padding:8px 10px;text-align:left;font-size:0.7rem;text-transform:uppercase">Fecha</th>
+      <th style="padding:8px 10px;text-align:center;font-size:0.7rem;text-transform:uppercase">Hora</th>
+      <th style="padding:8px 10px;text-align:left;font-size:0.7rem;text-transform:uppercase">Inquilino / Inmueble</th>
+      <th style="padding:8px 10px;text-align:center;font-size:0.7rem;text-transform:uppercase">Mes</th>
+      <th style="padding:8px 10px;text-align:left;font-size:0.7rem;text-transform:uppercase">Concepto</th>
+      <th style="padding:8px 10px;text-align:right;font-size:0.7rem;text-transform:uppercase">Monto</th>
+      <th style="padding:8px 10px;text-align:center;font-size:0.7rem;text-transform:uppercase">Recibo</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+
+  window._historialPagosFilas = filas;
+}
+
+async function reimprimirReciboMovimiento(movId) {
+  const fila = (window._historialPagosFilas || []).find(f => f.mov.id === movId);
+  if (!fila || !fila.contrato) { toast('No se encontró el contrato de este pago', 'error'); return; }
+  const m = fila.mov;
+  const c = fila.contrato;
+
+  // Abrir ventana ya, antes de cualquier espera (mismo motivo que en confirmarCobroInquilino)
+  const ventana = window.open('', '_blank');
+
+  // Traer el pago actual para poder mostrar el saldo pendiente ACTUAL (no hay forma de
+  // reconstruir el saldo histórico exacto de aquel momento, así que se muestra el saldo
+  // de hoy con una aclaración).
+  let pagoActual = null;
+  try {
+    const pagos = await sbGet('pagos', `hoja=eq.${encodeURIComponent(m.hoja)}&mes=eq.${m.mes}&limit=1`);
+    pagoActual = pagos[0] || null;
+  } catch(e) {}
+
+  // Reconstruir nroMes: posición de este mes entre todos los pagos del contrato
+  let nroMes = 1;
+  try {
+    const todosPagos = await sbGet('pagos', `hoja=eq.${encodeURIComponent(m.hoja)}&order=mes.asc&select=id,mes`);
+    const idx = todosPagos.findIndex(p => p.mes === m.mes);
+    if (idx >= 0) nroMes = idx + 1;
+  } catch(e) {}
+
+  imprimirRecibo({
+    contrato: c,
+    nroMes,
+    mes: m.mes,
+    fechaPago: m.fecha,
+    itemsAbonados: fila.items.length ? fila.items : [{ label: m.concepto || 'Pago', monto: m.monto }],
+    totalAbonado: m.monto,
+    nuevoSaldo: pagoActual ? (pagoActual.saldo||0) : null,
+    itemsPendientes: [],
+    esReimpresion: true
+  }, ventana);
+}
+
 function showTab(name, btn) {
   // Close Gestión dropdown
   document.getElementById('informes-menu').style.display = 'none';
   // Hide ALL panels using both class and inline style
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -9620,7 +9803,7 @@ document.addEventListener('visibilitychange', () => {
 // ============================================================
 // Initialize panel visibility
 (function() {
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','inmuebles','clientes','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) el.style.display = id === 'dashboard' ? 'block' : 'none';
