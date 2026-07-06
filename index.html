@@ -4416,8 +4416,15 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
   } catch(e) {}
 
   let extrasDelMes = [];
+  let honorariosPagadoEsteMes = 0;
   if (p) {
     try { extrasDelMes = await sbGet('pagos_extras', `pago_id=eq.${p.id}&order=id.asc`); } catch(e) {}
+    // Honorarios realmente cobrados en ESTA transacción (puede diferir de la
+    // cuota "programada" para este mes, si había cuotas atrasadas).
+    try {
+      const movsHon = await sbGet('movimientos_pagos', `pago_id=eq.${p.id}&concepto=eq.Honorarios&select=monto`);
+      honorariosPagadoEsteMes = movsHon.reduce((s,m) => s + (parseFloat(m.monto)||0), 0);
+    } catch(e) {}
   }
 
   const extrasInqAll = extrasDelMes.filter(e => e.a_cargo_de !== 'propietario' && !e.cobrado);
@@ -4560,7 +4567,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       <div style="background:#d4edda;border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.75rem;text-align:center;font-size:0.85rem;color:#155724">
         ✓ Este mes está completamente pagado
       </div>` : ''}
-      <div id="gp-cobro-items">${generarItemsCobro(p, extrasInq, contratoId, mesKey)}</div>
+      <div id="gp-cobro-items">${generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEsteMes)}</div>
       ${c?.interes_punitorio > 0 ? `
       <div style="background:#fff8e1;border:1px solid #ffc107;border-radius:8px;padding:0.75rem 1rem;margin-top:0.75rem">
         <div style="font-size:0.82rem;font-weight:600;color:#856404;margin-bottom:6px">⏱ Interés punitorio (${c.interes_punitorio}% diario s/alquiler)</div>
@@ -4711,7 +4718,7 @@ function obtenerItemsPendientesGP(p, contratoId) {
   return items;
 }
 
-function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
+function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEsteMes = 0) {
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
 
   const ps = window._pagosSuministros?.[p?.id] || {};
@@ -4748,8 +4755,11 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey) {
     { id:'expensas', label:'Expensas', monto: expensas, pagado: parseFloat(p.pagado_expensas)||0 },
   ];
   const paidItems = tieneItemsPagados ? allItemDefs.filter(i => i.monto > 0 && i.pagado > 0) : [];
-  const honorariosCuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
-  const honorariosPagadoInq = honorariosCuotas.reduce((s,g) => s+(parseFloat(g.pagado_inquilino)||0), 0);
+  // Preferir el monto exacto cobrado en ESTA transacción (via movimientos_pagos).
+  // Fallback a la cuota "programada" de este mes solo para datos viejos, de
+  // antes de que empezáramos a guardar el desglose preciso por transacción.
+  const honorariosCuotaMes = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey));
+  const honorariosPagadoInq = honorariosPagadoEsteMes > 0 ? honorariosPagadoEsteMes : (parseFloat(honorariosCuotaMes?.pagado_inquilino) || 0);
 
   // a-cuenta: payment without per-item breakdown
   const yaAbonadoGP = !tieneItemsPagados ? Math.max(0, p.pagado_importe || (p.total||0) - (p.saldo||0)) : 0;
@@ -5455,7 +5465,7 @@ async function revertirPagoACuenta(pagoId, hoja, contratoId, mesKey, comisionPct
     await sbPatch('pagos', parseInt(pagoId), { pagado_importe: 0, pagado: 'NO', saldo: p.total });
     toast('Pago a cuenta revertido ✓');
     await loadAll();
-    openGP(hoja, contratoId, mesKey, comisionPct);
+    await editarMesConSolapa(hoja, contratoId, mesKey, 's2');
   } catch(e) { toast('Error: '+e.message, 'error'); }
 }
 
@@ -5500,21 +5510,57 @@ async function revertirItem(pagoId, itemId, montoPagado, montoTotal, hoja, contr
 }
 
 async function revertirHonorarios(contratoId, hoja, mesKey, comisionPct) {
-  if (!confirm('¿Revertir los pagos de honorarios de este contrato?')) return;
-  try {
-    const cuotas = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
-    await Promise.all(cuotas.map(gc => sbPatch('gastos_inicio_cuotas', gc.id, { pagado_inquilino: 0 })));
-    cuotas.forEach(gc => gc.pagado_inquilino = 0);
-    // Borrar movimientos de honorarios para este contrato/mes
+  const mes = mesKey + '-01';
+  const hojaEncoded = encodeURIComponent(hoja);
+  const pagosRow = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&select=id&limit=1`);
+  if (!pagosRow.length) { toast('No se encontró el pago de este mes', 'error'); return; }
+  const pagoId = pagosRow[0].id;
+
+  // Buscar el movimiento de honorarios de ESTA transacción puntual, que guarda
+  // el desglose exacto de qué cuota(s) recibieron la plata (puede no ser la
+  // cuota de "este mes" si había cuotas atrasadas de meses anteriores).
+  const movs = await sbGet('movimientos_pagos', `pago_id=eq.${pagoId}&concepto=eq.Honorarios&select=*`);
+  if (!movs.length) { toast('No hay honorarios registrados en este mes', 'error'); return; }
+
+  let cuotasAfectadas = [];
+  let montoTotal = 0;
+  movs.forEach(m => {
+    montoTotal += parseFloat(m.monto)||0;
     try {
-      const mes = mesKey + '-01';
-      const hojaEncoded = encodeURIComponent(hoja);
-      const pagosRow = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&select=id&limit=1`);
-      if (pagosRow.length) {
-        await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${pagosRow[0].id}&concepto=eq.Honorarios`);
-      }
+      const items = JSON.parse(m.items || '[]');
+      items.forEach(it => { if (it.cuotas) cuotasAfectadas = cuotasAfectadas.concat(it.cuotas); });
     } catch(e) {}
-    toast('Honorarios revertidos ✓');
+  });
+
+  if (!cuotasAfectadas.length) {
+    // Dato viejo (de antes de este fix), sin desglose por cuota guardado.
+    // Mejor esfuerzo: revertir la cuota de este mes específico si existe.
+    const cuota = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey));
+    if (!cuota) { toast('No se encontró la cuota de honorarios de este mes', 'error'); return; }
+    if (!confirm(`¿Revertir el pago de honorarios de este mes (${formatMoney(cuota.pagado_inquilino)})?\n\nEste pago es anterior a una corrección del sistema y no tiene el desglose exacto guardado — se va a revertir la cuota de este mes como mejor estimación.`)) return;
+    try {
+      await sbPatch('gastos_inicio_cuotas', cuota.id, { pagado_inquilino: 0 });
+      cuota.pagado_inquilino = 0;
+      await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${pagoId}&concepto=eq.Honorarios`);
+      toast('Honorarios de este mes revertidos ✓');
+      await editarMesConSolapa(hoja, contratoId, mesKey, 's2');
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+    return;
+  }
+
+  const detalle = cuotasAfectadas.map(c => `  · ${formatDate(c.mes, true)}: ${formatMoney(c.monto)}`).join('\n');
+  if (!confirm(`¿Revertir el pago de honorarios de este mes (${formatMoney(montoTotal)})?\n\nSe va a descontar exactamente de:\n${detalle}`)) return;
+
+  try {
+    for (const ca of cuotasAfectadas) {
+      const gc = DB_GASTOS_CUOTAS.find(g => g.id === ca.cuota_id);
+      if (!gc) continue;
+      const nuevoPagado = Math.max(0, Math.round(((parseFloat(gc.pagado_inquilino)||0) - ca.monto) * 100) / 100);
+      await sbPatch('gastos_inicio_cuotas', gc.id, { pagado_inquilino: nuevoPagado });
+      gc.pagado_inquilino = nuevoPagado;
+    }
+    await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${pagoId}&concepto=eq.Honorarios`);
+    toast('Honorarios de este mes revertidos ✓');
     await editarMesConSolapa(hoja, contratoId, mesKey, 's2');
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
@@ -5527,11 +5573,18 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
   if (!existing.length) { toast('No se encontró el registro','error'); return; }
   const p = existing[0];
   try {
-    // Revert honorarios: read movement first
-    let honPagado = 0;
+    // Leer los movimientos de Honorarios de ESTE pago ANTES de borrarlos,
+    // para poder revertir con precisión qué cuota(s) recibieron la plata
+    // (pueden ser de meses anteriores si había atraso).
+    let cuotasAfectadas = [];
     try {
-      const movs = await sbGet('movimientos_pagos', `pago_id=eq.${p.id}&concepto=eq.Honorarios`);
-      honPagado = movs.reduce((s,m) => s + (parseFloat(m.monto)||0), 0);
+      const movsHon = await sbGet('movimientos_pagos', `pago_id=eq.${p.id}&concepto=eq.Honorarios&select=*`);
+      movsHon.forEach(m => {
+        try {
+          const items = JSON.parse(m.items || '[]');
+          items.forEach(it => { if (it.cuotas) cuotasAfectadas = cuotasAfectadas.concat(it.cuotas); });
+        } catch(e) {}
+      });
     } catch(e) {}
 
     await sbPatch('pagos', p.id, {
@@ -5549,21 +5602,24 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
     });
     try { await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${p.id}`); } catch(e) {}
 
-    // Revert honorarios from gastos_inicio_cuotas
-    if (honPagado > 0) {
-      const cuotasH = DB_GASTOS_CUOTAS
-        .filter(g => parseInt(g.contrato_id) === contratoId)
-        .sort((a,b) => a.mes > b.mes ? -1 : 1); // reverse: undo last-paid first
-      let restante = honPagado;
-      for (const gc of cuotasH) {
-        if (restante <= 0) break;
-        const pagado = parseFloat(gc.pagado_inquilino) || 0;
-        if (pagado <= 0) continue;
-        const revertir = Math.min(restante, pagado);
-        const nuevoPagado = Math.max(0, pagado - revertir);
+    // Revertir honorarios: descontar exactamente lo que ESTA transacción aportó
+    // a cada cuota (puede haber tocado cuotas de meses anteriores si había
+    // atraso) — nunca resetear a 0 de más, por si esa cuota recibió aportes
+    // de otro mes también.
+    if (cuotasAfectadas.length) {
+      for (const ca of cuotasAfectadas) {
+        const gc = DB_GASTOS_CUOTAS.find(g => g.id === ca.cuota_id);
+        if (!gc) continue;
+        const nuevoPagado = Math.max(0, Math.round(((parseFloat(gc.pagado_inquilino)||0) - ca.monto) * 100) / 100);
         await sbPatch('gastos_inicio_cuotas', gc.id, { pagado_inquilino: nuevoPagado });
         gc.pagado_inquilino = nuevoPagado;
-        restante -= revertir;
+      }
+    } else {
+      // Dato viejo sin desglose guardado: mejor esfuerzo con la cuota de este mes
+      const cuotaH = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey));
+      if (cuotaH && (parseFloat(cuotaH.pagado_inquilino)||0) > 0) {
+        await sbPatch('gastos_inicio_cuotas', cuotaH.id, { pagado_inquilino: 0 });
+        cuotaH.pagado_inquilino = 0;
       }
     }
 
@@ -6052,6 +6108,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     if (honMonto > 0) {
       const cuotasH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).sort((a,b) => a.mes > b.mes ? 1 : -1);
       let restante = honMonto;
+      const cuotasAfectadas = []; // registro exacto de qué cuota(s) recibieron plata en ESTA transacción, para poder revertir con precisión después
       for (const gc of cuotasH) {
         if (restante <= 0) break;
         const saldo = (gc.monto_inquilino||0) - (parseFloat(gc.pagado_inquilino)||0);
@@ -6059,9 +6116,12 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
         const pagar = Math.min(restante, saldo);
         await sbPatch('gastos_inicio_cuotas', gc.id, { pagado_inquilino: (parseFloat(gc.pagado_inquilino)||0) + pagar });
         gc.pagado_inquilino = (parseFloat(gc.pagado_inquilino)||0) + pagar;
+        cuotasAfectadas.push({ cuota_id: gc.id, mes: gc.mes, monto: Math.round(pagar*100)/100 });
         restante -= pagar;
       }
-      // Guardar movimiento de honorarios
+      // Guardar movimiento de honorarios, incluyendo el desglose exacto por cuota
+      // (necesario para poder revertir sin ambigüedad, ya que el pago puede
+      // repartirse entre cuotas de meses distintos al que se está cobrando).
       try {
         await sbPost('movimientos_pagos', {
           pago_id: p.id,
@@ -6071,7 +6131,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
           fecha: fechaMovimiento,
           monto: honMonto,
           concepto: 'Honorarios',
-          items: JSON.stringify([{ label: 'Honorarios', monto: honMonto }])
+          items: JSON.stringify([{ label: 'Honorarios', monto: honMonto, cuotas: cuotasAfectadas }])
         });
       } catch(e) { console.warn('movimientos_pagos honorarios:', e); }
     }
