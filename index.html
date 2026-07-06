@@ -8514,17 +8514,23 @@ async function renderSrvInforme() {
         return { ps, pago, c };
       });
       const titulos = contratosInfo.map(ci => ci.c?.titulo || ci.pago?.hoja).filter(Boolean).join(' / ');
-      // Abonado (por inquilino): true solo si TODOS los contratos que realmente
-      // tienen parte a cargo del inquilino en esta cuenta (importe > 0) la
-      // tienen pagada. Los contratos donde esta cuenta es 100% del propietario
-      // (importe = 0 para el inquilino) se excluyen de este chequeo — no hay
-      // nada que el inquilino deba pagar ahí, así que no cuentan como "pagado"
-      // ni "adeudado" desde su perspectiva (antes daban un falso "pagado" por
-      // la comparación trivial 0 >= 0).
-      const contratosConParteInquilino = contratosInfo.filter(ci => (ci.ps.importe||0) > 0);
-      const todosAbonados = contratosConParteInquilino.length > 0
-        ? contratosConParteInquilino.every(ci => (ci.pago?.[campoPagado] || 0) >= (ci.ps.importe || 0))
-        : true; // ningún contrato de esta cuenta tiene parte inquilino (raro, pero no hay nada que cobrarle a nadie)
+      // Abonado (por inquilino): con que UN solo contrato de la cuenta esté
+      // "cubierto" ya alcanza para marcar toda la fila como abonada. Qué
+      // significa "cubierto" depende de cada contrato:
+      //  - Si el inquilino tiene parte real a cargo en esta cuenta (importe > 0):
+      //    que haya pagado esa parte específica.
+      //  - Si esta cuenta es 100% a cargo del propietario en ese contrato
+      //    (importe = 0): no hay nada específico que pagar acá, pero cuenta
+      //    como "cubierto" si el inquilino de ESE contrato pagó el mes
+      //    completo (aunque este ítem puntual no fuera su responsabilidad).
+      const algunAbonado = contratosInfo.some(ci => {
+        const tieneParteReal = (ci.ps.importe||0) > 0;
+        if (tieneParteReal) return (ci.pago?.[campoPagado] || 0) >= (ci.ps.importe || 0);
+        // 100% propietario en este contrato: contar como cubierto solo si el
+        // mes de ESE contrato está realmente cargado y completamente pagado
+        // (no alcanza con total=0 y saldo=0, que sería un falso positivo trivial).
+        return (ci.pago?.total || 0) > 0 && (ci.pago?.saldo || 0) <= 0.01;
+      });
       const algunPagadoProveedor = items.some(ps => ps.pagado_proveedor);
       return {
         nro, items, contratosInfo,
@@ -8532,7 +8538,7 @@ async function renderSrvInforme() {
         pago: contratosInfo[0]?.pago,
         sum: primerSum,
         importe: Math.round(importeTotal * 100) / 100,
-        abonado: todosAbonados,
+        abonado: algunAbonado,
         pagadoProveedor: algunPagadoProveedor,
         psIds: items.map(i => i.id)
       };
