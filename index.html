@@ -8854,11 +8854,15 @@ function agruparMovimientosDelMismoCobrado(movs) {
 
     if (mismoPago && (cercaEnTiempo || sinTimestamp)) {
       ultimo.monto = (ultimo.monto||0) + (m.monto||0);
-      ultimo.concepto = [ultimo.concepto, m.concepto].filter(Boolean).join(', ');
+      const partesConcepto = [ultimo.concepto, m.concepto].filter(Boolean);
+      partesConcepto.sort((a,b) => (a==='Honorarios'?1:0) - (b==='Honorarios'?1:0));
+      ultimo.concepto = partesConcepto.join(', ');
       try {
         const itemsPrev = JSON.parse(ultimo.items || '[]');
         const itemsNuevo = JSON.parse(m.items || '[]');
-        ultimo.items = JSON.stringify([...itemsPrev, ...itemsNuevo]);
+        const itemsCombinados = [...itemsPrev, ...itemsNuevo];
+        itemsCombinados.sort((a,b) => (a.label==='Honorarios'?1:0) - (b.label==='Honorarios'?1:0));
+        ultimo.items = JSON.stringify(itemsCombinados);
       } catch(e) {}
       ultimo._t = tActual || ultimo._t;
     } else {
