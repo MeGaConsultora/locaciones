@@ -4549,7 +4549,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       ${(() => {
         const _cH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
         const _sH = Math.max(0, _cH.reduce((s,g)=>s+(g.monto_inquilino||0),0) - _cH.reduce((s,g)=>s+(parseFloat(g.pagado_inquilino)||0),0));
-        return (!p || !p.total) && !_sH;
+        return (!p || (!p.total && !(p.pagado_importe > 0))) && !_sH;
       })() ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
       ${p.saldo > 0 && p.saldo < p.total ? `
       <div style="background:#fff3cd;border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.75rem;display:flex;justify-content:space-between;align-items:center">
@@ -4598,7 +4598,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       ${(() => {
         const _cH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
         const _sH = Math.max(0, _cH.reduce((s,g)=>s+(g.monto_inquilino||0),0) - _cH.reduce((s,g)=>s+(parseFloat(g.pagado_inquilino)||0),0));
-        return (!p || !p.total) && !_sH;
+        return (!p || (!p.total && !(p.pagado_importe > 0))) && !_sH;
       })() ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
       <div id="gp-prop-items">${generarItemsPropietario(p, extrasProp, comisionPct, c, window._gpPropietarioId||null)}</div>
       <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem;font-size:1rem">
