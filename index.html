@@ -5974,8 +5974,12 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
       const estePago = newTotal - oldVal;
       if (estePago > 0) itemsMovimiento.push({ label: labelsMap[key.replace('pagado_','')] || key, monto: estePago });
     }
-    // A cuenta e interés si aplican
-    if (acuenta > 0) itemsMovimiento.push({ label: acuentaConcepto, monto: acuenta });
+    // A cuenta: la plata que no se pudo imputar a ningún ítem específico
+    // (lo que sí se imputó ya quedó reflejado arriba como Alquiler/EPE/etc.
+    // vía pagadoPorItem — sumar el monto de "acuenta" completo acá de nuevo
+    // duplicaría el importe, como pasó con el recibo reimpreso de Ghilardi-Oga).
+    const acuentaSinImputar = redondear2(Math.max(0, restante));
+    if (acuentaSinImputar > 0.004) itemsMovimiento.push({ label: acuentaConcepto, monto: acuentaSinImputar });
     const interesChkRef = document.getElementById('gp-interes-chk');
     if (interesChkRef?.checked) {
       const iv = parseFloat(interesChkRef.dataset.interes||0);
