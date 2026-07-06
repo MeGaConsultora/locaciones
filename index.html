@@ -8514,8 +8514,17 @@ async function renderSrvInforme() {
         return { ps, pago, c };
       });
       const titulos = contratosInfo.map(ci => ci.c?.titulo || ci.pago?.hoja).filter(Boolean).join(' / ');
-      // Abonado: true solo si TODOS los contratos de esta cuenta tienen su parte pagada
-      const todosAbonados = contratosInfo.every(ci => (ci.pago?.[campoPagado] || 0) >= (ci.ps.importe || 0));
+      // Abonado (por inquilino): true solo si TODOS los contratos que realmente
+      // tienen parte a cargo del inquilino en esta cuenta (importe > 0) la
+      // tienen pagada. Los contratos donde esta cuenta es 100% del propietario
+      // (importe = 0 para el inquilino) se excluyen de este chequeo — no hay
+      // nada que el inquilino deba pagar ahí, así que no cuentan como "pagado"
+      // ni "adeudado" desde su perspectiva (antes daban un falso "pagado" por
+      // la comparación trivial 0 >= 0).
+      const contratosConParteInquilino = contratosInfo.filter(ci => (ci.ps.importe||0) > 0);
+      const todosAbonados = contratosConParteInquilino.length > 0
+        ? contratosConParteInquilino.every(ci => (ci.pago?.[campoPagado] || 0) >= (ci.ps.importe || 0))
+        : true; // ningún contrato de esta cuenta tiene parte inquilino (raro, pero no hay nada que cobrarle a nadie)
       const algunPagadoProveedor = items.some(ps => ps.pagado_proveedor);
       return {
         nro, items, contratosInfo,
