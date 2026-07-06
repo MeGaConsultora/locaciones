@@ -8828,6 +8828,53 @@ function exportarInformeSeguroXLSX() {
 // ============================================================
 // HISTORIAL DE PAGOS
 // ============================================================
+// Agrupa movimientos_pagos que en realidad fueron UN solo cobro (mismo recibo),
+// como cuando se paga alquiler/servicios + honorarios juntos: confirmarCobroInquilino
+// los guarda como dos filas separadas en la tabla, aunque salió un único recibo.
+// Se agrupan por mismo pago_id + creados con pocos segundos de diferencia
+// (para no mezclar dos pagos reales distintos hechos el mismo día).
+function agruparMovimientosDelMismoCobrado(movs) {
+  const VENTANA_SEGUNDOS = 30;
+  const ordenados = [...movs].sort((a,b) => {
+    if (a.pago_id !== b.pago_id) return a.pago_id - b.pago_id;
+    const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return ta - tb;
+  });
+
+  const grupos = [];
+  for (const m of ordenados) {
+    const tActual = m.created_at ? new Date(m.created_at).getTime() : null;
+    const ultimo = grupos[grupos.length - 1];
+    const mismoPago = ultimo && ultimo.pago_id === m.pago_id;
+    const cercaEnTiempo = ultimo && tActual && ultimo._t &&
+      Math.abs(tActual - ultimo._t) <= VENTANA_SEGUNDOS * 1000;
+    // Si no hay created_at en alguno de los dos, agrupar solo por mismo pago_id + misma fecha
+    const sinTimestamp = ultimo && (!tActual || !ultimo._t) && ultimo.fecha === m.fecha;
+
+    if (mismoPago && (cercaEnTiempo || sinTimestamp)) {
+      ultimo.monto = (ultimo.monto||0) + (m.monto||0);
+      ultimo.concepto = [ultimo.concepto, m.concepto].filter(Boolean).join(', ');
+      try {
+        const itemsPrev = JSON.parse(ultimo.items || '[]');
+        const itemsNuevo = JSON.parse(m.items || '[]');
+        ultimo.items = JSON.stringify([...itemsPrev, ...itemsNuevo]);
+      } catch(e) {}
+      ultimo._t = tActual || ultimo._t;
+    } else {
+      grupos.push({ ...m, _t: tActual });
+    }
+  }
+
+  // Volver a ordenar por fecha/hora desc para mostrar
+  grupos.sort((a,b) => {
+    if (a.fecha !== b.fecha) return (b.fecha||'').localeCompare(a.fecha||'');
+    return (b._t||b.id) - (a._t||a.id);
+  });
+  grupos.forEach(g => delete g._t);
+  return grupos;
+}
+
 async function renderHistorialPagos() {
   const desde = document.getElementById('hp-desde')?.value;
   const hasta = document.getElementById('hp-hasta')?.value;
@@ -8847,6 +8894,8 @@ async function renderHistorialPagos() {
     cont.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Error al buscar: ${e.message}</p></div>`;
     return;
   }
+
+  movs = agruparMovimientosDelMismoCobrado(movs);
 
   // Enriquecer con datos del contrato
   let filas = movs.map(m => {
