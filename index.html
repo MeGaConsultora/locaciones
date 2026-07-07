@@ -612,7 +612,7 @@
         <option value="">Todos</option>
         <option value="abonado">Abonados por inquilino</option>
         <option value="adeudado">No abonados por inquilino</option>
-        <option value="no_pagado_proveedor">Pendientes de pago a proveedor</option>
+        <option value="no_pagado_proveedor">Pendientes de pago a proveedor (ya cobrados al inquilino)</option>
         <option value="pagado_proveedor">Pagados a proveedor</option>
       </select>
       <input type="text" class="search-input" id="srv-inf-buscar" placeholder="Buscar contrato o N° cuenta…" style="width:220px" oninput="renderSrvInforme()">
@@ -8556,7 +8556,7 @@ async function renderSrvInforme() {
   if (estado === 'abonado') filas = filas.filter(f => f.abonado);
   else if (estado === 'adeudado') filas = filas.filter(f => !f.abonado);
   else if (estado === 'pagado_proveedor') filas = filas.filter(f => f.pagadoProveedor);
-  else if (estado === 'no_pagado_proveedor') filas = filas.filter(f => !f.pagadoProveedor);
+  else if (estado === 'no_pagado_proveedor') filas = filas.filter(f => !f.pagadoProveedor && f.abonado);
 
   // Buscador
   if (buscar) filas = filas.filter(f =>
