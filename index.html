@@ -4053,11 +4053,18 @@ async function guardarServicioItem(inputId) {
           .reduce((s,e) => s + ((e.tipo==='credito' ? -1 : 1) * (parseFloat(e.importe)||0)), 0);
         const newTotal = (pago.importe_alquiler||0) + await getTotalServiciosPago(pago.id, srv, totalTipo) + extrasTotal;
         const yaAbonado = pago.pagado_importe || (pago.total||0) - (pago.saldo||0);
-        await sbPatch('pagos', pago.id, {
+        const patchPago = {
           ['monto_'+srv]: totalTipo,
           total: newTotal,
           saldo: Math.max(0, newTotal - yaAbonado)
-        });
+        };
+        try {
+          await sbPatch('pagos', pago.id, patchPago);
+        } catch(e1) {
+          console.warn('Reintentando guardar total/saldo del pago...', e1);
+          await new Promise(r => setTimeout(r, 800));
+          await sbPatch('pagos', pago.id, patchPago);
+        }
       } catch(e) { toast('Error: ' + e.message, 'error'); return false; }
     }
     return true;
@@ -4133,6 +4140,7 @@ async function guardarServicios() {
   }
 
   // Apply pct and save each pago
+  const fallidos = [];
   for (const [pagoId, {pago, changes}] of Object.entries(cambiosPorPago)) {
     try {
       // Fetch fresh pct from Supabase
@@ -4198,12 +4206,31 @@ async function guardarServicios() {
         }
       }
 
-      await sbPatch('pagos', parseInt(pagoId), patch);
+      // Paso crítico: si esto falla, el suministro puede quedar guardado pero
+      // el total/saldo del pago nunca se sincroniza (síntoma reportado: se ve
+      // en la grilla/GP recién después de volver a guardar a mano). Reintenta
+      // una vez más antes de darse por vencido, y si igual falla, lo reporta
+      // explícitamente en vez de solo loguearlo en consola.
+      try {
+        await sbPatch('pagos', parseInt(pagoId), patch);
+      } catch(e1) {
+        console.warn(`Reintentando guardar total para pago ${pagoId}...`, e1);
+        await new Promise(r => setTimeout(r, 800));
+        await sbPatch('pagos', parseInt(pagoId), patch);
+      }
       guardados++;
-    } catch(e) { console.error('Error saving pago:', e); }
+    } catch(e) {
+      console.error('Error saving pago:', pagoId, e);
+      const nombreFallido = DB.contratos.find(x => x.hoja === pago.hoja)?.titulo || pago.hoja || `pago ${pagoId}`;
+      fallidos.push(nombreFallido);
+    }
   }
 
-  toast(`${guardados} servicio/s guardados ✓`);
+  if (fallidos.length) {
+    toast(`⚠️ ${guardados} guardados, pero ${fallidos.length} fallaron: ${fallidos.join(', ')}. Volvé a intentar con esos.`, 'error');
+  } else {
+    toast(`${guardados} servicio/s guardados ✓`);
+  }
   const activeTab2 = document.querySelector('.solapa-btn.active');
   const activeTabId2 = activeTab2?.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
   await cargarListaServicios();
