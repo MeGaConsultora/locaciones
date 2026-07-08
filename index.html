@@ -1417,6 +1417,19 @@ function calcularIntereses(alquiler, fechaVencStr, fechaPagoStr, interesdiario) 
   return Math.round(interes * 100) / 100;
 }
 
+// Calcula el N° de recibo/mes correcto para un pago: cuenta la posición del
+// mes SOLO desde la vigencia_desde del contrato actual, ignorando meses de
+// un período anterior que hayan quedado guardados en la misma hoja (por
+// ejemplo, tras una renovación donde se conservó el historial viejo).
+function calcularNroMes(pagosArr, contrato, pagoId) {
+  const vigenciaDesde = contrato?.vigencia_desde?.substring(0,7);
+  const pagosDelPeriodoActual = vigenciaDesde
+    ? pagosArr.filter(p => p.mes && p.mes.substring(0,7) >= vigenciaDesde)
+    : pagosArr;
+  const idx = pagosDelPeriodoActual.findIndex(x => x.id === pagoId);
+  return idx >= 0 ? idx + 1 : 1;
+}
+
 function formatMoney(n) {
   if (n == null || isNaN(n)) return '—';
   return '$\u00A0' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -5802,7 +5815,7 @@ async function previsualizarReciboInquilino(hoja, contratoId, mesKey, comisionPc
   if (totalCobrado <= 0) { toast('Seleccioná al menos un ítem','error'); return; }
 
   const nuevoSaldo = Math.max(0, (p.saldo||0) - (totalCobrado - honorariosCobrado));
-  const nroMes = pagosActuales.findIndex(x=>x.id===p.id) + 1 || 1;
+  const nroMes = calcularNroMes(pagosActuales, c, p.id);
 
   // Just print — no DB writes
   imprimirRecibo({
@@ -6025,7 +6038,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   const totalReal = calcularTotal(p, extrasP, psDataP);
   const yaAbonadoReal = (p.pagado_importe||0) + montoRegularTotal;
   const nuevoSaldo = Math.round(Math.max(0, totalReal - yaAbonadoReal) * 100) / 100;
-  const nroMes = pagosActuales.findIndex(x=>x.id===p.id)+1;
+  const nroMes = calcularNroMes(pagosActuales, c, p.id);
   const fechaMovimiento = document.getElementById('gp-fecha-pago')?.value || TODAY;
 
   const nuevoPagadoImporte = Math.round(((p.pagado_importe||0) + montoRegularTotal) * 100) / 100;
@@ -7916,10 +7929,10 @@ async function openNuevoPago(hoja) {
     document.getElementById('modal-body').innerHTML = `
       <div class="form-group" style="margin-bottom:1.2rem">
         <label>Seleccioná el mes a pagar</label>
-        <select id="sel-mes-impago" class="filter-select" style="width:100%;margin-top:4px" onchange="cargarItemsPago(${JSON.stringify(impagos).replace(/"/g,'&quot;')}, this.value, ${JSON.stringify(todosPagos).replace(/"/g,'&quot;')})">
+        <select id="sel-mes-impago" class="filter-select" style="width:100%;margin-top:4px" onchange="cargarItemsPago(${JSON.stringify(impagos).replace(/"/g,'&quot;')}, this.value, ${JSON.stringify(todosPagos).replace(/"/g,'&quot;')}, ${JSON.stringify(contrato).replace(/"/g,'&quot;')})">
           <option value="">-- Elegí un mes --</option>
           ${impagos.map((p,i) => {
-            const nroMes = todosPagos.findIndex(x => x.id === p.id) + 1;
+            const nroMes = calcularNroMes(todosPagos, contrato, p.id);
             return `<option value="${p.id}">Mes ${nroMes} — ${formatDate(p.mes)} — Saldo: ${formatMoney(p.saldo)}</option>`;
           }).join('')}
         </select>
@@ -7931,11 +7944,11 @@ async function openNuevoPago(hoja) {
   }
 }
 
-function cargarItemsPago(impagos, pagoId, todosPagos) {
+function cargarItemsPago(impagos, pagoId, todosPagos, contrato) {
   if (!pagoId) { document.getElementById('items-pago').innerHTML = ''; return; }
   const pago = impagos.find(p => p.id == pagoId);
   if (!pago) return;
-  const nroMes = todosPagos.findIndex(x => x.id == pagoId) + 1;
+  const nroMes = calcularNroMes(todosPagos, contrato, parseInt(pagoId));
 
   // Distribute already-paid amount (total - saldo) across items in sequence
   const yaAbonado = pago.pagado_importe || (pago.total||0) - (pago.saldo||0);
@@ -7966,7 +7979,6 @@ function cargarItemsPago(impagos, pagoId, todosPagos) {
   ].filter(it => it.val && it.val > 0);
 
   // Add gastos de inicio cuota if applicable
-  const contrato = DB.contratos.find(c => c.hoja === pago.hoja);
   const gastoCuota = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contrato?.id && g.mes && g.mes.startsWith(pago.mes?.substring(0,7)));
   const cuotaNum = gastoCuota ? DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contrato?.id).findIndex(g => g.mes && g.mes.startsWith(pago.mes?.substring(0,7))) + 1 : 0;
   const totalCuotas = gastoCuota ? DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contrato?.id).length : 0;
@@ -9091,12 +9103,14 @@ async function reimprimirReciboMovimiento(movId) {
     pagoActual = pagos[0] || null;
   } catch(e) {}
 
-  // Reconstruir nroMes: posición de este mes entre todos los pagos del contrato
+  // Reconstruir nroMes: posición de este mes entre los pagos del contrato,
+  // contando solo desde la vigencia_desde actual (por si se conservó
+  // historial de un período anterior a una renovación).
   let nroMes = 1;
   try {
     const todosPagos = await sbGet('pagos', `hoja=eq.${encodeURIComponent(m.hoja)}&order=mes.asc&select=id,mes`);
-    const idx = todosPagos.findIndex(p => p.mes === m.mes);
-    if (idx >= 0) nroMes = idx + 1;
+    const pagoDeEsteMovimiento = todosPagos.find(p => p.mes === m.mes);
+    if (pagoDeEsteMovimiento) nroMes = calcularNroMes(todosPagos, c, pagoDeEsteMovimiento.id);
   } catch(e) {}
 
   imprimirRecibo({
