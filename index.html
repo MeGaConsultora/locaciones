@@ -4104,34 +4104,46 @@ async function guardarServicios() {
       const hojas = input.dataset.hojas
         ? input.dataset.hojas.split('|').filter(Boolean)
         : input.dataset.hoja ? [input.dataset.hoja] : [];
+      // Suministro_id específico por hoja (mismo orden que hojas), si existe.
+      // CRÍTICO: si un contrato tiene más de un suministro del mismo tipo
+      // (ej: EPE individual 100% + EPE compartida con otros contratos), cada
+      // uno tiene su propio suministro_id — hay que tratarlos por separado,
+      // nunca aplicar el importe de uno a "todos los suministros de ese tipo".
+      const sumIdsList = (input.dataset.sumIds || '').split(',').map(x => { const n = parseInt(x); return isNaN(n) ? null : n; });
 
-      for (const hoja of hojas) {
+      for (let hi = 0; hi < hojas.length; hi++) {
+        const hoja = hojas[hi];
+        const sumId = sumIdsList[hi] ?? null;
         try {
           const hojaEncoded = encodeURIComponent(hoja);
           const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
           if (!pagos.length) continue;
           const p = pagos[0];
           if (!cambiosPorPago[p.id]) cambiosPorPago[p.id] = { pago: p, changes: {} };
-          cambiosPorPago[p.id].changes[`monto_${srv}`] = importe;
+          if (!cambiosPorPago[p.id].changes[`monto_${srv}`]) cambiosPorPago[p.id].changes[`monto_${srv}`] = [];
+          cambiosPorPago[p.id].changes[`monto_${srv}`].push({ importe, sumId });
         } catch(e) { console.error('Error finding pago:', e); }
       }
 
-      // EPE cuota 2
+      // EPE cuota 2 — igual criterio: solo afecta el/los suministro_id de
+      // ESTE input puntual (individual o compartido), nunca todos los EPE
+      // del contrato.
       if (srv === 'epe') {
         const contratoId = input.id.replace('srv-epe-g-','').replace('srv-epe-','').split(',')[0];
         const c2chk = document.getElementById(`srv-epe-cuota2-${contratoId}`);
         if (c2chk?.checked && hojas.length > 0) {
-          const hoja = hojas[0];
-          const cActual = DB.contratos.find(x => x.hoja === hoja);
           const mesNext = c2chk.dataset.next + '-01';
-          for (const h of hojas) {
+          for (let hi = 0; hi < hojas.length; hi++) {
+            const h = hojas[hi];
+            const sumId = sumIdsList[hi] ?? null;
             try {
               const hojaEncoded = encodeURIComponent(h);
               const pagosNext = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesNext}&limit=1`);
               if (!pagosNext.length) continue;
               const pN = pagosNext[0];
               if (!cambiosPorPago[pN.id]) cambiosPorPago[pN.id] = { pago: pN, changes: {} };
-              cambiosPorPago[pN.id].changes['monto_epe'] = importe;
+              if (!cambiosPorPago[pN.id].changes['monto_epe']) cambiosPorPago[pN.id].changes['monto_epe'] = [];
+              cambiosPorPago[pN.id].changes['monto_epe'].push({ importe, sumId });
             } catch(e) {}
           }
         }
@@ -4143,68 +4155,75 @@ async function guardarServicios() {
   const fallidos = [];
   for (const [pagoId, {pago, changes}] of Object.entries(cambiosPorPago)) {
     try {
-      // Fetch fresh pct from Supabase
       const cPago = DB.contratos.find(x => x.hoja === pago.hoja);
+
+      // pct de referencia SOLO para entradas legado sin suministro_id propio
       let pctData = cPago;
       try {
         const fresh = await sbGet('contratos', `hoja=eq.${encodeURIComponent(pago.hoja)}&select=pct_epe,pct_agua,pct_tgiu,pct_seguro,pct_internet,pct_expensas&limit=1`);
         if (fresh.length) pctData = { ...cPago, ...fresh[0] };
       } catch(e) {}
 
-      const applyPct = (val, srv) => {
-        // Check contrato_suministros first
-        const sum = DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(cPago?.id) && s.tipo === srv);
-        const pct = sum ? (sum.pct_inquilino ?? 100) : (pctData?.['pct_'+srv] ?? 100);
-        return Math.round(val * pct / 100 * 100) / 100;
-      };
+      const psDelPago = await sbGet('pagos_suministros', `pago_id=eq.${parseInt(pagoId)}`).catch(()=>[]);
 
       const alq = pago.importe_alquiler || 0;
-      // Calcular servicios usando pagos_suministros si disponible
-      const serviciosTotal = await getTotalServiciosPago(parseInt(pagoId), null, 0);
-      // Override con los valores modificados en este guardado
-      let overrideTotal = 0;
-      for (const [campo, val] of Object.entries(changes)) {
-        const srvKey = campo.replace('monto_', '');
-        overrideTotal += applyPct(val, srvKey);
-      }
-      // Restar los servicios del tipo modificado (ya incluidos en overrideTotal)
-      let srvsSinModificar = await getTotalServiciosPago(parseInt(pagoId), null, 0);
-      for (const [campo] of Object.entries(changes)) {
-        const srvKey = campo.replace('monto_', '');
-        // Restar el valor actual de ese tipo del total
-        const psActual = (await sbGet('pagos_suministros', `pago_id=eq.${parseInt(pagoId)}`).catch(()=>[])).filter(ps => { const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id); return cs?.tipo === srvKey; }).reduce((s,ps) => s+(ps.importe||0), 0);
-        const montoViejoSrv = psActual > 0 ? psActual : (pago['monto_'+srvKey]||0);
-        srvsSinModificar -= montoViejoSrv;
-      }
-      const newTotal = alq + srvsSinModificar + overrideTotal;
-      const yaAbonado = pago.pagado_importe || (pago.total||0) - (pago.saldo||0);
-      const patch = { total: Math.round(newTotal*100)/100, saldo: Math.max(0, Math.round((newTotal - yaAbonado)*100)/100) };
+      let overrideTotal = 0;   // lo nuevo que se está guardando ahora
+      let restarViejo = 0;     // lo viejo que hay que sacar del total (solo de los suministros/tipos tocados)
+      const patch = {};
 
-      // For each changed service, save to pagos_suministros if contract uses new system
-      for (const [campo, val] of Object.entries(changes)) {
+      for (const [campo, entradas] of Object.entries(changes)) {
         const srv = campo.replace('monto_', '');
-        const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(cPago?.id) && s.tipo === srv);
-        const mesKey = pago.mes?.substring(0,7) || '';
-        if (sums.length > 0) {
-          // Save in pagos_suministros, clear monto_xxx
-          const valPct = applyPct(val, srv);
-          for (const sum of sums) {
+        let algunConSumId = false;
+        let sumaLegado = 0;
+
+        for (const {importe, sumId} of entradas) {
+          const sum = sumId ? DB_SUMINISTROS.find(s => s.id === sumId) : null;
+
+          if (sum) {
+            algunConSumId = true;
             const pctInq = sum.pct_inquilino ?? 100;
             const pctProp = sum.pct_propietario ?? 0;
-            const montoInq = Math.round(val * pctInq / 100 * 100) / 100;
-            const montoProp = Math.round(val * pctProp / 100 * 100) / 100;
-            const existing = await sbGet('pagos_suministros', `pago_id=eq.${pago.id}&suministro_id=eq.${sum.id}&limit=1`);
-            if (existing.length) {
-              await sbPatch('pagos_suministros', existing[0].id, { importe: montoInq, importe_propietario: montoProp });
+            const montoInq = Math.round(importe * pctInq / 100 * 100) / 100;
+            const montoProp = Math.round(importe * pctProp / 100 * 100) / 100;
+
+            // Restar SOLO lo que este suministro puntual ya tenía guardado
+            const psExistente = psDelPago.find(ps => ps.suministro_id === sumId);
+            restarViejo += psExistente ? (parseFloat(psExistente.importe)||0) : 0;
+            overrideTotal += montoInq;
+
+            if (psExistente) {
+              await sbPatch('pagos_suministros', psExistente.id, { importe: montoInq, importe_propietario: montoProp });
             } else {
-              await sbPost('pagos_suministros', { pago_id: pago.id, suministro_id: sum.id, importe: montoInq, importe_propietario: montoProp });
+              await sbPost('pagos_suministros', { pago_id: parseInt(pagoId), suministro_id: sumId, importe: montoInq, importe_propietario: montoProp });
             }
+          } else {
+            // Sin suministro_id propio: sistema legado, aplica el % general del contrato
+            const pct = pctData?.['pct_'+srv] ?? 100;
+            const montoLegado = Math.round(importe * pct / 100 * 100) / 100;
+            sumaLegado += montoLegado;
+            overrideTotal += montoLegado;
           }
-          patch[campo] = 0; // clear legacy field
+        }
+
+        if (algunConSumId) {
+          // Si ya hay al menos un suministro puntual para este tipo, el campo
+          // legado monto_xxx queda en 0 (fuente de verdad = pagos_suministros)
+          patch[campo] = 0;
         } else {
-          patch[campo] = applyPct(val, srv);
+          patch[campo] = sumaLegado;
+          // Restar el valor legado viejo de este campo (no había suministro_id)
+          restarViejo += (pago[campo]||0);
         }
       }
+
+      // Total de servicios sin tocar (todo lo que no cambió en este guardado
+      // — incluye, por ejemplo, la cuenta compartida si solo se editó la
+      // individual, y viceversa)
+      const serviciosSinTocar = await getTotalServiciosPago(parseInt(pagoId), null, 0) - restarViejo;
+      const newTotal = alq + serviciosSinTocar + overrideTotal;
+      const yaAbonado = pago.pagado_importe || (pago.total||0) - (pago.saldo||0);
+      patch.total = Math.round(newTotal*100)/100;
+      patch.saldo = Math.max(0, Math.round((newTotal - yaAbonado)*100)/100);
 
       // Paso crítico: si esto falla, el suministro puede quedar guardado pero
       // el total/saldo del pago nunca se sincroniza (síntoma reportado: se ve
@@ -6711,6 +6730,7 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     <\/script>
   </body></html>`);
   ventana.document.close();
+
   // Save propietario honorarios pagado if ticked
   const honChkProp = document.getElementById('prop-chk-honorarios');
   if (honChkProp?.checked) {
