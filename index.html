@@ -5709,8 +5709,13 @@ async function verDetalleDeuda(hoja, contratoId, mesKey, conIntereses = false) {
   if (conIntereses) {
     const interesRate = c?.interes_punitorio || 0;
     const venceStr = p.fecha_pago_hasta?.substring(0,10);
+    // Punitorios solo sobre el saldo pendiente de alquiler (no sobre el total),
+    // igual que en el GP: si nunca pagó nada, base = alquiler completo;
+    // si ya pagó algo, base = max(0, alquiler - pagado_importe).
+    const pagadoImporteD = p.pagado_importe ?? null;
+    const baseInteresesD = pagadoImporteD === null ? (p.importe_alquiler||0) : Math.max(0, (p.importe_alquiler||0) - pagadoImporteD);
     const interesVal = (interesRate > 0 && venceStr)
-      ? calcularIntereses(p.importe_alquiler||0, venceStr, TODAY, interesRate)
+      ? calcularIntereses(baseInteresesD, venceStr, TODAY, interesRate)
       : 0;
     if (interesVal > 0) items.push({ label: `Interés punitorio (${interesRate}% diario s/alquiler)`, monto: interesVal });
   }
