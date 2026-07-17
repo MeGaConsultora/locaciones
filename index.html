@@ -11455,7 +11455,6 @@ async function renderRecibosEmitir() {
   const pagosBase = DB.pagos.filter(p => {
     if (!p.mes || !p.mes.startsWith(mesKey)) return false;
     if (!(p.importe_alquiler || 0) > 0) return false;
-    if (p.recibo_prop_emitido) return false;
     // Sumar creditos del inquilino (descuentos) del mes
     const extrasP = extrasActuales[p.id]||[];
     const creditosInq = extrasP.reduce((s,e) => {
@@ -11467,28 +11466,33 @@ async function renderRecibosEmitir() {
     return (p.pagado_importe || 0) + creditosInq >= (p.importe_alquiler || 0) - 0.01;
   });
 
-  // Para contratos con más de un propietario, `p.recibo_prop_emitido` nunca
-  // se usa (cada propietario tiene su propio registro en la tabla nueva) —
-  // así que hay que excluir acá los que YA estén completos (todos sus
-  // propietarios emitidos), para que no queden pendientes para siempre.
-  let pagosFiltrados = pagosBase;
-  const contratosMultiProp = pagosBase
-    .map(p => ({ p, c: DB.contratos.find(x => x.hoja === p.hoja) }))
-    .filter(({c}) => c && DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === c.id && x.rol === 'propietario').length > 1);
-  if (contratosMultiProp.length) {
+  // Filtro de emisión: para contratos de un solo propietario, el campo de
+  // siempre en `pagos`; para más de uno, la tabla nueva por propietario
+  // (donde queda "pendiente" mientras falte emitir a alguno). Se hace en UN
+  // solo paso, para no correr el riesgo de excluir un pago de entrada por el
+  // campo viejo y no poder reincorporarlo después.
+  const contratosPorHoja = {};
+  pagosBase.forEach(p => { if (!contratosPorHoja[p.hoja]) contratosPorHoja[p.hoja] = DB.contratos.find(x => x.hoja === p.hoja); });
+  const multiPropPagos = pagosBase.filter(p => {
+    const c = contratosPorHoja[p.hoja];
+    return c && DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === c.id && x.rol === 'propietario').length > 1;
+  });
+  let emitidosMulti = [];
+  if (multiPropPagos.length) {
     try {
-      const idsMulti = contratosMultiProp.map(({p}) => p.id).join(',');
-      const emitidosMulti = await sbGet('recibos_propietario_emitidos', `pago_id=in.(${idsMulti})&select=pago_id,persona_id`);
-      pagosFiltrados = pagosBase.filter(p => {
-        const entry = contratosMultiProp.find(x => x.p.id === p.id);
-        if (!entry) return true; // no es multi-propietario, ya pasó el filtro de arriba
-        const propsCp = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === entry.c.id && x.rol === 'propietario');
-        const todosEmitidos = propsCp.every(cp => emitidosMulti.some(e => e.pago_id === p.id && parseInt(e.persona_id) === parseInt(cp.persona_id)));
-        return !todosEmitidos; // sigue "pendiente" si falta emitir al menos uno
-      });
+      const idsMulti = multiPropPagos.map(p => p.id).join(',');
+      emitidosMulti = await sbGet('recibos_propietario_emitidos', `pago_id=in.(${idsMulti})&select=pago_id,persona_id`);
     } catch(e) { console.warn('No se pudo chequear emisiones por propietario para el listado:', e); }
   }
-  const pagos = pagosFiltrados;
+  const pagos = pagosBase.filter(p => {
+    const c = contratosPorHoja[p.hoja];
+    const propsCp = c ? DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === c.id && x.rol === 'propietario') : [];
+    if (propsCp.length > 1) {
+      const todosEmitidos = propsCp.every(cp => emitidosMulti.some(e => e.pago_id === p.id && parseInt(e.persona_id) === parseInt(cp.persona_id)));
+      return !todosEmitidos; // sigue "pendiente" si falta emitir al menos uno
+    }
+    return !p.recibo_prop_emitido;
+  });
 
   if (!pagos.length) {
     cont.innerHTML = '<div class="empty-state"><div class="icon">✓</div><p>No hay recibos pendientes de emisión para ese período</p></div>';
