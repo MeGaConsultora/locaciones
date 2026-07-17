@@ -4595,6 +4595,26 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
     return true; // pendiente
   });
   const extrasProp = extrasDelMes.filter(e => e.a_cargo_de === 'propietario' || e.propietario_persona_id);
+
+  // Estado de emisión del recibo propietario para el propietario ACTIVO
+  // (por propietario si el contrato tiene más de uno; si no, el campo de
+  // siempre en `pagos`).
+  const propsCpGP = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId) && x.rol === 'propietario');
+  const esMultiPropGP = propsCpGP.length > 1;
+  const activePropIdGP = window._gpPropietarioId ? parseInt(window._gpPropietarioId) : (propsCpGP[0]?.persona_id ? parseInt(propsCpGP[0].persona_id) : null);
+  let reciboPropEmitidoActivo = false, reciboPropFechaActivo = null;
+  if (p) {
+    if (esMultiPropGP && activePropIdGP) {
+      try {
+        const emitidosGP = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${p.id}&persona_id=eq.${activePropIdGP}&select=fecha&limit=1`);
+        if (emitidosGP.length) { reciboPropEmitidoActivo = true; reciboPropFechaActivo = emitidosGP[0].fecha; }
+      } catch(e) {}
+    } else {
+      reciboPropEmitidoActivo = !!p.recibo_prop_emitido;
+      reciboPropFechaActivo = p.recibo_prop_fecha;
+    }
+  }
+
   const alq = p?.importe_alquiler||0;
   const comisionMonto = alq * (comisionPct/100);
 
@@ -4762,7 +4782,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       </div>
       <div class="form-actions">
         <button class="btn btn-secondary" onclick="imprimirReciboPropGP('${hoja}',${contratoId},'${mesKey}',${comisionPct})">🖨️ Generar recibo propietario</button>
-        ${p?.recibo_prop_emitido ? `<span style="font-size:0.75rem;color:var(--green);margin-left:6px">✓ Emitido${p.recibo_prop_fecha?' el '+new Date(p.recibo_prop_fecha).toLocaleDateString('es-AR'):''}</span> <button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px;color:var(--accent);border-color:var(--accent);margin-left:4px" onclick="revertirReciboEmitido(${p?.id})">↩ Revertir</button>` : ''}
+        ${reciboPropEmitidoActivo ? `<span style="font-size:0.75rem;color:var(--green);margin-left:6px">✓ Emitido${reciboPropFechaActivo?' el '+new Date(reciboPropFechaActivo).toLocaleDateString('es-AR'):''}</span> <button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px;color:var(--accent);border-color:var(--accent);margin-left:4px" onclick="revertirReciboEmitido(${p?.id}, ${esMultiPropGP ? activePropIdGP : 'null'})">↩ Revertir</button>` : ''}
       </div>`}
     </div>
   `;
@@ -6702,10 +6722,29 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
   const p = existing[0];
   const c = DB.contratos.find(x=>x.id===contratoId);
 
-  // Check if already emitted
-  if (p.recibo_prop_emitido) {
-    const fecha = p.recibo_prop_fecha ? new Date(p.recibo_prop_fecha).toLocaleDateString('es-AR') : 'fecha desconocida';
-    if (!confirm(`⚠ Este recibo ya fue emitido el ${fecha}.\n\n¿Querés generarlo nuevamente de todas formas?`)) return;
+  // Propietario activo (para contratos con más de un propietario, cada uno
+  // tiene su propio recibo — hay que identificar cuál se está generando)
+  const propsCp = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId) && x.rol === 'propietario');
+  const esMultiProp = propsCp.length > 1;
+  const activePropId = window._gpPropietarioId ? parseInt(window._gpPropietarioId) : (propsCp[0]?.persona_id ? parseInt(propsCp[0].persona_id) : null);
+  const activePersona = activePropId ? DB_PERSONAS.find(x => x.id === activePropId) : null;
+  const propietarioNombreActivo = activePersona ? formatNombrePersona(activePersona) : (c?.locador || '');
+
+  // Check if already emitted — para multi-propietario, se chequea POR
+  // PROPIETARIO (tabla aparte); para un solo propietario, sigue usando el
+  // campo de siempre en `pagos`.
+  let yaEmitidoFecha = null;
+  if (esMultiProp && activePropId) {
+    try {
+      const emitidos = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${p.id}&persona_id=eq.${activePropId}&select=fecha&limit=1`);
+      if (emitidos.length) yaEmitidoFecha = emitidos[0].fecha;
+    } catch(e) { console.warn('No se pudo chequear emisión por propietario (¿falta crear la tabla?):', e); }
+  } else if (p.recibo_prop_emitido) {
+    yaEmitidoFecha = p.recibo_prop_fecha;
+  }
+  if (yaEmitidoFecha) {
+    const fecha = new Date(yaEmitidoFecha).toLocaleDateString('es-AR');
+    if (!confirm(`⚠ El recibo de ${propietarioNombreActivo} ya fue emitido el ${fecha}.\n\n¿Querés generarlo nuevamente de todas formas?`)) return;
   }
 
   const checks = document.querySelectorAll('[id^="prop-chk-"]');
@@ -6753,7 +6792,7 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
         <div style="text-align:right">${nroRecibo ? `<div style="font-size:0.72rem;color:#888">Recibo mes N°</div><div style="font-size:1.1rem;font-weight:700;color:#c8483a">${String(nroRecibo).padStart(2,'0')}${totalMesesContrato ? `<span style="font-size:0.62rem;font-weight:600;color:#888"> de ${String(totalMesesContrato).padStart(2,'0')}</span>` : ''}</div>` : ''}<div style="font-size:0.72rem;color:#888;margin-top:4px">Fecha</div><div style="font-size:1rem;font-weight:700">${fechaHoy}</div></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;font-size:0.85rem">
-        <div><span style="font-size:0.7rem;text-transform:uppercase;color:#888;display:block">Propietario</span><strong>${c?.locador||'—'}</strong></div>
+        <div><span style="font-size:0.7rem;text-transform:uppercase;color:#888;display:block">Propietario</span><strong>${propietarioNombreActivo||'—'}</strong></div>
         <div><span style="font-size:0.7rem;text-transform:uppercase;color:#888;display:block">Período</span><strong>${fechaMes}</strong></div>
         <div><span style="font-size:0.7rem;text-transform:uppercase;color:#888;display:block">Inmueble</span>${inmuebleDir}</div>
         <div><span style="font-size:0.7rem;text-transform:uppercase;color:#888;display:block">Inquilino</span>${c?.locatario||'—'}</div>
@@ -6849,12 +6888,23 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
       }
     }
   }
-  // Mark as emitted
+  // Mark as emitted — por propietario si el contrato tiene más de uno
   try {
     const now = new Date().toISOString();
-    await sbPatch('pagos', p.id, { recibo_prop_emitido: true, recibo_prop_fecha: now });
-    const pLocal = DB.pagos.find(x => x.id === p.id);
-    if (pLocal) { pLocal.recibo_prop_emitido = true; pLocal.recibo_prop_fecha = now; }
+    if (esMultiProp && activePropId) {
+      try {
+        const existenteEmision = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${p.id}&persona_id=eq.${activePropId}&limit=1`);
+        if (existenteEmision.length) {
+          await sbPatch('recibos_propietario_emitidos', existenteEmision[0].id, { fecha: now });
+        } else {
+          await sbPost('recibos_propietario_emitidos', { pago_id: p.id, persona_id: activePropId, fecha: now });
+        }
+      } catch(e) { console.warn('No se pudo marcar la emisión por propietario (¿falta crear la tabla recibos_propietario_emitidos?):', e); }
+    } else {
+      await sbPatch('pagos', p.id, { recibo_prop_emitido: true, recibo_prop_fecha: now });
+      const pLocal = DB.pagos.find(x => x.id === p.id);
+      if (pLocal) { pLocal.recibo_prop_emitido = true; pLocal.recibo_prop_fecha = now; }
+    }
     // Reload GP panel to show emitted indicator
     if (window._gpHoja && window._gpContratoId && window._gpMesKey) {
       await cargarPantallaGestionPago(window._gpHoja, window._gpContratoId, window._gpMesKey, window._gpMeses, window._gpComision, 's3');
@@ -11257,12 +11307,18 @@ async function confirmarImportarPDF() {
   loadAll(); // async, no need to await
 }
 
-async function revertirReciboEmitido(pagoId) {
+async function revertirReciboEmitido(pagoId, personaId) {
   if (!confirm('¿Revertir la emisión de este recibo? Volverá a aparecer en la lista de recibos a emitir.')) return;
   try {
-    await sbPatch('pagos', pagoId, { recibo_prop_emitido: false, recibo_prop_fecha: null });
-    const p = DB.pagos.find(x => x.id === pagoId);
-    if (p) { p.recibo_prop_emitido = false; p.recibo_prop_fecha = null; }
+    if (personaId) {
+      // Multi-propietario: revertir solo la emisión de este propietario puntual
+      const existente = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${pagoId}&persona_id=eq.${personaId}&limit=1`);
+      if (existente.length) await sbDelete('recibos_propietario_emitidos', existente[0].id);
+    } else {
+      await sbPatch('pagos', pagoId, { recibo_prop_emitido: false, recibo_prop_fecha: null });
+      const p = DB.pagos.find(x => x.id === pagoId);
+      if (p) { p.recibo_prop_emitido = false; p.recibo_prop_fecha = null; }
+    }
     toast('Emisión revertida ✓');
     // Reload GP panel if open
     if (window._gpHoja && window._gpContratoId && window._gpMesKey) {
