@@ -11302,11 +11302,36 @@ async function generarRecibosSeleccionados() {
   const checks = [...document.querySelectorAll('.chk-recibo:checked')];
   if (!checks.length) { toast('Seleccioná al menos un recibo', 'error'); return; }
   if (!confirm(`¿Generar e imprimir ${checks.length} recibo/s?`)) return;
+
+  // Abrir la ventana YA, antes de cualquier espera de red (ver nota similar
+  // en confirmarCobroInquilino) — si se abre después de varios awaits, el
+  // navegador puede bloquearla silenciosamente.
+  const ventana = window.open('', 'Recibos Propietario');
+
   const anio = document.getElementById('recibos-anio')?.value;
   const mes = document.getElementById('recibos-mes')?.value;
   const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const fechaMes = meses[parseInt(mes)-1] + ' ' + anio;
-  const ventana = window.open('', 'Recibos Propietario');
+
+  // Cargar pagos_suministros de TODOS los pagos seleccionados antes de generar
+  // nada. Este caché (window._pagosSuministros) normalmente solo se llena al
+  // abrir un contrato individual — acá se procesan muchos contratos de
+  // distintos a la vez, así que sin esto los importes de servicios (EPE,
+  // Agua, etc. a rendir/descontar al propietario) salían todos en $0.
+  const pagoIdsSel = checks.map(chk => parseInt(chk.dataset.pagoId)).filter(Boolean);
+  if (!window._pagosSuministros) window._pagosSuministros = {};
+  try {
+    const CHUNK = 150;
+    for (let i = 0; i < pagoIdsSel.length; i += CHUNK) {
+      const chunk = pagoIdsSel.slice(i, i+CHUNK);
+      const psRows = await sbGet('pagos_suministros', `pago_id=in.(${chunk.join(',')})&select=pago_id,suministro_id,importe,importe_propietario`);
+      psRows.forEach(r => {
+        if (!window._pagosSuministros[r.pago_id]) window._pagosSuministros[r.pago_id] = {};
+        window._pagosSuministros[r.pago_id][r.suministro_id] = { inq: r.importe, prop: r.importe_propietario||0 };
+      });
+    }
+  } catch(e) { console.error('Error cargando pagos_suministros para recibos:', e); }
+
   let allHtml = '';
   const pagoIds = [];
   for (const [idx, chk] of checks.entries()) {
@@ -11410,6 +11435,31 @@ async function confirmarRecibosEmitidos() {
   const now = new Date().toISOString();
   await Promise.all(pagoIds.map(id => sbPatch('pagos', id, { recibo_prop_emitido: true, recibo_prop_fecha: now })));
   pagoIds.forEach(id => { const p = DB.pagos.find(x => x.id === id); if (p) { p.recibo_prop_emitido = true; p.recibo_prop_fecha = now; } });
+
+  // Marcar como saldados los honorarios a cargo del propietario que se
+  // descontaron en el recibo (mismo efecto que el GP individual aplica al
+  // imprimir), ya que el recibo masivo no tiene checkbox interactivo — se
+  // asume que si se dio el saldo, se dio por cobrado en su totalidad.
+  for (const pagoId of pagoIds) {
+    try {
+      const p = DB.pagos.find(x => x.id === pagoId);
+      const c = p ? DB.contratos.find(x => x.hoja === p.hoja) : null;
+      if (!c) continue;
+      const cuotasH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === c.id).sort((a,b) => a.mes > b.mes ? 1 : -1);
+      let restante = cuotasH.reduce((s,g) => s + Math.max(0, (g.monto_propietario||0) - (parseFloat(g.pagado_propietario)||0)), 0);
+      if (restante <= 0) continue;
+      for (const gc of cuotasH) {
+        if (restante <= 0) break;
+        const saldo = (gc.monto_propietario||0) - (parseFloat(gc.pagado_propietario)||0);
+        if (saldo <= 0) continue;
+        const pagar = Math.min(restante, saldo);
+        await sbPatch('gastos_inicio_cuotas', gc.id, { pagado_propietario: (parseFloat(gc.pagado_propietario)||0) + pagar });
+        gc.pagado_propietario = (parseFloat(gc.pagado_propietario)||0) + pagar;
+        restante -= pagar;
+      }
+    } catch(e) { console.warn('Error marcando honorarios propietario como pagados:', pagoId, e); }
+  }
+
   window._recibosPendientesMarcar = [];
   toast(`${pagoIds.length} recibo/s marcados como emitidos ✓`);
   renderRecibosEmitir();
@@ -11436,25 +11486,44 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPers
     { label: `Comisión ${comisionPct}%`, monto: -comision },
   ];
   const servRinde = (c?.servicios_rendir_propietario||'').toLowerCase();
+  const psProp = window._pagosSuministros?.[p?.id] || {};
   const allSumsCont = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c?.id));
   ['epe','agua','tgiu','seguro','internet','expensas'].forEach(srv => {
-    const monto = p['monto_'+srv] || 0;
     const sumsOfType = allSumsCont.filter(s => s.tipo === srv);
     const sums = sumsOfType.length ? sumsOfType : [null];
     sums.forEach(sum => {
       const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv] ?? 0);
       const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
+      const srPropId = sum?.propietario_persona_id ? parseInt(sum.propietario_persona_id) : null;
+      const sdPropId = sum?.descuenta_persona_id ? parseInt(sum.descuenta_persona_id) : null;
       const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv);
       const seDescuenta = sum ? !!sum.descuenta_persona_id : (!sum && pctProp > 0 && !seRinde);
       if (!seRinde && !seDescuenta) return;
-      const srvLabel = srv.charAt(0).toUpperCase()+srv.slice(1);
-      if (seRinde && monto > 0) {
-        totalRendir += monto;
-        items.push({ label: `${srvLabel} (a rendir)`, monto });
-      } else if (seDescuenta && pctProp > 0 && monto > 0) {
-        const totalBill = pctInq > 0 ? Math.round(monto * 100 / pctInq) : monto;
-        const montoProp = Math.round(totalBill * pctProp / 100);
-        if (montoProp > 0) { totalRendir -= montoProp; items.push({ label: `${srvLabel} (prop. ${pctProp}%)`, monto: -montoProp }); }
+
+      // Importe específico de ESTE suministro (vía pagos_suministros — el
+      // campo legado monto_xxx queda en 0 una vez migrado el contrato, así
+      // que no sirve como fuente acá; mismo criterio que usa el GP).
+      const psEntry = sum ? psProp[sum.id] : null;
+      const montoInqSum = (psEntry !== undefined && psEntry !== null)
+        ? (typeof psEntry === 'object' ? (psEntry.inq||0) : (psEntry||0))
+        : (sum ? 0 : (p['monto_'+srv]||0));
+      const montoPropSum = (psEntry !== undefined && psEntry !== null)
+        ? (typeof psEntry === 'object' ? (psEntry.prop||0) : 0)
+        : (pctInq > 0 && montoInqSum > 0 ? Math.round(montoInqSum * pctProp / pctInq) : 0);
+
+      if (!montoInqSum && !montoPropSum) return;
+      if (srPropId && activePropId && srPropId !== activePropId) return;
+      if (sdPropId && activePropId && sdPropId !== activePropId) return;
+
+      const nro = sum?.nro_cuenta || c?.['nro_'+srv];
+      const srvLabel = (srv.charAt(0).toUpperCase()+srv.slice(1)) + (nro && sumsOfType.length > 1 ? ` Cta.${nro}` : '');
+
+      if (seRinde && montoInqSum > 0) {
+        totalRendir += montoInqSum;
+        items.push({ label: `${srvLabel} (a rendir)`, monto: montoInqSum });
+      } else if (seDescuenta && montoPropSum > 0) {
+        totalRendir -= montoPropSum;
+        items.push({ label: `${srvLabel} (prop. ${pctProp}%)`, monto: -montoPropSum });
       }
     });
   });
@@ -11468,6 +11537,17 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPers
     totalRendir += signo * (e.importe||0);
     items.push({ label: e.concepto||'Extra', monto: signo * (e.importe||0) });
   });
+
+  // Honorarios a cargo del propietario (mismo criterio que el GP): si hay
+  // saldo pendiente, se descuenta del total a rendir.
+  const cuotasHProp = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === parseInt(c?.id));
+  const totalHProp = cuotasHProp.reduce((s,g) => s+(g.monto_propietario||0), 0);
+  const pagadoHProp = cuotasHProp.reduce((s,g) => s+(parseFloat(g.pagado_propietario)||0), 0);
+  const saldoHProp = Math.round(Math.max(0, totalHProp - pagadoHProp) * 100) / 100;
+  if (saldoHProp > 0) {
+    totalRendir -= saldoHProp;
+    items.push({ label: `Honorarios (${cuotasHProp.length} cuota/s)`, monto: -saldoHProp });
+  }
 
   const inm = c?.inmueble_id ? DB_INMUEBLES?.find(x => x.id === c.inmueble_id) : null;
   const inmuebleDir = inm ? formatDireccion(inm) : (c?.titulo || '—');
