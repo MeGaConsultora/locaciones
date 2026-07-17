@@ -1085,7 +1085,7 @@ async function verificarAccesosVencidos() {
 // ============================================================
 // NOTIFICACIONES
 // ============================================================
-function calcularNotificaciones() {
+async function calcularNotificaciones() {
   const grupos = [];
   const hoy = new Date(TODAY + 'T12:00:00');
   const mesActual = TODAY.substring(0, 7);
@@ -1123,9 +1123,12 @@ function calcularNotificaciones() {
     });
 
     // 4 — Contratos vigentes sin alquiler cargado
+    // (usa DB.pagos, la colección GLOBAL de todos los contratos — antes
+    // usaba pagosActuales, que solo tiene los pagos del último contrato
+    // abierto, así que esta alerta casi nunca encontraba nada real)
     const sinAlquiler = DB.contratos.filter(c => {
       if (getEstado(c) !== 'vigente') return false;
-      const p = pagosActuales.find(p => p.hoja === c.hoja && p.mes && p.mes.substring(0,7) === mesActual);
+      const p = DB.pagos.find(p => p.hoja === c.hoja && p.mes && p.mes.substring(0,7) === mesActual);
       return p && (!p.importe_alquiler || p.importe_alquiler === 0);
     });
     if (sinAlquiler.length) grupos.push({
@@ -1136,17 +1139,46 @@ function calcularNotificaciones() {
   }
 
   // 3 — Contratos vigentes con servicios con número sin cargar este mes
-  const sinServicios = DB.contratos.filter(c => {
+  // (mismo fix: DB.pagos en vez de pagosActuales, y ahora chequea
+  // pagos_suministros además del campo legado monto_xxx — antes daba falso
+  // positivo para cualquier contrato ya migrado al sistema de suministros,
+  // ya que ese campo legado queda en $0 una vez migrado)
+  const contratosConSuministros = DB.contratos.filter(c => {
     if (getEstado(c) !== 'vigente') return false;
     const suministrosConNro = DB_SUMINISTROS.filter(s =>
       parseInt(s.contrato_id) === c.id &&
       s.nro_cuenta && s.nro_cuenta.trim() !== '' &&
       ['epe','agua','tgiu','seguro','internet','expensas'].includes(s.tipo)
     );
-    if (!suministrosConNro.length) return false;
-    const p = pagosActuales.find(p => p.hoja === c.hoja && p.mes && p.mes.substring(0,7) === mesActual);
+    return suministrosConNro.length > 0;
+  });
+
+  const pagosDelMesConSum = contratosConSuministros
+    .map(c => DB.pagos.find(p => p.hoja === c.hoja && p.mes && p.mes.substring(0,7) === mesActual))
+    .filter(Boolean);
+
+  let psPorPagoNotif = {};
+  if (pagosDelMesConSum.length) {
+    try {
+      const idsNotif = pagosDelMesConSum.map(p => p.id).join(',');
+      const psRowsNotif = await sbGet('pagos_suministros', `pago_id=in.(${idsNotif})&select=pago_id,suministro_id,importe`);
+      psRowsNotif.forEach(r => {
+        if (!psPorPagoNotif[r.pago_id]) psPorPagoNotif[r.pago_id] = {};
+        psPorPagoNotif[r.pago_id][r.suministro_id] = r.importe;
+      });
+    } catch(e) { console.error('Error cargando pagos_suministros para notificaciones:', e); }
+  }
+
+  const sinServicios = contratosConSuministros.filter(c => {
+    const suministrosConNro = DB_SUMINISTROS.filter(s =>
+      parseInt(s.contrato_id) === c.id &&
+      s.nro_cuenta && s.nro_cuenta.trim() !== '' &&
+      ['epe','agua','tgiu','seguro','internet','expensas'].includes(s.tipo)
+    );
+    const p = DB.pagos.find(p => p.hoja === c.hoja && p.mes && p.mes.substring(0,7) === mesActual);
     if (!p) return false;
-    return !suministrosConNro.some(s => (p['monto_'+s.tipo]||0) > 0);
+    const psDelPago = psPorPagoNotif[p.id] || {};
+    return !suministrosConNro.some(s => (psDelPago[s.id]||0) > 0 || (p['monto_'+s.tipo]||0) > 0);
   });
   if (sinServicios.length) grupos.push({
     tipo: 'info', cantidad: sinServicios.length,
@@ -1160,10 +1192,10 @@ function calcularNotificaciones() {
 // Store grupos for onclick access
 window._notifGrupos = [];
 
-function toggleNotificaciones() {
+async function toggleNotificaciones() {
   const panel = document.getElementById('notif-panel');
   if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
-  const grupos = calcularNotificaciones();
+  const grupos = await calcularNotificaciones();
   window._notifGrupos = grupos;
   const colores = { danger: '#fdecea', warning: '#fff8e1', info: '#e8f4fd' };
   const iconos = { danger: '🔴', warning: '🟡', info: '🔵' };
@@ -1198,11 +1230,11 @@ function toggleNotificaciones() {
   });
 }
 
-function actualizarBadgeNotificaciones() {
+async function actualizarBadgeNotificaciones() {
   const badge = document.getElementById('notif-badge');
   if (!badge) return;
   try {
-    const n = calcularNotificaciones().length;
+    const n = (await calcularNotificaciones()).length;
     if (n > 0) { badge.textContent = n > 9 ? '9+' : n; badge.style.display = 'flex'; }
     else { badge.style.display = 'none'; }
   } catch(e) {}
@@ -2225,6 +2257,21 @@ function verDetallePago(pagoId, hoja) {
   const extras = extrasActuales[pagoId]||[];
   const c = DB.contratos.find(x=>x.hoja===hoja);
 
+  // Calcular servicios usando pagos_suministros (ya cacheado para este
+  // contrato), con fallback al campo legado solo si no hay datos migrados.
+  const psDetalle = window._pagosSuministros?.[pagoId] || {};
+  const montoServicioDetalle = (tipo) => {
+    const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === tipo);
+    if (sums.length) {
+      const total = sums.reduce((t,s) => { const e = psDetalle[s.id]; return t + (e===undefined ? 0 : (typeof e==='object' ? (e.inq||0) : (e||0))); }, 0);
+      return total;
+    }
+    return p['monto_'+tipo] || 0;
+  };
+  const montoEpeDet = montoServicioDetalle('epe'), montoAguaDet = montoServicioDetalle('agua'),
+        montoTgiuDet = montoServicioDetalle('tgiu'), montoSeguroDet = montoServicioDetalle('seguro'),
+        montoInternetDet = montoServicioDetalle('internet'), montoExpensasDet = montoServicioDetalle('expensas');
+
   // Show detail in a small info panel at bottom of modal
   const existing = document.getElementById('detalle-pago-panel');
   if (existing) existing.remove();
@@ -2244,12 +2291,12 @@ function verDetallePago(pagoId, hoja) {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;font-size:0.85rem">
       ${p.importe_alquiler>0?`<span style="color:#666">Alquiler</span><span style="text-align:right">${formatMoney(p.importe_alquiler)}</span>`:''}
-      ${p.monto_epe>0?`<span style="color:#666">EPE</span><span style="text-align:right">${formatMoney(p.monto_epe)}</span>`:''}
-      ${p.monto_agua>0?`<span style="color:#666">Agua</span><span style="text-align:right">${formatMoney(p.monto_agua)}</span>`:''}
-      ${p.monto_tgiu>0?`<span style="color:#666">TGIU</span><span style="text-align:right">${formatMoney(p.monto_tgiu)}</span>`:''}
-      ${p.monto_seguro>0?`<span style="color:#666">Seguro</span><span style="text-align:right">${formatMoney(p.monto_seguro)}</span>`:''}
-      ${p.monto_internet>0?`<span style="color:#666">Internet</span><span style="text-align:right">${formatMoney(p.monto_internet)}</span>`:''}
-      ${p.monto_expensas>0?`<span style="color:#666">Expensas</span><span style="text-align:right">${formatMoney(p.monto_expensas)}</span>`:''}
+      ${montoEpeDet>0?`<span style="color:#666">EPE</span><span style="text-align:right">${formatMoney(montoEpeDet)}</span>`:''}
+      ${montoAguaDet>0?`<span style="color:#666">Agua</span><span style="text-align:right">${formatMoney(montoAguaDet)}</span>`:''}
+      ${montoTgiuDet>0?`<span style="color:#666">TGIU</span><span style="text-align:right">${formatMoney(montoTgiuDet)}</span>`:''}
+      ${montoSeguroDet>0?`<span style="color:#666">Seguro</span><span style="text-align:right">${formatMoney(montoSeguroDet)}</span>`:''}
+      ${montoInternetDet>0?`<span style="color:#666">Internet</span><span style="text-align:right">${formatMoney(montoInternetDet)}</span>`:''}
+      ${montoExpensasDet>0?`<span style="color:#666">Expensas</span><span style="text-align:right">${formatMoney(montoExpensasDet)}</span>`:''}
       ${(() => { const gc = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === c?.id && g.mes && g.mes.startsWith(p.mes?.substring(0,7))); return gc?.monto_inquilino>0 ? `<span style="color:#666">Gastos inicio</span><span style="text-align:right">${formatMoney(gc.monto_inquilino)}</span>` : ''; })()}
     </div>
     ${extrasHtml ? `<div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">${extrasHtml}</div>` : ''}
@@ -2879,6 +2926,31 @@ async function proyectarPeriodo(hoja, desdeKey, importe, periodicidad, diaVenc, 
   // Reload pagos after creating new ones
   const pagosActualizados = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc&limit=500`);
 
+  // Cargar pagos_suministros para recalcular bien el total al actualizar el
+  // alquiler (antes se leía monto_xxx directo, que da $0 para contratos ya
+  // migrados al sistema de suministros — perdía toda la parte de servicios
+  // del total en cada actualización).
+  const psPorTipoProy = {};
+  try {
+    const idsProy = pagosActualizados.map(p => p.id).join(',');
+    if (idsProy) {
+      const tipoPorSumProy = {};
+      (DB_SUMINISTROS||[]).forEach(s => { tipoPorSumProy[s.id] = s.tipo; });
+      const psRowsProy = await sbGet('pagos_suministros', `pago_id=in.(${idsProy})&select=pago_id,suministro_id,importe`);
+      psRowsProy.forEach(r => {
+        const tipo = tipoPorSumProy[r.suministro_id];
+        if (!tipo) return;
+        if (!psPorTipoProy[r.pago_id]) psPorTipoProy[r.pago_id] = {};
+        psPorTipoProy[r.pago_id][tipo] = (psPorTipoProy[r.pago_id][tipo]||0) + (parseFloat(r.importe)||0);
+      });
+    }
+  } catch(e) { console.error('Error cargando pagos_suministros para actualizar alquileres:', e); }
+  const montoServicioProy = (p, tipo) => {
+    const porTipo = psPorTipoProy[p.id];
+    if (porTipo && porTipo[tipo] !== undefined) return porTipo[tipo];
+    return p['monto_'+tipo] || 0;
+  };
+
   // Now update pagos in range
   let count = 0;
   for (const p of pagosActualizados) {
@@ -2897,8 +2969,8 @@ async function proyectarPeriodo(hoja, desdeKey, importe, periodicidad, diaVenc, 
     const fechaVenc = `${vencY}-${String(vencM).padStart(2,'0')}-${String(diaVenc).padStart(2,'0')}`;
 
     // Si el pago ya tiene servicios cargados, recalcular total sumándolos al nuevo alquiler
-    const serviciosExistentes = (p.monto_epe||0) + (p.monto_agua||0) + (p.monto_tgiu||0) +
-      (p.monto_seguro||0) + (p.monto_internet||0) + (p.monto_expensas||0) + (p.monto_otros||0);
+    const serviciosExistentes = montoServicioProy(p,'epe') + montoServicioProy(p,'agua') + montoServicioProy(p,'tgiu') +
+      montoServicioProy(p,'seguro') + montoServicioProy(p,'internet') + montoServicioProy(p,'expensas') + (p.monto_otros||0);
     const nuevoTotal = importe + serviciosExistentes;
     // Usar siempre pagado_importe real (nunca confiar ciegamente en el flag pagado='SI',
     // que puede estar desactualizado/inconsistente de un estado previo)
@@ -6296,6 +6368,31 @@ async function renderInforme() {
     extras = await sbGet('pagos_extras', `pago_id=in.(${pagoIds.join(',')})&order=id.asc`);
   } catch(e) {}
 
+  // Cargar pagos_suministros para calcular EPE/Agua/TGIU/Seguro correctamente
+  // (antes se leía monto_xxx directo, que da $0/"—" para contratos ya
+  // migrados al sistema de suministros — mismo bug que en otros reportes).
+  const psPorPagoInf = {};
+  const tipoPorSumInf = {};
+  (DB_SUMINISTROS||[]).forEach(s => { tipoPorSumInf[s.id] = s.tipo; });
+  try {
+    const CHUNK = 150;
+    for (let i = 0; i < pagoIds.length; i += CHUNK) {
+      const chunk = pagoIds.slice(i, i+CHUNK);
+      const psRows = await sbGet('pagos_suministros', `pago_id=in.(${chunk.join(',')})&select=pago_id,suministro_id,importe`);
+      psRows.forEach(r => {
+        if (!psPorPagoInf[r.pago_id]) psPorPagoInf[r.pago_id] = {};
+        const tipo = tipoPorSumInf[r.suministro_id];
+        if (!tipo) return;
+        psPorPagoInf[r.pago_id][tipo] = (psPorPagoInf[r.pago_id][tipo]||0) + (parseFloat(r.importe)||0);
+      });
+    }
+  } catch(e) { console.error('Error cargando pagos_suministros para el informe:', e); }
+  const montoServicioInf = (p, tipo) => {
+    const porTipo = psPorPagoInf[p.id];
+    if (porTipo && porTipo[tipo] !== undefined) return porTipo[tipo];
+    return p['monto_'+tipo] || 0;
+  };
+
   // Build rows
   const rows = pagosMes.map(p => {
     const c = DB.contratos.find(x => x.hoja === p.hoja);
@@ -6303,13 +6400,16 @@ async function renderInforme() {
     // Inquilino: débito suma (+), crédito resta (-)
     const extrasInqTotal = extrasInq.reduce((s,e) => s + ((e.tipo==='credito'?-1:1)*(e.importe||0)), 0);
     const extrasUnicos = extras.filter(e => e.pago_id === p.id);
+    const montoEpe = montoServicioInf(p, 'epe'), montoAgua = montoServicioInf(p, 'agua'),
+          montoTgiu = montoServicioInf(p, 'tgiu'), montoSeguro = montoServicioInf(p, 'seguro'),
+          montoInternet = montoServicioInf(p, 'internet'), montoExpensas = montoServicioInf(p, 'expensas');
     // Use p.total directly — it already includes all services and extras
-    const totalReal = p.total || (p.importe_alquiler||0) + (p.monto_epe||0) + (p.monto_agua||0) + (p.monto_tgiu||0) + (p.monto_seguro||0) + (p.monto_internet||0) + (p.monto_expensas||0) + extrasInqTotal;
+    const totalReal = p.total || (p.importe_alquiler||0) + montoEpe + montoAgua + montoTgiu + montoSeguro + montoInternet + montoExpensas + extrasInqTotal;
     const abonado = p.pagado_importe || Math.max(0, totalReal - (p.saldo||0));
     const saldo = p.saldo||0;
     const comision = p.comision_8 || Math.round((p.importe_alquiler||0) * ((c?.comision_porcentaje||0)/100) * 100) / 100;
     const rowColor = saldo <= 0 ? '#e8f5e9' : abonado > 0 ? '#fff8e1' : '#ffebee';
-    return { p, c, extrasInq, extrasInqTotal, extrasUnicos, abonado, saldo, comision, rowColor, totalReal };
+    return { p, c, extrasInq, extrasInqTotal, extrasUnicos, abonado, saldo, comision, rowColor, totalReal, montoEpe, montoAgua, montoTgiu, montoSeguro };
   }).sort((a,b) => (a.p.hoja||'').localeCompare(b.p.hoja||''));
 
   // Totals
@@ -6317,18 +6417,18 @@ async function renderInforme() {
   const totAbonado = rows.reduce((s,r) => s+r.abonado, 0);
   const totSaldo = rows.reduce((s,r) => s+r.saldo, 0);
   const totComision = rows.reduce((s,r) => s+r.comision, 0);
-  const totEpe = rows.reduce((s,r) => s+(r.p.monto_epe||0), 0);
-  const totAgua = rows.reduce((s,r) => s+(r.p.monto_agua||0), 0);
-  const totTgiu = rows.reduce((s,r) => s+(r.p.monto_tgiu||0), 0);
-  const totSeguro = rows.reduce((s,r) => s+(r.p.monto_seguro||0), 0);
+  const totEpe = rows.reduce((s,r) => s+(r.montoEpe||0), 0);
+  const totAgua = rows.reduce((s,r) => s+(r.montoAgua||0), 0);
+  const totTgiu = rows.reduce((s,r) => s+(r.montoTgiu||0), 0);
+  const totSeguro = rows.reduce((s,r) => s+(r.montoSeguro||0), 0);
   const totExtras = rows.reduce((s,r) => s+r.extrasInqTotal, 0);
   // % cobrado: sobre TODOS los pagos del mes (aunque no tengan importe_alquiler)
   const pctTotal = pagosTodos.reduce((s,p) => {
-    const tr = p.total || (p.importe_alquiler||0) + (p.monto_epe||0) + (p.monto_agua||0) + (p.monto_tgiu||0) + (p.monto_seguro||0) + (p.monto_internet||0) + (p.monto_expensas||0);
+    const tr = p.total || (p.importe_alquiler||0) + montoServicioInf(p,'epe') + montoServicioInf(p,'agua') + montoServicioInf(p,'tgiu') + montoServicioInf(p,'seguro') + montoServicioInf(p,'internet') + montoServicioInf(p,'expensas');
     return s + tr;
   }, 0);
   const pctAbonado = pagosTodos.reduce((s,p) => {
-    const tr = p.total || (p.importe_alquiler||0) + (p.monto_epe||0) + (p.monto_agua||0) + (p.monto_tgiu||0) + (p.monto_seguro||0) + (p.monto_internet||0) + (p.monto_expensas||0);
+    const tr = p.total || (p.importe_alquiler||0) + montoServicioInf(p,'epe') + montoServicioInf(p,'agua') + montoServicioInf(p,'tgiu') + montoServicioInf(p,'seguro') + montoServicioInf(p,'internet') + montoServicioInf(p,'expensas');
     return s + (p.pagado_importe || Math.max(0, tr - (p.saldo||0)));
   }, 0);
   const pct = pctTotal > 0 ? Math.round((pctAbonado/pctTotal)*100) : 0;
@@ -6388,10 +6488,10 @@ async function renderInforme() {
               <td class="r" style="padding:5px 4px;color:var(--green)">${r.abonado>0?formatMoney(r.abonado):'—'}</td>
               <td class="r" style="padding:5px 4px;color:${r.saldo>0?'var(--accent)':'var(--green)'}">${r.saldo>0?formatMoney(r.saldo):'✓'}</td>
               <td class="r" style="padding:5px 4px">${r.comision>0?formatMoney(r.comision):'—'}</td>
-              <td class="r" style="padding:5px 4px">${r.p.monto_epe>0?formatMoney(r.p.monto_epe):'—'}</td>
-              <td class="r" style="padding:5px 4px">${r.p.monto_agua>0?formatMoney(r.p.monto_agua):'—'}</td>
-              <td class="r" style="padding:5px 4px">${r.p.monto_tgiu>0?formatMoney(r.p.monto_tgiu):'—'}</td>
-              <td class="r" style="padding:5px 4px">${r.p.monto_seguro>0?formatMoney(r.p.monto_seguro):'—'}</td>
+              <td class="r" style="padding:5px 4px">${r.montoEpe>0?formatMoney(r.montoEpe):'—'}</td>
+              <td class="r" style="padding:5px 4px">${r.montoAgua>0?formatMoney(r.montoAgua):'—'}</td>
+              <td class="r" style="padding:5px 4px">${r.montoTgiu>0?formatMoney(r.montoTgiu):'—'}</td>
+              <td class="r" style="padding:5px 4px">${r.montoSeguro>0?formatMoney(r.montoSeguro):'—'}</td>
               <td class="r" style="padding:5px 4px">${r.extrasInqTotal!=0?formatMoney(r.extrasInqTotal):'—'}</td>
             </tr>
           `).join('')}
@@ -6845,7 +6945,9 @@ async function imprimirHistorial(contratoId) {
 
   // Cargar pagos_suministros y pagos_extras para recalcular totales correctamente
   const pagoIds = pagos.map(p => p.id);
-  let psMap = {}, extrasMap = {};
+  let psMap = {}, psPorTipo = {}, extrasMap = {};
+  const tipoPorSumHist = {};
+  (DB_SUMINISTROS||[]).forEach(s => { tipoPorSumHist[s.id] = s.tipo; });
   if (pagoIds.length) {
     const [psRows, extrasRows] = await Promise.all([
       sbGet('pagos_suministros', `pago_id=in.(${pagoIds.join(',')})&select=pago_id,suministro_id,importe`).catch(() => []),
@@ -6854,6 +6956,11 @@ async function imprimirHistorial(contratoId) {
     psRows.forEach(ps => {
       if (!psMap[ps.pago_id]) psMap[ps.pago_id] = 0;
       psMap[ps.pago_id] += (ps.importe || 0);
+      const tipo = tipoPorSumHist[ps.suministro_id];
+      if (tipo) {
+        if (!psPorTipo[ps.pago_id]) psPorTipo[ps.pago_id] = {};
+        psPorTipo[ps.pago_id][tipo] = (psPorTipo[ps.pago_id][tipo]||0) + (parseFloat(ps.importe)||0);
+      }
     });
     extrasRows.forEach(e => {
       if (!extrasMap[e.pago_id]) extrasMap[e.pago_id] = 0;
@@ -6861,6 +6968,11 @@ async function imprimirHistorial(contratoId) {
       extrasMap[e.pago_id] += (e.tipo === 'credito' ? -1 : 1) * (parseFloat(e.importe) || 0);
     });
   }
+  const montoServicioHist = (p, tipo) => {
+    const porTipo = psPorTipo[p.id];
+    if (porTipo && porTipo[tipo] !== undefined) return porTipo[tipo];
+    return p['monto_'+tipo] || 0;
+  };
 
   const calcularTotalHistorial = p => {
     const servicios = psMap[p.id] > 0 ? psMap[p.id]
@@ -6889,10 +7001,10 @@ async function imprimirHistorial(contratoId) {
       <td><strong>${fmtMes(p.mes)}</strong></td>
       <td>${fmtFecha(p.fecha_pago_hasta)}</td>
       <td class="r">${fmt(p.importe_alquiler)}</td>
-      <td class="r">${fmt(p.monto_epe)}</td>
-      <td class="r">${fmt(p.monto_agua)}</td>
-      <td class="r">${fmt(p.monto_tgiu)}</td>
-      <td class="r">${fmt(p.monto_seguro)}</td>
+      <td class="r">${fmt(montoServicioHist(p,'epe'))}</td>
+      <td class="r">${fmt(montoServicioHist(p,'agua'))}</td>
+      <td class="r">${fmt(montoServicioHist(p,'tgiu'))}</td>
+      <td class="r">${fmt(montoServicioHist(p,'seguro'))}</td>
       <td class="r">${fmt(p.monto_otros)}</td>
       <td class="r"><strong>${fmt(totalCalc)}</strong></td>
       <td class="r" style="color:${abonado>0?'#2d7a4f':'#888'};font-weight:${abonado>0?700:400}">${abonado>0?fmt(abonado):'—'}</td>
@@ -7773,6 +7885,7 @@ async function actualizarContrato(id) {
           // Only recalculate THIS contract
           const hojaEncoded = encodeURIComponent(hoja);
           const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=gte.${TODAY.substring(0,7)}-01&order=mes.asc&limit=24`);
+          let algunoRecalculado = false;
           for (const p of pagos) {
             if (p.pagado && p.pagado !== '0') continue;
             const updates = {};
@@ -7801,14 +7914,22 @@ async function actualizarContrato(id) {
               updates.total = newTotal;
               updates.saldo = Math.max(0, newTotal - yaAbonado);
               await sbPatch('pagos', p.id, updates);
+              algunoRecalculado = true;
             }
           }
 
-          let msg = `Importes recalculados para ${pctCambiados.map(s=>s.toUpperCase()).join(', ')} ✓`;
+          // El recálculo automático de arriba solo aplica al sistema viejo
+          // (campo monto_xxx). Para contratos ya migrados a pagos_suministros
+          // (donde ese campo queda en $0), no se toca nada automáticamente —
+          // a propósito, para no arriesgar un ajuste mal calculado. En ese
+          // caso, avisamos que hay que actualizarlo a mano en Cargar Servicios.
+          let msg = algunoRecalculado
+            ? `Importes recalculados para ${pctCambiados.map(s=>s.toUpperCase()).join(', ')} ✓`
+            : `% actualizado. Este contrato usa el sistema de suministros — ajustá el importe a mano en "Cargar Servicios" si corresponde.`;
           if (otrosContratos.length > 0) {
             msg += ` — Recordá actualizar también: ${otrosContratos.map(c=>c.titulo||c.hoja).join(', ')}`;
           }
-          toast(msg, otrosContratos.length ? 'warn' : '');
+          toast(msg, (otrosContratos.length || !algunoRecalculado) ? 'warn' : '');
         } catch(e) { console.error('Error recalculando:', e); }
       }
     }
@@ -7978,6 +8099,21 @@ async function openNuevoPago(hoja) {
     // Calcular nro de mes para cada pago (posición en lista total de pagos)
     const todosPagos = pagos;
 
+    // Cargar pagos_suministros para los meses impagos (por si no se abrió
+    // antes la ficha completa del contrato, donde normalmente se carga este
+    // caché) — necesario para que EPE/Agua/etc. se calculen bien más abajo.
+    try {
+      const idsImpagos = impagos.map(p => p.id).join(',');
+      if (idsImpagos) {
+        const psRows = await sbGet('pagos_suministros', `pago_id=in.(${idsImpagos})&select=pago_id,suministro_id,importe,importe_propietario`);
+        if (!window._pagosSuministros) window._pagosSuministros = {};
+        psRows.forEach(r => {
+          if (!window._pagosSuministros[r.pago_id]) window._pagosSuministros[r.pago_id] = {};
+          window._pagosSuministros[r.pago_id][r.suministro_id] = { inq: r.importe, prop: r.importe_propietario||0 };
+        });
+      }
+    } catch(e) { console.error('Error cargando pagos_suministros para Registrar Pago:', e); }
+
     document.getElementById('modal-body').innerHTML = `
       <div class="form-group" style="margin-bottom:1.2rem">
         <label>Seleccioná el mes a pagar</label>
@@ -8005,10 +8141,22 @@ function cargarItemsPago(impagos, pagoId, todosPagos, contrato) {
   // Distribute already-paid amount (total - saldo) across items in sequence
   const yaAbonado = pago.pagado_importe || (pago.total||0) - (pago.saldo||0);
   const ordenAcred = ['alquiler','epe','agua','tgiu','expensas','seguro','internet'];
+  // Servicios vía pagos_suministros (si el caché ya está cargado para este
+  // pago), con fallback al campo legado — mismo criterio que en el resto de
+  // la app, para que EPE/Agua/etc. aparezcan como pendientes en contratos
+  // ya migrados al sistema de suministros.
+  const psItemsPago = window._pagosSuministros?.[pago.id] || {};
+  const montoServicioItemsPago = (tipo) => {
+    const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(contrato?.id) && s.tipo === tipo);
+    if (sums.length) {
+      return sums.reduce((t,s) => { const e = psItemsPago[s.id]; return t + (e===undefined ? 0 : (typeof e==='object' ? (e.inq||0) : (e||0))); }, 0);
+    }
+    return pago['monto_'+tipo] || 0;
+  };
   const brutos = {
-    alquiler: pago.importe_alquiler||0, epe: pago.monto_epe||0, agua: pago.monto_agua||0,
-    tgiu: pago.monto_tgiu||0, seguro: pago.monto_seguro||0, internet: pago.monto_internet||0,
-    expensas: pago.monto_expensas||0
+    alquiler: pago.importe_alquiler||0, epe: montoServicioItemsPago('epe'), agua: montoServicioItemsPago('agua'),
+    tgiu: montoServicioItemsPago('tgiu'), seguro: montoServicioItemsPago('seguro'), internet: montoServicioItemsPago('internet'),
+    expensas: montoServicioItemsPago('expensas')
   };
   let restanteAbonado = yaAbonado;
   const saldosPorItem = {};
@@ -9209,7 +9357,7 @@ function showTab(name, btn) {
 // ============================================================
 // REPORTE ADEUDADO POR MES
 // ============================================================
-function generarReporteMes() {
+async function generarReporteMes() {
   const anio = document.getElementById('reporte-anio').value;
   const mes = document.getElementById('reporte-mes').value;
   if (!anio || !mes) { toast('Seleccioná año y mes','error'); return; }
@@ -9229,10 +9377,36 @@ function generarReporteMes() {
     return;
   }
 
+  // Abrir la ventana ya, antes de cualquier espera de red (mismo motivo que
+  // en confirmarCobroInquilino: si se abre después de varios awaits, el
+  // navegador puede bloquearla silenciosamente).
+  const ventana = window.open('', '_blank', 'width=900,height=700');
+
   const totalSaldo = pendientes.reduce((s,p) => s+(p.saldo||0), 0);
   const totalAlq = pendientes.reduce((s,p) => s+(p.importe_alquiler||0), 0);
 
-  const ventana = window.open('', '_blank', 'width=900,height=700');
+  // Cargar pagos_suministros para desglosar EPE/Agua/TGIU/Seguro correctamente
+  // (antes se leía monto_xxx directo, que da $0 para contratos ya migrados
+  // al sistema de suministros — mismo bug ya corregido en otros reportes).
+  const pagoIdsRep = pendientes.map(p => p.id);
+  const psPorTipoRep = {};
+  const tipoPorSumRep = {};
+  (DB_SUMINISTROS||[]).forEach(s => { tipoPorSumRep[s.id] = s.tipo; });
+  try {
+    const psRowsRep = await sbGet('pagos_suministros', `pago_id=in.(${pagoIdsRep.join(',')})&select=pago_id,suministro_id,importe`);
+    psRowsRep.forEach(r => {
+      const tipo = tipoPorSumRep[r.suministro_id];
+      if (!tipo) return;
+      if (!psPorTipoRep[r.pago_id]) psPorTipoRep[r.pago_id] = {};
+      psPorTipoRep[r.pago_id][tipo] = (psPorTipoRep[r.pago_id][tipo]||0) + (parseFloat(r.importe)||0);
+    });
+  } catch(e) { console.error('Error cargando pagos_suministros para el reporte:', e); }
+  const montoServicioRep = (p, tipo) => {
+    const porTipo = psPorTipoRep[p.id];
+    if (porTipo && porTipo[tipo] !== undefined) return porTipo[tipo];
+    return p['monto_'+tipo] || 0;
+  };
+
   ventana.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8">
 <link rel="icon" type="image/x-icon" href="https://megaconsultora.github.io/locaciones/favicon.ico"><title>Reporte adeudado ${nombreMes} ${anio}</title>
@@ -9292,10 +9466,10 @@ function generarReporteMes() {
               <td><strong>${p.hoja}</strong></td>
               <td>${ct?.locatario||'—'}</td>
               <td class="r">${formatMoney(p.importe_alquiler)}</td>
-              <td class="r">${formatMoney(p.monto_epe)}</td>
-              <td class="r">${formatMoney(p.monto_agua)}</td>
-              <td class="r">${formatMoney(p.monto_tgiu)}</td>
-              <td class="r">${formatMoney(p.monto_seguro)}</td>
+              <td class="r">${formatMoney(montoServicioRep(p,'epe'))}</td>
+              <td class="r">${formatMoney(montoServicioRep(p,'agua'))}</td>
+              <td class="r">${formatMoney(montoServicioRep(p,'tgiu'))}</td>
+              <td class="r">${formatMoney(montoServicioRep(p,'seguro'))}</td>
               <td class="r">${formatMoney(p.monto_otros)}</td>
               <td class="r"><strong>${formatMoney(p.total)}</strong></td>
               <td class="r" style="color:#c8483a;font-weight:700">${formatMoney(p.saldo)}</td>
@@ -9306,10 +9480,10 @@ function generarReporteMes() {
           <tr class="total-row">
             <td colspan="2">TOTALES</td>
             <td class="r">${formatMoney(totalAlq)}</td>
-            <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+(p.monto_epe||0),0))}</td>
-            <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+(p.monto_agua||0),0))}</td>
-            <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+(p.monto_tgiu||0),0))}</td>
-            <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+(p.monto_seguro||0),0))}</td>
+            <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+montoServicioRep(p,'epe'),0))}</td>
+            <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+montoServicioRep(p,'agua'),0))}</td>
+            <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+montoServicioRep(p,'tgiu'),0))}</td>
+            <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+montoServicioRep(p,'seguro'),0))}</td>
             <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+(p.monto_otros||0),0))}</td>
             <td class="r">${formatMoney(pendientes.reduce((s,p)=>s+(p.total||0),0))}</td>
             <td class="r" style="color:#c8483a">${formatMoney(totalSaldo)}</td>
@@ -10573,18 +10747,17 @@ async function getTotalServiciosPago(pagoId, tipoExcluir, valorNuevo) {
 
   for (const srv of servicios) {
     if (srv === tipoExcluir) continue;
-    // Para servicios no modificados: usar monto_xxx del sistema viejo
-    // Solo usar pagos_suministros si monto_xxx es 0 o no existe
-    const montoViejo = pago['monto_'+srv] || 0;
-    if (montoViejo > 0) {
-      total += montoViejo;
-    } else {
-      // Fallback a pagos_suministros solo si no hay dato en sistema viejo
-      const psSrv = psRows.filter(ps => {
-        const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id);
-        return cs?.tipo === srv;
-      });
+    // Priorizar pagos_suministros (igual criterio que el resto de la app):
+    // si hay suministro(s) de este tipo para el contrato, usar la suma de
+    // sus importes ahí, aunque monto_xxx (legado) tenga algún valor viejo
+    // pegado — pagos_suministros es la fuente de verdad una vez migrado.
+    const cPago = DB.contratos.find(x => x.hoja === pago.hoja);
+    const sumsSrv = cPago ? DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === cPago.id && s.tipo === srv) : [];
+    if (sumsSrv.length > 0) {
+      const psSrv = psRows.filter(ps => sumsSrv.some(s => s.id === ps.suministro_id));
       total += psSrv.reduce((s, ps) => s + (ps.importe||0), 0);
+    } else {
+      total += pago['monto_'+srv] || 0;
     }
   }
   return total;
@@ -11236,6 +11409,21 @@ async function renderRecibosEmitir() {
     return 0;
   });
 
+  // Cargar pagos_suministros para el cálculo correcto del preview de "Total a
+  // cobrar" (antes leía el campo legado monto_xxx, que da $0 para contratos
+  // ya migrados a pagos_suministros — mismo bug que había en el recibo real).
+  try {
+    const idsPagos = pagos.map(p => p.id).join(',');
+    if (idsPagos) {
+      const psRows = await sbGet('pagos_suministros', `pago_id=in.(${idsPagos})&select=pago_id,suministro_id,importe,importe_propietario`);
+      if (!window._pagosSuministros) window._pagosSuministros = {};
+      psRows.forEach(r => {
+        if (!window._pagosSuministros[r.pago_id]) window._pagosSuministros[r.pago_id] = {};
+        window._pagosSuministros[r.pago_id][r.suministro_id] = { inq: r.importe, prop: r.importe_propietario||0 };
+      });
+    }
+  } catch(e) { console.error('Error cargando pagos_suministros para el listado de recibos:', e); }
+
   cont.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem">
     <thead><tr style="background:var(--ink2);color:white">
       <th style="padding:8px 10px;width:40px"><input type="checkbox" id="chk-all-recibos" onchange="seleccionarTodosRecibos(this.checked)" style="width:15px;height:15px"></th>
@@ -11254,17 +11442,26 @@ async function renderRecibosEmitir() {
         const comision = Math.round(alquiler * comisionPct / 100 * 100) / 100;
         let totalRendir = alquiler - comision;
         const servRinde = (c?.servicios_rendir_propietario||'').toLowerCase();
+        const psRow = window._pagosSuministros?.[p.id] || {};
         ['epe','agua','tgiu','seguro','internet','expensas'].forEach(srv => {
-          const monto = p['monto_'+srv] || 0;
-          const sum = DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === srv);
-          const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv] ?? 0);
-          const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
-          const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv);
-          if (seRinde && monto > 0) { totalRendir += monto; }
-          else if (!seRinde && pctProp > 0 && monto > 0) {
-            const totalBill = pctInq > 0 ? Math.round(monto * 100 / pctInq) : monto;
-            totalRendir -= Math.round(totalBill * pctProp / 100);
-          }
+          const sumsOfType = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === srv);
+          const sums = sumsOfType.length ? sumsOfType : [null];
+          sums.forEach(sum => {
+            const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv] ?? 0);
+            const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
+            const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv);
+            const seDescuenta = sum ? !!sum.descuenta_persona_id : (!sum && pctProp > 0 && !seRinde);
+            if (!seRinde && !seDescuenta) return;
+            const psEntry = sum ? psRow[sum.id] : null;
+            const montoInqSum = (psEntry !== undefined && psEntry !== null)
+              ? (typeof psEntry === 'object' ? (psEntry.inq||0) : (psEntry||0))
+              : (sum ? 0 : (p['monto_'+srv]||0));
+            const montoPropSum = (psEntry !== undefined && psEntry !== null)
+              ? (typeof psEntry === 'object' ? (psEntry.prop||0) : 0)
+              : (pctInq > 0 && montoInqSum > 0 ? Math.round(montoInqSum * pctProp / pctInq) : 0);
+            if (seRinde && montoInqSum > 0) { totalRendir += montoInqSum; }
+            else if (seDescuenta && montoPropSum > 0) { totalRendir -= montoPropSum; }
+          });
         });
         // Sumar extras del propietario (ya cargados en memoria)
         const extrasPago = (window._extrasCache||{})[p.id] || [];
