@@ -5871,8 +5871,12 @@ async function verDetalleDeuda(hoja, contratoId, mesKey, conIntereses = false) {
     { label:'Seguro', monto: getSrv('seguro') },
     { label:'Internet', monto: getSrv('internet') },
     { label:'Expensas', monto: getSrv('expensas') },
-    ...extras.map(e => ({ label: e.concepto||'Extra', monto: parseFloat(e.importe)||0 }))
-  ].filter(i => i.monto > 0);
+    ...extras.map(e => {
+      const importe = parseFloat(e.importe)||0;
+      const esCredito = e.tipo === 'descuento' || e.tipo === 'credito';
+      return { label: e.concepto||'Extra', monto: esCredito ? -importe : importe };
+    })
+  ].filter(i => i.monto !== 0);
 
   // Incluir interés punitorio solo si el checkbox del GP estaba tildado
   if (conIntereses) {
