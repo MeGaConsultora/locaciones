@@ -4780,9 +4780,8 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
         <span>Total a rendir:</span>
         <span id="gp-total-prop" style="color:var(--green)">—</span>
       </div>
-      <div class="form-actions">
-        <button class="btn btn-secondary" onclick="imprimirReciboPropGP('${hoja}',${contratoId},'${mesKey}',${comisionPct})">🖨️ Generar recibo propietario</button>
-        ${reciboPropEmitidoActivo ? `<span style="font-size:0.75rem;color:var(--green);margin-left:6px">✓ Emitido${reciboPropFechaActivo?' el '+new Date(reciboPropFechaActivo).toLocaleDateString('es-AR'):''}</span> <button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px;color:var(--accent);border-color:var(--accent);margin-left:4px" onclick="revertirReciboEmitido(${p?.id}, ${esMultiPropGP ? activePropIdGP : 'null'})">↩ Revertir</button>` : ''}
+      <div class="form-actions" id="gp-prop-emitido-wrap">
+        ${renderReciboPropBadgeYBoton(p?.id, esMultiPropGP, activePropIdGP, contratoId, mesKey, comisionPct, hoja, reciboPropEmitidoActivo, reciboPropFechaActivo)}
       </div>`}
     </div>
   `;
@@ -5000,7 +4999,15 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEst
 }
 
 
-function cambiarPropietarioGP(personaId) {
+function renderReciboPropBadgeYBoton(pagoId, esMultiProp, activePropId, contratoId, mesKey, comisionPct, hoja, emitido, fecha) {
+  const btnGenerar = `<button class="btn btn-secondary" onclick="imprimirReciboPropGP('${hoja}',${contratoId},'${mesKey}',${comisionPct})">🖨️ Generar recibo propietario</button>`;
+  if (!emitido) return btnGenerar;
+  const fechaLabel = fecha ? ' el '+new Date(fecha).toLocaleDateString('es-AR') : '';
+  const personaIdArg = esMultiProp ? activePropId : 'null';
+  return `${btnGenerar}<span style="font-size:0.75rem;color:var(--green);margin-left:6px">✓ Emitido${fechaLabel}</span> <button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px;color:var(--accent);border-color:var(--accent);margin-left:4px" onclick="revertirReciboEmitido(${pagoId}, ${personaIdArg})">↩ Revertir</button>`;
+}
+
+async function cambiarPropietarioGP(personaId) {
   window._gpPropietarioId = personaId;
   const p = pagosActuales.find(x => x.mes && x.mes.startsWith(window._gpMesKey));
   const hoja = window._gpHoja;
@@ -5010,6 +5017,30 @@ function cambiarPropietarioGP(personaId) {
   const extrasProp = (extrasActuales[p?.id]||[]).filter(e => e.a_cargo_de === 'propietario' || e.propietario_persona_id);
   document.getElementById('gp-prop-items').innerHTML = generarItemsPropietario(p, extrasProp, comisionPct, c, personaId);
   recalcProp();
+
+  // Refrescar también el cartel "✓ Emitido" y el botón de abajo para el
+  // propietario recién seleccionado — antes quedaban con el estado del
+  // propietario que estaba activo cuando se abrió el panel, sin actualizar
+  // al cambiar de pestaña.
+  const propsCpCambio = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId) && x.rol === 'propietario');
+  const esMultiPropCambio = propsCpCambio.length > 1;
+  const activePropIdCambio = personaId ? parseInt(personaId) : (propsCpCambio[0]?.persona_id ? parseInt(propsCpCambio[0].persona_id) : null);
+  let emitidoCambio = false, fechaCambio = null;
+  if (p) {
+    if (esMultiPropCambio && activePropIdCambio) {
+      try {
+        const emitidosCambio = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${p.id}&persona_id=eq.${activePropIdCambio}&select=fecha&limit=1`);
+        if (emitidosCambio.length) { emitidoCambio = true; fechaCambio = emitidosCambio[0].fecha; }
+      } catch(e) {}
+    } else {
+      emitidoCambio = !!p.recibo_prop_emitido;
+      fechaCambio = p.recibo_prop_fecha;
+    }
+  }
+  const wrapBadge = document.getElementById('gp-prop-emitido-wrap');
+  if (wrapBadge) {
+    wrapBadge.innerHTML = renderReciboPropBadgeYBoton(p?.id, esMultiPropCambio, activePropIdCambio, contratoId, window._gpMesKey, comisionPct, hoja, emitidoCambio, fechaCambio);
+  }
 }
 
 function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
@@ -11421,7 +11452,7 @@ async function renderRecibosEmitir() {
       });
     }
   } catch(e) {}
-  const pagos = DB.pagos.filter(p => {
+  const pagosBase = DB.pagos.filter(p => {
     if (!p.mes || !p.mes.startsWith(mesKey)) return false;
     if (!(p.importe_alquiler || 0) > 0) return false;
     if (p.recibo_prop_emitido) return false;
@@ -11435,6 +11466,30 @@ async function renderRecibosEmitir() {
     // El alquiler se considera cubierto si lo pagado + creditos >= importe_alquiler
     return (p.pagado_importe || 0) + creditosInq >= (p.importe_alquiler || 0) - 0.01;
   });
+
+  // Para contratos con más de un propietario, `p.recibo_prop_emitido` nunca
+  // se usa (cada propietario tiene su propio registro en la tabla nueva) —
+  // así que hay que excluir acá los que YA estén completos (todos sus
+  // propietarios emitidos), para que no queden pendientes para siempre.
+  let pagosFiltrados = pagosBase;
+  const contratosMultiProp = pagosBase
+    .map(p => ({ p, c: DB.contratos.find(x => x.hoja === p.hoja) }))
+    .filter(({c}) => c && DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === c.id && x.rol === 'propietario').length > 1);
+  if (contratosMultiProp.length) {
+    try {
+      const idsMulti = contratosMultiProp.map(({p}) => p.id).join(',');
+      const emitidosMulti = await sbGet('recibos_propietario_emitidos', `pago_id=in.(${idsMulti})&select=pago_id,persona_id`);
+      pagosFiltrados = pagosBase.filter(p => {
+        const entry = contratosMultiProp.find(x => x.p.id === p.id);
+        if (!entry) return true; // no es multi-propietario, ya pasó el filtro de arriba
+        const propsCp = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === entry.c.id && x.rol === 'propietario');
+        const todosEmitidos = propsCp.every(cp => emitidosMulti.some(e => e.pago_id === p.id && parseInt(e.persona_id) === parseInt(cp.persona_id)));
+        return !todosEmitidos; // sigue "pendiente" si falta emitir al menos uno
+      });
+    } catch(e) { console.warn('No se pudo chequear emisiones por propietario para el listado:', e); }
+  }
+  const pagos = pagosFiltrados;
+
   if (!pagos.length) {
     cont.innerHTML = '<div class="empty-state"><div class="icon">✓</div><p>No hay recibos pendientes de emisión para ese período</p></div>';
     [btnSel,btnDesel,btnGen].forEach(b => b && (b.style.display='none'));
@@ -11587,6 +11642,14 @@ async function generarRecibosSeleccionados() {
 
   let allHtml = '';
   const pagoIds = [];
+  // Cargar qué (pago_id, persona_id) ya fueron emitidos individualmente desde
+  // el GP, para no reimprimir de más ni volver a marcarlos acá.
+  let emitidosIndividual = [];
+  try {
+    emitidosIndividual = await sbGet('recibos_propietario_emitidos', `pago_id=in.(${pagoIdsSel.join(',')})&select=pago_id,persona_id`);
+  } catch(e) { console.warn('No se pudo chequear emisiones individuales por propietario:', e); }
+  const yaEmitido = (pagoId, personaId) => emitidosIndividual.some(e => e.pago_id === pagoId && parseInt(e.persona_id) === parseInt(personaId));
+
   for (const [idx, chk] of checks.entries()) {
     const pagoId = parseInt(chk.dataset.pagoId);
     const hoja = chk.dataset.hoja;
@@ -11600,7 +11663,12 @@ async function generarRecibosSeleccionados() {
     const comisionPct = c.comision_porcentaje || 8;
     // Generar un recibo por propietario (igual que GP)
     const propsCp = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(c?.id) && x.rol === 'propietario');
-    const propsToRender = propsCp.length > 0 ? propsCp : [null];
+    // Si hay más de un propietario, saltear los que ya se emitieron
+    // individualmente desde el GP (para no reimprimir ni remarcar de más).
+    const propsToRender = propsCp.length > 1
+      ? propsCp.filter(cp => !yaEmitido(pagoId, cp.persona_id))
+      : (propsCp.length > 0 ? propsCp : [null]);
+    if (propsCp.length > 1 && !propsToRender.length) continue; // ya se emitieron todos individualmente
     for (const cp of propsToRender) {
       const propPersonaId = cp ? cp.persona_id : null;
       const reciboHtml = generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPersonaId);
@@ -11686,8 +11754,31 @@ async function confirmarRecibosEmitidos() {
   const pagoIds = window._recibosPendientesMarcar || [];
   if (!pagoIds.length) return;
   const now = new Date().toISOString();
-  await Promise.all(pagoIds.map(id => sbPatch('pagos', id, { recibo_prop_emitido: true, recibo_prop_fecha: now })));
-  pagoIds.forEach(id => { const p = DB.pagos.find(x => x.id === id); if (p) { p.recibo_prop_emitido = true; p.recibo_prop_fecha = now; } });
+
+  // Para contratos con UN propietario: sigue usando el campo de siempre en
+  // `pagos`. Para contratos con MÁS de un propietario: marca cada uno en la
+  // tabla nueva (recibos_propietario_emitidos), igual criterio que el GP
+  // individual — así los dos caminos quedan siempre consistentes entre sí.
+  for (const id of pagoIds) {
+    const p = DB.pagos.find(x => x.id === id);
+    const c = p ? DB.contratos.find(x => x.hoja === p.hoja) : null;
+    const propsCp = c ? DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === c.id && x.rol === 'propietario') : [];
+    if (propsCp.length > 1) {
+      for (const cp of propsCp) {
+        try {
+          const existente = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${id}&persona_id=eq.${cp.persona_id}&limit=1`);
+          if (existente.length) {
+            await sbPatch('recibos_propietario_emitidos', existente[0].id, { fecha: now });
+          } else {
+            await sbPost('recibos_propietario_emitidos', { pago_id: id, persona_id: cp.persona_id, fecha: now });
+          }
+        } catch(e) { console.warn('No se pudo marcar emisión por propietario (¿falta la tabla?):', id, cp.persona_id, e); }
+      }
+    } else {
+      await sbPatch('pagos', id, { recibo_prop_emitido: true, recibo_prop_fecha: now });
+      if (p) { p.recibo_prop_emitido = true; p.recibo_prop_fecha = now; }
+    }
+  }
 
   // Marcar como saldados los honorarios a cargo del propietario que se
   // descontaron en el recibo (mismo efecto que el GP individual aplica al
