@@ -3558,10 +3558,12 @@ async function cargarListaServicios(filtro='') {
         return t + (s.pct_inquilino||0) + (s.pct_propietario||0);
       }, 0);
       if (Math.abs(totalPct - 100) > 0.5) {
-        const nombres = allSumsForNro.map(s => {
-          const cc = DB.contratos.find(x => x.id === parseInt(s.contrato_id));
-          return cc?.titulo || cc?.hoja || '';
-        }).filter(Boolean).join(', ');
+        const nombres = allSumsForNro
+          .filter(s => (s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0)
+          .map(s => {
+            const cc = DB.contratos.find(x => x.id === parseInt(s.contrato_id));
+            return cc?.titulo || cc?.hoja || '';
+          }).filter(Boolean).join(', ');
         pctWarnings.push({ msg: `Nro ${nro} (${nombres}): suman ${Math.round(totalPct)}% (debería ser 100%)`, ids: allSumsForNro.map(s => parseInt(s.contrato_id)) });
       }
     });
@@ -6516,7 +6518,7 @@ async function renderInforme() {
       <div class="stat-card"><div class="stat-label">Alquileres activos</div><div class="stat-val">${vigentes}</div></div>
     </div>
     <div class="table-wrap" style="overflow-x:auto">
-      <table style="width:100%;table-layout:fixed;font-size:0.78rem">
+      <table style="width:100%;min-width:900px;table-layout:fixed;font-size:0.78rem">
         <colgroup>
           <col style="width:16%">
           <col style="width:9%"><col style="width:9%"><col style="width:9%">
@@ -6613,7 +6615,7 @@ function renderReporteTotal() {
 
   cont.innerHTML = `
     <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed">
+      <table style="width:100%;min-width:800px;border-collapse:collapse;font-size:0.82rem;table-layout:fixed">
         <colgroup>
           <col style="width:18%"><col style="width:18%"><col style="width:18%">
           <col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:10%">
@@ -12159,11 +12161,16 @@ async function guardarNroServicio(contratoId, srv) {
 
   // Validate pct sum for vigente contracts sharing this nro
   if (nro) {
-    const compartidos = DB.contratos.filter(x =>
-      x.id !== contratoId &&
-      String(DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(x.id) && s.tipo === srv)?.nro_cuenta || x['nro_'+srv] || '').trim() === nro &&
-      getEstado(x) === 'vigente'
-    );
+    const compartidos = DB.contratos.filter(x => {
+      if (x.id === contratoId) return false;
+      const sum = DB_SUMINISTROS.find(s => parseInt(s.contrato_id) === parseInt(x.id) && s.tipo === srv);
+      const nroX = String(sum?.nro_cuenta || x['nro_'+srv] || '').trim();
+      if (nroX !== nro) return false;
+      if (getEstado(x) !== 'vigente') return false;
+      const pctInqX = sum ? (sum.pct_inquilino ?? 100) : (x['pct_'+srv] != null ? Number(x['pct_'+srv]) : 100);
+      const pctPropX = sum ? (sum.pct_propietario ?? 0) : (x['pct_prop_'+srv] != null ? Number(x['pct_prop_'+srv]) : 0);
+      return (pctInqX > 0 || pctPropX > 0); // excluir contratos sin parte real en esta cuenta
+    });
     const todos = [c, ...compartidos];
     const totalPct = todos.reduce((s, x) => {
       const sum = DB_SUMINISTROS.find(d => parseInt(d.contrato_id) === parseInt(x.id) && d.tipo === srv);
