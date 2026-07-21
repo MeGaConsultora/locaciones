@@ -4797,7 +4797,14 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       ${(() => {
         const _cH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
         const _sH = Math.max(0, _cH.reduce((s,g)=>s+(g.monto_inquilino||0),0) - _cH.reduce((s,g)=>s+(parseFloat(g.pagado_inquilino)||0),0));
-        return (!p || (!p.total && !(p.pagado_importe > 0))) && !_sH;
+        // Si el inquilino tiene 0% en algún servicio (100% a cargo del
+        // propietario), el total/pagado_importe del pago pueden dar $0
+        // genuinamente — pero igual hay algo real para mostrarle al
+        // propietario (el descuento). Chequear pagos_suministros antes de
+        // bloquear la pestaña con el cartel de "cargá los importes primero".
+        const psDeEsteP = p ? (window._pagosSuministros?.[p.id] || {}) : {};
+        const tieneParteProp = Object.values(psDeEsteP).some(e => (typeof e === 'object' ? (e.prop||0) : 0) > 0);
+        return (!p || (!p.total && !(p.pagado_importe > 0) && !tieneParteProp)) && !_sH;
       })() ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
       <div id="gp-prop-items">${generarItemsPropietario(p, extrasProp, comisionPct, c, window._gpPropietarioId||null)}</div>
       <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem;font-size:1rem">
@@ -10562,7 +10569,7 @@ async function procesarPDF() {
       }
     }
 
-    mostrarResultadosPDF(resultados, mes, srv);
+    await mostrarResultadosPDF(resultados, mes, srv);
   } catch(e) {
     toast('Error al procesar PDF: ' + e.message, 'error');
     console.error(e);
@@ -10791,7 +10798,7 @@ async function recargarDatosEPE() {
     let psSuministros = [];
     if (pagoIds.length) {
       psSuministros = await sbGet('pagos_suministros',
-        `pago_id=in.(${pagoIds.join(',')})&select=pago_id,suministro_id,importe`
+        `pago_id=in.(${pagoIds.join(',')})&select=pago_id,suministro_id,importe,importe_propietario`
       ).catch(() => []);
     }
 
@@ -11195,12 +11202,29 @@ function resetImportarPDF() {
   if (cambiarBtn) cambiarBtn.remove();
 }
 
-function mostrarResultadosPDF(resultados, mes, srv) {
+async function mostrarResultadosPDF(resultados, mes, srv) {
   const el = document.getElementById('pdf-resultados');
   el.style.display = 'block';
   const withContrato = resultados.filter(r => r.contrato).length;
   const sinContrato = resultados.filter(r => !r.contrato && r.cuenta).length;
   const sinDatos = resultados.filter(r => !r.cuenta).length;
+
+  // Cargar pagos_suministros de los pagos involucrados, para poder mostrar
+  // la columna "Cargado" (igual criterio que en la pantalla de EPE: si es
+  // una cuenta 100% propietario, mirar importe_propietario en vez de importe).
+  const mesStr = mes + '-01';
+  const pagoIdsPDF = [];
+  resultados.forEach(r => {
+    if (!r.contrato) return;
+    const pago = DB.pagos?.find(p => p.hoja === r.contrato.hoja && p.mes?.startsWith(mesStr));
+    if (pago) pagoIdsPDF.push(pago.id);
+  });
+  let psPDF = [];
+  if (pagoIdsPDF.length) {
+    try {
+      psPDF = await sbGet('pagos_suministros', `pago_id=in.(${[...new Set(pagoIdsPDF)].join(',')})&select=pago_id,suministro_id,importe,importe_propietario`);
+    } catch(e) { console.error('Error cargando pagos_suministros para el detalle de cargado:', e); }
+  }
 
   el.innerHTML = `
     <div style="background:#f0f4ff;border-radius:10px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem">
@@ -11221,6 +11245,7 @@ function mostrarResultadosPDF(resultados, mes, srv) {
           <th style="padding:6px 8px;text-align:left;cursor:pointer;user-select:none" onclick="ordenarTablaPDF('cuenta')" title="Ordenar por N° Cuenta">N° Cuenta <span id="pdf-sort-cuenta"></span></th>
           <th style="padding:6px 8px;text-align:left;cursor:pointer;user-select:none" onclick="ordenarTablaPDF('contrato')" title="Ordenar por Contrato">Contrato <span id="pdf-sort-contrato"></span></th>
           <th style="padding:6px 8px;text-align:right">Importe</th>
+          <th style="padding:6px 8px;text-align:right">Cargado</th>
           <th style="padding:6px 8px;text-align:right">A cargar</th>
         </tr></thead>
         <tbody id="pdf-tabla-body">
@@ -11239,6 +11264,22 @@ function mostrarResultadosPDF(resultados, mes, srv) {
               pct = r.contrato ? (r.contrato[`pct_${srv}`] ?? 100) : 100;
             }
             const aCargar = r.importe ? Math.round(r.importe * pct / 100 * 100) / 100 : 0;
+
+            // Cargado: buscar lo que ya está guardado en pagos_suministros
+            // para este pago+cuenta, con el mismo criterio de reparto que
+            // "A cargar" (si es 100% propietario, mirar importe_propietario).
+            let cargadoInq = null, cargadoProp = null;
+            if (r.contrato) {
+              const pagoDeEsteRow = DB.pagos?.find(p => p.hoja === r.contrato.hoja && p.mes?.startsWith(mesStr));
+              if (pagoDeEsteRow && sumsAll.length) {
+                const sumIdsRow = sumsAll.map(s => s.id);
+                const psDeEsteRow = psPDF.filter(ps => ps.pago_id === pagoDeEsteRow.id && sumIdsRow.includes(ps.suministro_id));
+                if (psDeEsteRow.length) {
+                  cargadoInq = psDeEsteRow.reduce((t,ps) => t + (ps.importe||0), 0);
+                  cargadoProp = psDeEsteRow.reduce((t,ps) => t + (ps.importe_propietario||0), 0);
+                }
+              }
+            }
             const rowColor = !r.cuenta ? '#f5f5f5' : !r.contrato ? '#fff8f8' : '';
             const contratoLabel = r.contrato ? r.contrato.titulo : '';
             return `<tr style="border-bottom:1px solid #eee;background:${rowColor}" data-cuenta="${r.cuenta||''}" data-contrato="${contratoLabel}">
@@ -11249,6 +11290,12 @@ function mostrarResultadosPDF(resultados, mes, srv) {
               <td style="padding:6px 8px;font-weight:600">${r.cuenta || '<span style="color:#aaa">—</span>'}</td>
               <td style="padding:6px 8px">${r.contrato ? r.contrato.titulo : r.cuenta ? '<span style="color:var(--accent)">Sin contrato</span>' : '<span style="color:#aaa">Sin datos</span>'} ${r.textoRaw ? `<button onclick="alert(this.dataset.t)" data-t="${(r.textoRaw||'').replace(/"/g,'&quot;')}" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:0.7rem">🔍</button>` : ''}</td>
               <td style="padding:6px 8px;text-align:right">${r.importe ? formatMoney(r.importe) : '—'}</td>
+              <td style="padding:6px 8px;text-align:right;color:#888">${
+                cargadoInq === null ? '—' :
+                compartido ? `${formatMoney(cargadoInq)}${cargadoProp>0?` + ${formatMoney(cargadoProp)} (prop.)`:''}` :
+                esPropietario ? (cargadoProp>0 ? `${formatMoney(cargadoProp)} (prop.)` : '—') :
+                (cargadoInq>0 ? formatMoney(cargadoInq) : '—')
+              }</td>
               <td style="padding:6px 8px;text-align:right;color:var(--green)">${
                 !r.importe ? '—' :
                 compartido ? `${formatMoney(montoInqRow)} <span style="font-size:0.68rem;color:#888" title="Reparto: ${pctInqTotal}% inquilino / ${pctPropTotal}% propietario">+ ${formatMoney(montoPropRow)} (prop.)</span>` :
