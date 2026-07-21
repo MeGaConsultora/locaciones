@@ -5509,6 +5509,12 @@ async function _syncPagosSuministros(pagoId, contratoId, montosMap) {
         } else {
           await sbPost('pagos_suministros', { pago_id: pagoId, suministro_id: s.id, importe, importe_propietario });
         }
+        // Actualizar también el caché en memoria — si no, cualquier función
+        // que recalcule el total después (ej: recalcularFilaPago) va a leer
+        // el valor viejo y pisar el guardado recién hecho.
+        if (!window._pagosSuministros) window._pagosSuministros = {};
+        if (!window._pagosSuministros[pagoId]) window._pagosSuministros[pagoId] = {};
+        window._pagosSuministros[pagoId][s.id] = { inq: importe, prop: importe_propietario };
       } catch(e) { console.error('_syncPagosSuministros error:', e); }
     }
   }
