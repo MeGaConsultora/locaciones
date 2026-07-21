@@ -10666,8 +10666,14 @@ function _renderEPEPreview(datos) {
             const sum = d.suministro_id ? DB_SUMINISTROS.find(s => s.id === d.suministro_id) : null;
             const contrato = sum ? DB.contratos.find(c => c.id === parseInt(sum.contrato_id) && getEstado(c) === 'vigente') : null;
             const tieneImporte = d.importe && d.importe > 0;
-            const pct = sum ? (sum.pct_inquilino || 100) : 100;
-            const aCargar = tieneImporte ? Math.round(d.importe * pct / 100 * 100) / 100 : 0;
+            const pctInqRow = sum ? (sum.pct_inquilino ?? 100) : 100;
+            const pctPropRow = sum ? (sum.pct_propietario ?? 0) : 0;
+            // Comparten el pago (ej: 50/50): mostrar el desglose de ambos, no solo uno
+            const compartido = pctInqRow > 0 && pctPropRow > 0;
+            const esPropietario = pctInqRow === 0 && pctPropRow > 0;
+            const montoInqRow = tieneImporte ? Math.round(d.importe * pctInqRow / 100 * 100) / 100 : 0;
+            const montoPropRow = tieneImporte ? Math.round(d.importe * pctPropRow / 100 * 100) / 100 : 0;
+            const aCargar = compartido ? montoInqRow + montoPropRow : (pctInqRow > 0 ? montoInqRow : montoPropRow);
             const cargado = d.importe_cargado || null;
             const hayDiferencia = cargado !== null && tieneImporte && Math.abs(cargado - aCargar) > 1;
             const rowColor = !contrato ? '#fff8f8' : hayDiferencia ? '#fff3cd' : !tieneImporte ? '#f5f5f5' : '';
@@ -10680,7 +10686,12 @@ function _renderEPEPreview(datos) {
               <td style="padding:6px 8px">${contrato ? contratoLabel : '<span style="color:var(--accent)">Sin contrato</span>'}</td>
               <td style="padding:6px 8px;text-align:right">${tieneImporte ? formatMoney(d.importe) + (d.es_2do_vto ? ' <span style="font-size:0.7rem;color:#856404" title="2do vencimiento">②</span>' : '') : '<span style="color:#aaa">—</span>'}</td>
               <td style="padding:6px 8px;text-align:right;${hayDiferencia ? 'color:var(--accent);font-weight:600' : 'color:#888'}">${cargado !== null ? formatMoney(cargado) : '—'}</td>
-              <td style="padding:6px 8px;text-align:right;color:var(--green)">${aCargar ? formatMoney(aCargar) : '—'}</td>
+              <td style="padding:6px 8px;text-align:right;color:var(--green)">${
+                !tieneImporte ? '—' :
+                compartido ? `${formatMoney(montoInqRow)} <span style="font-size:0.68rem;color:#888" title="Reparto: ${pctInqRow}% inquilino / ${pctPropRow}% propietario">+ ${formatMoney(montoPropRow)} (prop.)</span>` :
+                esPropietario ? `${formatMoney(aCargar)} <span style="font-size:0.68rem;color:#856404" title="Este % es a cargo del propietario, no del inquilino">(prop.)</span>` :
+                formatMoney(aCargar)
+              }</td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -11181,8 +11192,19 @@ function mostrarResultadosPDF(resultados, mes, srv) {
         </tr></thead>
         <tbody id="pdf-tabla-body">
           ${resultados.map((r, i) => {
-            const sums = r.contrato ? DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === r.contrato.id && s.tipo === srv && (s.pct_inquilino||0) > 0) : [];
-            const pct = sums.length > 0 ? sums.reduce((t,s) => t + (s.pct_inquilino||0), 0) : (r.contrato ? (r.contrato[`pct_${srv}`] ?? 100) : 100);
+            const sumsAll = r.contrato ? DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === r.contrato.id && s.tipo === srv) : [];
+            const pctInqTotal = sumsAll.reduce((t,s) => t + (s.pct_inquilino||0), 0);
+            const pctPropTotal = sumsAll.reduce((t,s) => t + (s.pct_propietario||0), 0);
+            const compartido = pctInqTotal > 0 && pctPropTotal > 0;
+            const esPropietario = pctInqTotal === 0 && pctPropTotal > 0;
+            let pct, montoInqRow = 0, montoPropRow = 0;
+            if (sumsAll.length > 0) {
+              pct = compartido ? pctInqTotal + pctPropTotal : (pctInqTotal > 0 ? pctInqTotal : pctPropTotal);
+              montoInqRow = r.importe ? Math.round(r.importe * pctInqTotal / 100 * 100) / 100 : 0;
+              montoPropRow = r.importe ? Math.round(r.importe * pctPropTotal / 100 * 100) / 100 : 0;
+            } else {
+              pct = r.contrato ? (r.contrato[`pct_${srv}`] ?? 100) : 100;
+            }
             const aCargar = r.importe ? Math.round(r.importe * pct / 100 * 100) / 100 : 0;
             const rowColor = !r.cuenta ? '#f5f5f5' : !r.contrato ? '#fff8f8' : '';
             const contratoLabel = r.contrato ? r.contrato.titulo : '';
@@ -11194,7 +11216,12 @@ function mostrarResultadosPDF(resultados, mes, srv) {
               <td style="padding:6px 8px;font-weight:600">${r.cuenta || '<span style="color:#aaa">—</span>'}</td>
               <td style="padding:6px 8px">${r.contrato ? r.contrato.titulo : r.cuenta ? '<span style="color:var(--accent)">Sin contrato</span>' : '<span style="color:#aaa">Sin datos</span>'} ${r.textoRaw ? `<button onclick="alert(this.dataset.t)" data-t="${(r.textoRaw||'').replace(/"/g,'&quot;')}" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:0.7rem">🔍</button>` : ''}</td>
               <td style="padding:6px 8px;text-align:right">${r.importe ? formatMoney(r.importe) : '—'}</td>
-              <td style="padding:6px 8px;text-align:right;color:var(--green)">${aCargar ? formatMoney(aCargar) : '—'}</td>
+              <td style="padding:6px 8px;text-align:right;color:var(--green)">${
+                !r.importe ? '—' :
+                compartido ? `${formatMoney(montoInqRow)} <span style="font-size:0.68rem;color:#888" title="Reparto: ${pctInqTotal}% inquilino / ${pctPropTotal}% propietario">+ ${formatMoney(montoPropRow)} (prop.)</span>` :
+                esPropietario ? `${formatMoney(aCargar)} <span style="font-size:0.68rem;color:#856404" title="Este % es a cargo del propietario, no del inquilino">(prop.)</span>` :
+                formatMoney(aCargar)
+              }</td>
             </tr>`;
           }).join('')}
         </tbody>
