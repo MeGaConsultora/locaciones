@@ -4684,12 +4684,13 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
           };
           const servs = (c?.servicios_inquilino||'').toLowerCase();
           let fields = '';
-          fields += mkSrvField('gp-epe','EPE', getSrvVal('epe'), 'epe');
-          fields += mkSrvField('gp-agua','Agua', getSrvVal('agua'), 'agua');
-          fields += mkSrvField('gp-tgiu','TGIU', getSrvVal('tgiu'), 'tgiu');
-          fields += mkSrvField('gp-seguro','Seguro', getSrvVal('seguro'), 'seguro');
-          if (servs.includes('internet')) fields += mkSrvField('gp-internet','Internet', getSrvVal('internet'), 'internet');
-          if (servs.includes('expensas')) fields += mkSrvField('gp-expensas','Expensas', getSrvVal('expensas'), 'expensas');
+          const tieneCuentaReal = (srv) => DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === contratoId && s.tipo === srv);
+          if (tieneCuentaReal('epe') || servs.includes('epe')) fields += mkSrvField('gp-epe','EPE', getSrvVal('epe'), 'epe');
+          if (tieneCuentaReal('agua') || servs.includes('agua')) fields += mkSrvField('gp-agua','Agua', getSrvVal('agua'), 'agua');
+          if (tieneCuentaReal('tgiu') || servs.includes('tgiu')) fields += mkSrvField('gp-tgiu','TGIU', getSrvVal('tgiu'), 'tgiu');
+          if (tieneCuentaReal('seguro') || servs.includes('seguro')) fields += mkSrvField('gp-seguro','Seguro', getSrvVal('seguro'), 'seguro');
+          if (tieneCuentaReal('internet') || servs.includes('internet')) fields += mkSrvField('gp-internet','Internet', getSrvVal('internet'), 'internet');
+          if (tieneCuentaReal('expensas') || servs.includes('expensas')) fields += mkSrvField('gp-expensas','Expensas', getSrvVal('expensas'), 'expensas');
           // Gastos de inicio cuota - readonly, just informative
           const gastoCuotaGP = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey));
           if (gastoCuotaGP?.monto_inquilino > 0) {
