@@ -4641,20 +4641,27 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
             const tieneSuministroReal = sumsDeEsteTipo.length > 0;
             const pct = tieneSuministroReal ? 100 : (c?.['pct_'+srv] ?? 100);
             const onInput = `onchange="recalcGP(window._gpComision||8)"`;
-            // Editable directo desde acá SOLO si hay exactamente una cuenta
-            // real y es 100% del inquilino (nada a cargo/reparto con el
-            // propietario). Cualquier otro caso — varias cuentas, o una sola
-            // cuenta pero compartida con el propietario — se deja
-            // deshabilitado, porque acá no hay forma de tocar la parte del
-            // propietario ni de saber a cuál cuenta puntual corresponde el
-            // cambio. Se edita desde "Cargar Servicios" en esos casos.
-            const unicaSum = sumsDeEsteTipo.length === 1 ? sumsDeEsteTipo[0] : null;
-            const esCompartida = sumsDeEsteTipo.length > 1 || (unicaSum && (unicaSum.pct_propietario||0) > 0);
-            if (esCompartida) {
+            // Regla simple: editable directo desde acá SOLO si el inquilino
+            // de ESTE contrato tiene el 100% asignado de forma exclusiva para
+            // este servicio. Si no es 100% (menos, por reparto con el
+            // propietario, o porque es la porción de una cuenta compartida
+            // entre varios contratos), queda deshabilitado — se edita desde
+            // "Cargar Servicios". Con una sola condición cubrimos los tres
+            // casos, ya que cualquiera de ellos implica necesariamente que
+            // el % de este contrato es menor a 100.
+            let habilitado, sumIdUnico = null;
+            if (sumsDeEsteTipo.length === 0) {
+              habilitado = (c?.['pct_'+srv] ?? 100) === 100; // sistema legado
+            } else if (sumsDeEsteTipo.length === 1) {
+              habilitado = (sumsDeEsteTipo[0].pct_inquilino ?? 100) === 100;
+              sumIdUnico = sumsDeEsteTipo[0].id;
+            } else {
+              habilitado = false; // varias cuentas del mismo tipo, nunca editable directo
+            }
+            if (!habilitado) {
               const disabledHint = `<div style="font-size:0.72rem;color:#aaa;margin-top:2px">Esta cuenta es compartida (con otro contrato o con el propietario) — modificala desde "Cargar Servicios"</div>`;
               return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" ${onInput} style="background:#f5f5f5;color:#999;cursor:not-allowed" readonly title="Esta cuenta es compartida — modificala desde Cargar Servicios">${disabledHint}</div>`;
             }
-            const sumIdUnico = unicaSum?.id || null;
             return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" data-sum-id="${sumIdUnico||''}" ${onInput}></div>`;
           };
           // Get value from pagos_suministros — fallback to monto_xxx if no suministros data
