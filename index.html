@@ -4637,11 +4637,25 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
             // Si el contrato tiene suministro real (contrato_suministros) de este tipo, el valor mostrado
             // ya viene prorrateado (psTotal en getSrvVal) — usar pct=100 para no volver a aplicar el % y duplicar el prorrateo.
             // Solo usar el campo legado c.pct_xxx cuando NO hay suministro real (sistema viejo puro).
-            const tieneSuministroReal = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === contratoId && s.tipo === srv);
+            const sumsDeEsteTipo = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === srv);
+            const tieneSuministroReal = sumsDeEsteTipo.length > 0;
             const pct = tieneSuministroReal ? 100 : (c?.['pct_'+srv] ?? 100);
             const onInput = `onchange="recalcGP(window._gpComision||8)"`;
-            const disabledHint = `<div style="font-size:0.72rem;color:#aaa;margin-top:2px">Modificar desde Cargar servicios del mes</div>`;
-            return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" ${onInput} style="background:#f5f5f5;color:#999;cursor:not-allowed" readonly title="Modificar desde Cargar servicios del mes">${disabledHint}</div>`;
+            // Editable directo desde acá SOLO si hay exactamente una cuenta
+            // real y es 100% del inquilino (nada a cargo/reparto con el
+            // propietario). Cualquier otro caso — varias cuentas, o una sola
+            // cuenta pero compartida con el propietario — se deja
+            // deshabilitado, porque acá no hay forma de tocar la parte del
+            // propietario ni de saber a cuál cuenta puntual corresponde el
+            // cambio. Se edita desde "Cargar Servicios" en esos casos.
+            const unicaSum = sumsDeEsteTipo.length === 1 ? sumsDeEsteTipo[0] : null;
+            const esCompartida = sumsDeEsteTipo.length > 1 || (unicaSum && (unicaSum.pct_propietario||0) > 0);
+            if (esCompartida) {
+              const disabledHint = `<div style="font-size:0.72rem;color:#aaa;margin-top:2px">Esta cuenta es compartida (con otro contrato o con el propietario) — modificala desde "Cargar Servicios"</div>`;
+              return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" ${onInput} style="background:#f5f5f5;color:#999;cursor:not-allowed" readonly title="Esta cuenta es compartida — modificala desde Cargar Servicios">${disabledHint}</div>`;
+            }
+            const sumIdUnico = unicaSum?.id || null;
+            return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" data-sum-id="${sumIdUnico||''}" ${onInput}></div>`;
           };
           // Get value from pagos_suministros — fallback to monto_xxx if no suministros data
           const getSrvVal = (srv) => {
@@ -5544,9 +5558,28 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
     const pagoExistente = existingPre[0];
     const psRows = await sbGet('pagos_suministros', `pago_id=eq.${pagoExistente.id}`).catch(()=>[]);
     const psTotal = psRows.reduce((t,r) => t + (r.importe||0), 0);
-    if (psTotal > 0) {
-      usaSuministros = true;
-      serviciosTotal = psTotal;
+    usaSuministros = psTotal > 0;
+    if (usaSuministros) {
+      // Recalcular por tipo: para los campos ahora editables (una sola
+      // cuenta real), usar el valor NUEVO del formulario; para los que
+      // siguen deshabilitados (varias cuentas), mantener el total actual
+      // guardado sin tocarlo.
+      const tipoPorSumId = {};
+      DB_SUMINISTROS.forEach(s => { tipoPorSumId[s.id] = s.tipo; });
+      const totalActualPorTipo = {};
+      psRows.forEach(r => {
+        const tipo = tipoPorSumId[r.suministro_id];
+        if (!tipo) return;
+        totalActualPorTipo[tipo] = (totalActualPorTipo[tipo]||0) + (r.importe||0);
+      });
+      for (const srv of ['epe','agua','tgiu','seguro','internet','expensas']) {
+        const el = document.getElementById('gp-'+srv);
+        if (el && !el.readOnly) {
+          serviciosTotal += applyFieldPct('gp-'+srv);
+        } else {
+          serviciosTotal += totalActualPorTipo[srv] || 0;
+        }
+      }
     }
     if (!usaSuministros) {
       // Use existing monto_xxx values from Supabase (not disabled form fields)
