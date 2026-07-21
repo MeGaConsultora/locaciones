@@ -5538,19 +5538,14 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
     const pct = parseFloat(el.dataset.pct)||100;
     return Math.round(val * pct / 100 * 100) / 100;
   };
-  const epe = applyFieldPct('gp-epe');
-  const agua = applyFieldPct('gp-agua');
-  const tgiu = applyFieldPct('gp-tgiu');
-  const seguro = applyFieldPct('gp-seguro');
   const vence = document.getElementById('gp-vence')?.value||null;
   const comision = alq * (comisionPct/100);
-  
+
   // Get current extras for inquilino to include in total
   let extrasInqTotal = 0;
   try {
-    const hojaEncoded = encodeURIComponent(hoja);
-    const mes = mesKey+'-01';
-    const existingForExtras = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
+    const hojaEncoded0 = encodeURIComponent(hoja);
+    const existingForExtras = await sbGet('pagos', `hoja=eq.${hojaEncoded0}&mes=eq.${mes}&limit=1`);
     if (existingForExtras.length > 0) {
       const extrasDelPago = await sbGet('pagos_extras', `pago_id=eq.${existingForExtras[0].id}&order=id.asc`);
       extrasInqTotal = extrasDelPago
@@ -5558,70 +5553,58 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
         .reduce((s,e) => s + ((e.tipo==='credito' || e.tipo==='descuento' ? -1 : 1) * (e.importe||0)), 0);
     }
   } catch(e) {}
-  
-  const internet = parseFloat(document.getElementById('gp-internet')?.value)||0;
-  const expensas = parseFloat(document.getElementById('gp-expensas')?.value)||0;
 
   const hojaEncoded = encodeURIComponent(hoja);
   const existingPre = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`).catch(()=>[]);
-  
-  // Calculate servicios total from actual data, not disabled form fields
-  let serviciosTotal = 0;
-  let usaSuministros = false;
+
+  const TIPOS_SERVICIO = ['epe','agua','tgiu','seguro','internet','expensas'];
+
+  // Decisión POR SERVICIO: si el CONTRATO tiene alguna cuenta real
+  // (contrato_suministros) para ese tipo, usar pagos_suministros como fuente
+  // de verdad — SIEMPRE, sin importar si ESTE MES puntual ya tenía filas
+  // cargadas antes. Antes decidíamos esto a nivel de "todo el pago" (mirando
+  // si ya había algo en pagos_suministros para este mes), y por eso la
+  // PRIMERA vez que se cargaba un servicio nuevo (nada guardado todavía ese
+  // mes) se guardaba mal, en el campo viejo, en vez de crear el registro
+  // correspondiente — quedando invisible para "Ingresar Pago", que ya no
+  // mira ese campo viejo una vez que el contrato tiene una cuenta real.
+  const usaSuministrosPorTipo = {};
+  TIPOS_SERVICIO.forEach(srv => {
+    usaSuministrosPorTipo[srv] = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === contratoId && s.tipo === srv);
+  });
+
+  let totalActualPorTipo = {};
   if (existingPre.length) {
-    const pagoExistente = existingPre[0];
-    const psRows = await sbGet('pagos_suministros', `pago_id=eq.${pagoExistente.id}`).catch(()=>[]);
-    const psTotal = psRows.reduce((t,r) => t + (r.importe||0), 0);
-    usaSuministros = psTotal > 0;
-    if (usaSuministros) {
-      // Recalcular por tipo: para los campos ahora editables (una sola
-      // cuenta real), usar el valor NUEVO del formulario; para los que
-      // siguen deshabilitados (varias cuentas), mantener el total actual
-      // guardado sin tocarlo.
-      const tipoPorSumId = {};
-      DB_SUMINISTROS.forEach(s => { tipoPorSumId[s.id] = s.tipo; });
-      const totalActualPorTipo = {};
-      psRows.forEach(r => {
-        const tipo = tipoPorSumId[r.suministro_id];
-        if (!tipo) return;
-        totalActualPorTipo[tipo] = (totalActualPorTipo[tipo]||0) + (r.importe||0);
-      });
-      for (const srv of ['epe','agua','tgiu','seguro','internet','expensas']) {
-        const el = document.getElementById('gp-'+srv);
-        if (el && !el.readOnly) {
-          serviciosTotal += applyFieldPct('gp-'+srv);
-        } else {
-          serviciosTotal += totalActualPorTipo[srv] || 0;
-        }
-      }
-    }
-    if (!usaSuministros) {
-      // Use existing monto_xxx values from Supabase (not disabled form fields)
-      serviciosTotal = (pagoExistente.monto_epe||0) + (pagoExistente.monto_agua||0) +
-        (pagoExistente.monto_tgiu||0) + (pagoExistente.monto_seguro||0) +
-        (pagoExistente.monto_internet||0) + (pagoExistente.monto_expensas||0);
-      // Override with enabled form field values if any
-      const epeEl = document.getElementById('gp-epe');
-      const aguaEl = document.getElementById('gp-agua');
-      const tgiuEl = document.getElementById('gp-tgiu');
-      const seguroEl = document.getElementById('gp-seguro');
-      const internetEl = document.getElementById('gp-internet');
-      const expensasEl = document.getElementById('gp-expensas');
-      if (epeEl && !epeEl.readOnly) serviciosTotal = serviciosTotal - (pagoExistente.monto_epe||0) + epe;
-      if (aguaEl && !aguaEl.readOnly) serviciosTotal = serviciosTotal - (pagoExistente.monto_agua||0) + agua;
-      if (tgiuEl && !tgiuEl.readOnly) serviciosTotal = serviciosTotal - (pagoExistente.monto_tgiu||0) + tgiu;
-      if (seguroEl && !seguroEl.readOnly) serviciosTotal = serviciosTotal - (pagoExistente.monto_seguro||0) + seguro;
-      if (internetEl && !internetEl.readOnly) serviciosTotal = serviciosTotal - (pagoExistente.monto_internet||0) + internet;
-      if (expensasEl && !expensasEl.readOnly) serviciosTotal = serviciosTotal - (pagoExistente.monto_expensas||0) + expensas;
-    }
-  } else {
-    // New pago - use form values
-    serviciosTotal = epe+agua+tgiu+seguro+internet+expensas;
+    const psRows = await sbGet('pagos_suministros', `pago_id=eq.${existingPre[0].id}`).catch(()=>[]);
+    const tipoPorSumId = {};
+    DB_SUMINISTROS.forEach(s => { tipoPorSumId[s.id] = s.tipo; });
+    psRows.forEach(r => {
+      const tipo = tipoPorSumId[r.suministro_id];
+      if (!tipo) return;
+      totalActualPorTipo[tipo] = (totalActualPorTipo[tipo]||0) + (r.importe||0);
+    });
   }
+
+  // Monto a aplicar por tipo: si el campo está habilitado (editable), el
+  // valor NUEVO del formulario; si está deshabilitado (varias cuentas o
+  // compartida), el valor actual guardado, sin tocarlo.
+  const montoPorTipo = {};
+  TIPOS_SERVICIO.forEach(srv => {
+    const el = document.getElementById('gp-'+srv);
+    if (el && !el.readOnly) {
+      montoPorTipo[srv] = applyFieldPct('gp-'+srv);
+    } else if (usaSuministrosPorTipo[srv]) {
+      montoPorTipo[srv] = totalActualPorTipo[srv] || 0;
+    } else {
+      montoPorTipo[srv] = existingPre.length ? (existingPre[0]['monto_'+srv] || 0) : 0;
+    }
+  });
+
+  const serviciosTotal = TIPOS_SERVICIO.reduce((t,srv) => t + (montoPorTipo[srv]||0), 0);
   const total = Math.round((alq + serviciosTotal + extrasInqTotal) * 100) / 100;
 
   try {
-    const existing = existingPre.length ? existingPre : await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mes}&limit=1`);
+    const existing = existingPre;
     let pagoId;
     if (existing.length > 0) {
       pagoId = existing[0].id;
@@ -5629,35 +5612,27 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       const pagadoImporte = existing[0].pagado_importe || 0;
       const nuevoSaldo = Math.round(Math.max(0, total - pagadoImporte) * 100) / 100;
       const nuevoPagado = nuevoSaldo <= 0 ? 'SI' : (pagadoImporte > 0 ? 'PARCIAL' : (existing[0].pagado||'NO'));
-      const internetVal = applyFieldPct('gp-internet');
-      const expensasVal = applyFieldPct('gp-expensas');
-      // Only update monto_xxx fields if they are editable (not using pagos_suministros)
-      // Only update monto_xxx if the field is actually editable (has a value > 0 in the form)
-      // For disabled fields (contrato_suministros), preserve existing values
       const patchData = {
         importe_alquiler:alq, total,
         comision_8:comision, fecha_pago_hasta:vence, saldo:nuevoSaldo, pagado:nuevoPagado
       };
-      if (usaSuministros) {
-        // New system: sync pagos_suministros
-        await _syncPagosSuministros(pagoId, contratoId, {epe, agua, tgiu, seguro, internet:internetVal, expensas:expensasVal});
-      } else {
-        // Old system: only update monto_xxx from form fields that are actually editable (enabled)
-        // Disabled fields (modified from Cargar servicios) are never touched here
-        const epeEl = document.getElementById('gp-epe');
-        const aguaEl = document.getElementById('gp-agua');
-        const tgiuEl = document.getElementById('gp-tgiu');
-        const seguroEl = document.getElementById('gp-seguro');
-        const internetEl = document.getElementById('gp-internet');
-        const expensasEl = document.getElementById('gp-expensas');
-        if (epeEl && !epeEl.readOnly && epe > 0) patchData.monto_epe = epe;
-        if (aguaEl && !aguaEl.readOnly && agua > 0) patchData.monto_agua = agua;
-        if (tgiuEl && !tgiuEl.readOnly && tgiu > 0) patchData.monto_tgiu = tgiu;
-        if (seguroEl && !seguroEl.readOnly && seguro > 0) patchData.monto_seguro = seguro;
-        if (internetEl && !internetEl.readOnly && internetVal > 0) patchData.monto_internet = internetVal;
-        if (expensasEl && !expensasEl.readOnly && expensasVal > 0) patchData.monto_expensas = expensasVal;
-      }
+      // Tipos SIN cuenta real (sistema legado): guardar en monto_xxx directo,
+      // solo si el campo está habilitado.
+      TIPOS_SERVICIO.forEach(srv => {
+        if (usaSuministrosPorTipo[srv]) return; // este va por pagos_suministros, más abajo
+        const el = document.getElementById('gp-'+srv);
+        if (el && !el.readOnly) patchData['monto_'+srv] = montoPorTipo[srv];
+      });
       await sbPatch('pagos', pagoId, patchData);
+
+      // Tipos CON cuenta real: sincronizar pagos_suministros — siempre, sin
+      // importar si este mes puntual ya tenía filas cargadas antes.
+      const montosParaSync = {};
+      TIPOS_SERVICIO.forEach(srv => { if (usaSuministrosPorTipo[srv]) montosParaSync[srv] = montoPorTipo[srv]; });
+      if (Object.keys(montosParaSync).length) {
+        await _syncPagosSuministros(pagoId, contratoId, montosParaSync);
+      }
+
       // Update in-memory DB.pagos with saved values
       const idxDB = DB.pagos.findIndex(x => x.id === pagoId);
       if (idxDB >= 0) Object.assign(DB.pagos[idxDB], patchData);
@@ -5670,16 +5645,21 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       } catch(e) {}
       await recalcularFilaPago(pagoId);
     } else {
-      const internetNew = applyFieldPct('gp-internet');
-      const expensasNew = applyFieldPct('gp-expensas');
-      const r = await sbPost('pagos', {
+      const patchNew = {
         hoja, mes, corresponde_a_mes:mes,
-        importe_alquiler:alq, monto_epe:epe, monto_agua:agua,
-        monto_tgiu:tgiu, monto_seguro:seguro, monto_internet:internetNew, monto_expensas:expensasNew, total,
+        importe_alquiler:alq, total,
         comision_8:comision, fecha_pago_hasta:vence, saldo:total, pagado:'0'
+      };
+      TIPOS_SERVICIO.forEach(srv => {
+        if (!usaSuministrosPorTipo[srv]) patchNew['monto_'+srv] = montoPorTipo[srv];
       });
+      const r = await sbPost('pagos', patchNew);
       pagoId = r[0]?.id;
-      if (pagoId) await _syncPagosSuministros(pagoId, contratoId, {epe, agua, tgiu, seguro, internet:internetNew, expensas:expensasNew});
+      if (pagoId) {
+        const montosParaSync = {};
+        TIPOS_SERVICIO.forEach(srv => { if (usaSuministrosPorTipo[srv]) montosParaSync[srv] = montoPorTipo[srv]; });
+        if (Object.keys(montosParaSync).length) await _syncPagosSuministros(pagoId, contratoId, montosParaSync);
+      }
     }
     toast('Importes guardados ✓');
 
@@ -10822,7 +10802,13 @@ async function recargarDatosEPE() {
       const pago = DB.pagos?.find(p => p.id === pdfRec.pago_id);
       const contrato = pago ? DB.contratos.find(c => c.hoja === pago.hoja) : null;
       const psRow = psSuministros.find(ps => ps.pago_id === pdfRec.pago_id && ps.suministro_id === pdfRec.suministro_id);
-      const importeCargado = psRow?.importe || null;
+      const pctInqSum = sum ? (sum.pct_inquilino ?? 100) : 100;
+      const esPropietarioFila = pctInqSum === 0 && sum && (sum.pct_propietario||0) > 0;
+      // Para cuentas 100% propietario, lo "cargado" se guarda en
+      // importe_propietario (no en importe, que queda en 0 porque el
+      // inquilino no debe nada) — si no, esta fila nunca mostraba "Cargado"
+      // aunque ya se hubiera procesado correctamente.
+      const importeCargado = esPropietarioFila ? (psRow?.importe_propietario || null) : (psRow?.importe || null);
       const pagadoEpe = pago ? (pago.pagado_epe || 0) : 0;
       const imp1 = pdfRec.importe_extraido || null;
       const imp2 = pdfRec.importe_2do_vencimiento || null;
