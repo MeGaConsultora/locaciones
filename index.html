@@ -5718,9 +5718,12 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
         comision_8:comision, fecha_pago_hasta:vence, saldo:nuevoSaldo, pagado:nuevoPagado
       };
       // Tipos SIN cuenta real (sistema legado): guardar en monto_xxx directo,
-      // solo si el campo está habilitado.
+      // solo si el campo está habilitado. Tipos CON cuenta real: limpiar el
+      // campo viejo a 0 — si no, queda "pegado" un valor viejo que otras
+      // pantallas (como la grilla) usan como respaldo cuando pagos_suministros
+      // da 0, mostrando un importe fantasma que ya no existe realmente.
       TIPOS_SERVICIO.forEach(srv => {
-        if (usaSuministrosPorTipo[srv]) return; // este va por pagos_suministros, más abajo
+        if (usaSuministrosPorTipo[srv]) { patchData['monto_'+srv] = 0; return; }
         const el = document.getElementById('gp-'+srv);
         if (el && !el.readOnly) patchData['monto_'+srv] = montoPorTipo[srv];
       });
