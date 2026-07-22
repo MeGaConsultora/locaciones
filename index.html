@@ -497,6 +497,7 @@
   </div>
   <button class="tab-btn" onclick="showTab('inmuebles',this)">🏠 Inmuebles</button>
   <button class="tab-btn" onclick="showTab('clientes',this)">🧑‍🤝‍🧑 Clientes</button>
+  <button class="tab-btn" onclick="showTab('caja',this)">💰 Caja</button>
   <div class="tab-dropdown" id="dropdown-mantenimiento">
     <button class="tab-btn" onclick="toggleMantenimientoMenu(event)">🔧 Mantenimiento ▾</button>
     <div class="tab-dropdown-menu" id="mantenimiento-menu" style="display:none">
@@ -812,6 +813,97 @@
         <tbody id="tbody-clientes"></tbody>
       </table>
       <div class="pagination" id="pg-clientes"></div>
+    </div>
+  </div>
+
+  <!-- CAJA -->
+  <div id="panel-caja" class="panel" style="display:none">
+    <div class="toolbar" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.75rem">
+      <strong style="font-size:0.95rem">💰 Caja del negocio</strong>
+      <button class="tab-btn caja-subtab active" onclick="showCajaSubtab('movimientos', this)" style="padding:6px 14px;border-radius:8px">Movimientos</button>
+      <button class="tab-btn caja-subtab" onclick="showCajaSubtab('cierre', this)" style="padding:6px 14px;border-radius:8px">Cierre mensual</button>
+    </div>
+
+    <!-- Subtab: Movimientos -->
+    <div id="caja-subtab-movimientos">
+      <div class="toolbar" style="margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem">
+        <label style="font-size:0.78rem;color:#666">Desde
+          <input type="date" class="filter-select" id="caja-desde" style="width:auto" onchange="renderCajaMovimientos()">
+        </label>
+        <label style="font-size:0.78rem;color:#666">Hasta
+          <input type="date" class="filter-select" id="caja-hasta" style="width:auto" onchange="renderCajaMovimientos()">
+        </label>
+        <select class="filter-select" id="caja-filtro-cuenta" style="width:auto" onchange="renderCajaMovimientos()">
+          <option value="">Todas las cuentas</option>
+          <option value="efectivo">Efectivo</option>
+          <option value="socio1">Cuenta Socio 1</option>
+          <option value="socio2">Cuenta Socio 2</option>
+        </select>
+        <button class="btn btn-primary" onclick="abrirNuevoMovimientoCaja()" style="margin-left:auto">+ Nuevo movimiento</button>
+      </div>
+
+      <div id="caja-resumen-cuentas" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;margin-bottom:1rem"></div>
+
+      <div id="caja-form-nuevo" style="display:none;background:#f7f7f7;border-radius:10px;padding:1rem;margin-bottom:1rem">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.75rem;margin-bottom:0.75rem">
+          <div class="form-group">
+            <label>Fecha</label>
+            <input type="date" id="cm-fecha">
+          </div>
+          <div class="form-group">
+            <label>Tipo</label>
+            <select id="cm-tipo">
+              <option value="ingreso">Ingreso</option>
+              <option value="egreso">Egreso</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Cuenta</label>
+            <select id="cm-cuenta">
+              <option value="efectivo">Efectivo</option>
+              <option value="socio1">Cuenta Socio 1</option>
+              <option value="socio2">Cuenta Socio 2</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Categoría</label>
+            <select id="cm-categoria" onchange="if(this.value==='__otro__'){document.getElementById('cm-categoria-otro').style.display='block';}else{document.getElementById('cm-categoria-otro').style.display='none';}">
+              <option value="Cobro alquiler">Cobro alquiler</option>
+              <option value="Honorarios">Honorarios</option>
+              <option value="Pago proveedor">Pago proveedor</option>
+              <option value="Sueldo">Sueldo</option>
+              <option value="Gasto oficina">Gasto oficina</option>
+              <option value="Impuestos">Impuestos</option>
+              <option value="Retiro socio">Retiro socio</option>
+              <option value="Aporte socio">Aporte socio</option>
+              <option value="__otro__">Otro (especificar)</option>
+            </select>
+            <input type="text" id="cm-categoria-otro" placeholder="Especificar categoría..." style="display:none;margin-top:6px">
+          </div>
+          <div class="form-group">
+            <label>Monto</label>
+            <input type="number" id="cm-monto" placeholder="0">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0.75rem">
+          <label>Concepto / descripción</label>
+          <input type="text" id="cm-concepto" placeholder="Ej: Pago plomero arreglo caño Av. San Martín 324">
+        </div>
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn btn-primary" onclick="guardarMovimientoCaja()">Guardar</button>
+          <button class="btn btn-secondary" onclick="document.getElementById('caja-form-nuevo').style.display='none'">Cancelar</button>
+        </div>
+      </div>
+
+      <div id="caja-tabla-movimientos"></div>
+    </div>
+
+    <!-- Subtab: Cierre mensual -->
+    <div id="caja-subtab-cierre" style="display:none">
+      <div class="toolbar" style="margin-bottom:1rem">
+        <input type="month" class="filter-select" id="caja-mes-cierre" style="width:auto" onchange="renderCierreMensual()">
+      </div>
+      <div id="caja-cierre-contenido"></div>
     </div>
   </div>
 
@@ -1810,6 +1902,8 @@ function renderVencimientos() {
 // ============================================================
 let contratoActual = null;
 let pagosActuales = [];
+let CAJA_MOVIMIENTOS = [];
+let cajaInicializada = false;
 let extrasActuales = {};
 
 async function openContrato(id, _unused1, _unused2, tabInicial) {
@@ -8732,7 +8826,7 @@ function selectInforme(tipo) {
   document.getElementById('informes-menu').style.display = 'none';
 
   // First hide ALL main panels (same as showTab)
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -9451,7 +9545,7 @@ function showTab(name, btn) {
   // Close Gestión dropdown
   document.getElementById('informes-menu').style.display = 'none';
   // Hide ALL panels using both class and inline style
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -9472,6 +9566,7 @@ function showTab(name, btn) {
   if (name === 'consorcios') renderConsorcios();
   if (name === 'informes') { populateInformeAnios(); document.getElementById('informes-menu').style.display = 'none'; }
   if (name === 'inmuebles') { if (!DB_INMUEBLES.length) loadAll().then(renderInmuebles); else renderInmuebles(); }
+  if (name === 'caja') initCaja();
 }
 
 
@@ -9720,6 +9815,241 @@ function renderClientes() {
       }).join('');
 
   renderPagination('pg-clientes', clientesFiltrados.length, PG_CLIENTES.page, n => { PG_CLIENTES.page=n; renderClientes(); });
+}
+
+// ============================================================
+// CAJA — ingresos y egresos del negocio, por cuenta (efectivo /
+// socio1 / socio2), con cierre y compensación mensual.
+// ============================================================
+
+const CAJA_CUENTA_LABEL = { efectivo: 'Efectivo', socio1: 'Cuenta Socio 1', socio2: 'Cuenta Socio 2' };
+
+async function initCaja() {
+  if (cajaInicializada) { renderCajaMovimientos(); return; }
+  cajaInicializada = true;
+  const hoy = TODAY;
+  const primerDiaMes = hoy.substring(0,7) + '-01';
+  document.getElementById('caja-desde').value = primerDiaMes;
+  document.getElementById('caja-hasta').value = hoy;
+  document.getElementById('caja-mes-cierre').value = hoy.substring(0,7);
+  await cargarCajaMovimientos();
+  renderCajaMovimientos();
+}
+
+async function cargarCajaMovimientos() {
+  try {
+    CAJA_MOVIMIENTOS = await sbGetAll('caja_movimientos', 'select=*&order=fecha.desc,id.desc');
+  } catch(e) {
+    console.error('Error cargando movimientos de caja:', e);
+    toast('Error cargando movimientos de caja', 'error');
+    CAJA_MOVIMIENTOS = [];
+  }
+}
+
+function showCajaSubtab(nombre, btn) {
+  document.querySelectorAll('.caja-subtab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  document.getElementById('caja-subtab-movimientos').style.display = nombre === 'movimientos' ? 'block' : 'none';
+  document.getElementById('caja-subtab-cierre').style.display = nombre === 'cierre' ? 'block' : 'none';
+  if (nombre === 'cierre') renderCierreMensual();
+}
+
+function abrirNuevoMovimientoCaja() {
+  document.getElementById('caja-form-nuevo').style.display = 'block';
+  document.getElementById('cm-fecha').value = TODAY;
+  document.getElementById('cm-monto').value = '';
+  document.getElementById('cm-concepto').value = '';
+  document.getElementById('cm-categoria-otro').value = '';
+  document.getElementById('cm-categoria-otro').style.display = 'none';
+}
+
+async function guardarMovimientoCaja() {
+  const fecha = document.getElementById('cm-fecha').value;
+  const tipo = document.getElementById('cm-tipo').value;
+  const cuenta = document.getElementById('cm-cuenta').value;
+  const catSelect = document.getElementById('cm-categoria').value;
+  const categoria = catSelect === '__otro__' ? (document.getElementById('cm-categoria-otro').value.trim() || 'Otro') : catSelect;
+  const monto = parseMonto(document.getElementById('cm-monto').value);
+  const concepto = document.getElementById('cm-concepto').value.trim();
+
+  if (!fecha) { toast('Elegí una fecha', 'error'); return; }
+  if (!monto || monto <= 0) { toast('Ingresá un monto válido', 'error'); return; }
+
+  try {
+    const nuevo = await sbPost('caja_movimientos', { fecha, tipo, cuenta, categoria, concepto, monto });
+    if (nuevo && nuevo[0]) CAJA_MOVIMIENTOS.unshift(nuevo[0]);
+    document.getElementById('caja-form-nuevo').style.display = 'none';
+    toast('Movimiento guardado ✓');
+    renderCajaMovimientos();
+  } catch(e) {
+    console.error('Error guardando movimiento de caja:', e);
+    toast('Error al guardar: ' + e.message, 'error');
+  }
+}
+
+async function eliminarMovimientoCaja(id) {
+  if (!confirm('¿Eliminar este movimiento de caja? No se puede deshacer.')) return;
+  try {
+    await sbDelete('caja_movimientos', id);
+    CAJA_MOVIMIENTOS = CAJA_MOVIMIENTOS.filter(m => m.id !== id);
+    toast('Movimiento eliminado ✓');
+    renderCajaMovimientos();
+  } catch(e) {
+    toast('Error al eliminar: ' + e.message, 'error');
+  }
+}
+
+function renderCajaMovimientos() {
+  const desde = document.getElementById('caja-desde').value;
+  const hasta = document.getElementById('caja-hasta').value;
+  const filtroCuenta = document.getElementById('caja-filtro-cuenta').value;
+
+  const filtrados = CAJA_MOVIMIENTOS.filter(m => {
+    if (desde && m.fecha < desde) return false;
+    if (hasta && m.fecha > hasta) return false;
+    if (filtroCuenta && m.cuenta !== filtroCuenta) return false;
+    return true;
+  });
+
+  // Resumen por cuenta (dentro del rango filtrado por fecha, sin el filtro de cuenta específico)
+  const filtradosPorFecha = CAJA_MOVIMIENTOS.filter(m => (!desde || m.fecha >= desde) && (!hasta || m.fecha <= hasta));
+  const resumenCont = document.getElementById('caja-resumen-cuentas');
+  resumenCont.innerHTML = ['efectivo','socio1','socio2'].map(cta => {
+    const movs = filtradosPorFecha.filter(m => m.cuenta === cta);
+    const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
+    const egr = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
+    const neto = ing - egr;
+    return `<div style="background:#f7f7f7;border-radius:10px;padding:0.85rem 1rem">
+      <div style="font-size:0.75rem;color:#888;text-transform:uppercase;margin-bottom:4px">${CAJA_CUENTA_LABEL[cta]}</div>
+      <div style="font-size:1.15rem;font-weight:700;color:${neto>=0?'var(--green)':'var(--accent)'}">${formatMoney(neto)}</div>
+      <div style="font-size:0.72rem;color:#888;margin-top:4px">Ingresos ${formatMoney(ing)} · Egresos ${formatMoney(egr)}</div>
+    </div>`;
+  }).join('');
+
+  const cont = document.getElementById('caja-tabla-movimientos');
+  if (!filtrados.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">💰</div><p>Sin movimientos en este período</p></div>';
+    return;
+  }
+  cont.innerHTML = `<div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+    <thead><tr style="background:var(--ink2);color:white">
+      <th style="padding:8px 10px;text-align:left">Fecha</th>
+      <th style="padding:8px 10px;text-align:left">Cuenta</th>
+      <th style="padding:8px 10px;text-align:left">Categoría</th>
+      <th style="padding:8px 10px;text-align:left">Concepto</th>
+      <th style="padding:8px 10px;text-align:right">Monto</th>
+      <th style="padding:8px 10px;text-align:center">Acciones</th>
+    </tr></thead>
+    <tbody>
+      ${filtrados.map(m => {
+        const esIngreso = m.tipo === 'ingreso';
+        const [y,mo,d] = m.fecha.split('-');
+        return `<tr style="border-bottom:1px solid #eee">
+          <td style="padding:7px 10px">${d}/${mo}/${y}</td>
+          <td style="padding:7px 10px">${CAJA_CUENTA_LABEL[m.cuenta]||m.cuenta}</td>
+          <td style="padding:7px 10px">${m.categoria||'—'}</td>
+          <td style="padding:7px 10px;color:#666">${m.concepto||'—'}</td>
+          <td style="padding:7px 10px;text-align:right;font-weight:600;color:${esIngreso?'var(--green)':'var(--accent)'}">${esIngreso?'+':'-'} ${formatMoney(m.monto)}</td>
+          <td style="padding:7px 10px;text-align:center"><button onclick="eliminarMovimientoCaja(${m.id})" style="background:none;border:none;color:#c8483a;cursor:pointer;font-size:0.85rem" title="Eliminar">🗑️</button></td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table></div>`;
+}
+
+function renderCierreMensual() {
+  const mesKey = document.getElementById('caja-mes-cierre').value; // "YYYY-MM"
+  if (!mesKey) return;
+  const movsDelMes = CAJA_MOVIMIENTOS.filter(m => m.fecha && m.fecha.startsWith(mesKey));
+
+  const resultadoPorCuenta = {};
+  ['efectivo','socio1','socio2'].forEach(cta => {
+    const movs = movsDelMes.filter(m => m.cuenta === cta);
+    const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
+    const egr = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
+    resultadoPorCuenta[cta] = { ing, egr, neto: ing - egr };
+  });
+
+  const resultadoTotal = resultadoPorCuenta.efectivo.neto + resultadoPorCuenta.socio1.neto + resultadoPorCuenta.socio2.neto;
+  const leCorresponde = resultadoTotal / 2;
+
+  const diffSocio1 = resultadoPorCuenta.socio1.neto - leCorresponde;
+  const diffSocio2 = resultadoPorCuenta.socio2.neto - leCorresponde;
+
+  let transferencia = '';
+  if (Math.abs(diffSocio1) > 0.01) {
+    if (diffSocio1 > 0) {
+      transferencia = `Socio 1 le transfiere <strong>${formatMoney(diffSocio1)}</strong> a Socio 2 para emparejar.`;
+    } else {
+      transferencia = `Socio 2 le transfiere <strong>${formatMoney(Math.abs(diffSocio1))}</strong> a Socio 1 para emparejar.`;
+    }
+  } else {
+    transferencia = 'Ya están emparejados — no hace falta ninguna transferencia.';
+  }
+
+  const cont = document.getElementById('caja-cierre-contenido');
+  const fmt = n => `<span style="color:${n>=0?'var(--green)':'var(--accent)'}">${formatMoney(n)}</span>`;
+
+  cont.innerHTML = `
+    <div class="table-wrap" style="margin-bottom:1.25rem">
+      <table style="width:100%;border-collapse:collapse;font-size:0.88rem">
+        <thead><tr style="background:var(--ink2);color:white">
+          <th style="padding:8px 10px;text-align:left">Cuenta</th>
+          <th style="padding:8px 10px;text-align:right">Ingresos</th>
+          <th style="padding:8px 10px;text-align:right">Egresos</th>
+          <th style="padding:8px 10px;text-align:right">Resultado</th>
+        </tr></thead>
+        <tbody>
+          ${['efectivo','socio1','socio2'].map(cta => `
+            <tr style="border-bottom:1px solid #eee">
+              <td style="padding:7px 10px">${CAJA_CUENTA_LABEL[cta]}</td>
+              <td style="padding:7px 10px;text-align:right;color:var(--green)">${formatMoney(resultadoPorCuenta[cta].ing)}</td>
+              <td style="padding:7px 10px;text-align:right;color:var(--accent)">${formatMoney(resultadoPorCuenta[cta].egr)}</td>
+              <td style="padding:7px 10px;text-align:right;font-weight:600">${fmt(resultadoPorCuenta[cta].neto)}</td>
+            </tr>`).join('')}
+          <tr style="font-weight:700;border-top:2px solid var(--ink)">
+            <td style="padding:8px 10px">Resultado total del negocio</td>
+            <td colspan="2"></td>
+            <td style="padding:8px 10px;text-align:right">${fmt(resultadoTotal)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div style="background:#f7f7f7;border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.25rem">
+      <div style="font-size:0.8rem;color:#888;text-transform:uppercase;margin-bottom:6px">Reparto 50/50</div>
+      <div>A cada socio le corresponde: <strong>${formatMoney(leCorresponde)}</strong></div>
+    </div>
+
+    <div class="table-wrap" style="margin-bottom:1.25rem">
+      <table style="width:100%;border-collapse:collapse;font-size:0.88rem">
+        <thead><tr style="background:var(--ink2);color:white">
+          <th style="padding:8px 10px;text-align:left">Socio</th>
+          <th style="padding:8px 10px;text-align:right">Tiene (según su cuenta)</th>
+          <th style="padding:8px 10px;text-align:right">Le corresponde</th>
+          <th style="padding:8px 10px;text-align:right">Diferencia</th>
+        </tr></thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #eee">
+            <td style="padding:7px 10px">Socio 1</td>
+            <td style="padding:7px 10px;text-align:right">${formatMoney(resultadoPorCuenta.socio1.neto)}</td>
+            <td style="padding:7px 10px;text-align:right">${formatMoney(leCorresponde)}</td>
+            <td style="padding:7px 10px;text-align:right;font-weight:600">${fmt(diffSocio1)}</td>
+          </tr>
+          <tr>
+            <td style="padding:7px 10px">Socio 2</td>
+            <td style="padding:7px 10px;text-align:right">${formatMoney(resultadoPorCuenta.socio2.neto)}</td>
+            <td style="padding:7px 10px;text-align:right">${formatMoney(leCorresponde)}</td>
+            <td style="padding:7px 10px;text-align:right;font-weight:600">${fmt(diffSocio2)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div style="background:#e8f5e9;border-radius:10px;padding:1rem 1.25rem;font-size:0.95rem">
+      <strong>Compensación:</strong> ${transferencia}
+    </div>
+  `;
 }
 
 function openPersona(id) {
@@ -10313,7 +10643,7 @@ document.addEventListener('visibilitychange', () => {
 // ============================================================
 // Initialize panel visibility
 (function() {
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','inmuebles','clientes','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) el.style.display = id === 'dashboard' ? 'block' : 'none';
