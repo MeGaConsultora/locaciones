@@ -11251,44 +11251,40 @@ async function confirmarImportarEPE() {
 
   for (const d of seleccionados) {
     try {
-      const allSumsForNro = DB_SUMINISTROS.filter(s => s.nro_cuenta === d.nro_cuenta && s.tipo === srv && ((s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0));
-      const contratosSums = {};
-      allSumsForNro.forEach(s => { if (!contratosSums[s.contrato_id]) contratosSums[s.contrato_id] = []; contratosSums[s.contrato_id].push(s); });
+      // Cada fila (d) ya sabe exactamente a qué pago_id y suministro_id
+      // corresponde (viene directo de la boleta en PDF escaneada para ESE
+      // contrato puntual) — procesar solo eso, no "todos los contratos que
+      // comparten esta cuenta", que es lo que causaba que se cargaran de
+      // más contratos NO tildados solo por compartir el mismo nro_cuenta.
+      if (!d.pago_id || !d.suministro_id) continue;
+      const sum = DB_SUMINISTROS.find(s => s.id === d.suministro_id);
+      if (!sum) continue;
+      const contrato = DB.contratos.find(c => c.id === parseInt(sum.contrato_id));
+      if (!contrato || getEstado(contrato) !== 'vigente') continue;
 
-      for (const [contratoId, sums] of Object.entries(contratosSums)) {
-        const contrato = DB.contratos.find(c => c.id === parseInt(contratoId));
-        if (!contrato || getEstado(contrato) !== 'vigente') continue;
-        const hojaEncoded = encodeURIComponent(contrato.hoja);
-        const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesStr}&limit=1`);
-        if (!pagos.length) continue;
-        const p = pagos[0];
+      const p = DB.pagos?.find(x => x.id === d.pago_id) || (await sbGet('pagos', `id=eq.${d.pago_id}&limit=1`))[0];
+      if (!p) continue;
 
-        // No actualizar contratos que ya pagaron su parte
-        const psActual = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&suministro_id=eq.${sums[0].id}&limit=1`).catch(()=>[]);
-        const importeInquilino = psActual.length ? (psActual[0].importe || 0) : 0;
-        const pagadoEpe = p.pagado_epe || 0;
-        if (importeInquilino > 0 && pagadoEpe >= importeInquilino) continue;
+      // No actualizar si ya pagó su parte
+      const psActual = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&suministro_id=eq.${sum.id}&limit=1`).catch(()=>[]);
+      const importeInquilino = psActual.length ? (psActual[0].importe || 0) : 0;
+      const pagadoEpe = p.pagado_epe || 0;
+      if (importeInquilino > 0 && pagadoEpe >= importeInquilino) continue;
 
-        let totalMonto = 0;
-        for (const s of sums) {
-          const montoInq = Math.round(d.importe * (s.pct_inquilino||0) / 100 * 100) / 100;
-          const montoProp = Math.round(d.importe * (s.pct_propietario||0) / 100 * 100) / 100;
-          totalMonto += montoInq;
-          const existing = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&suministro_id=eq.${s.id}&limit=1`);
-          if (existing.length) {
-            await sbPatch('pagos_suministros', existing[0].id, { importe: montoInq, importe_propietario: montoProp });
-          } else {
-            await sbPost('pagos_suministros', { pago_id: p.id, suministro_id: s.id, importe: montoInq, importe_propietario: montoProp });
-          }
-        }
-
-        // Leer todos los pagos_suministros del pago para calcular totalSrv correcto
-        const allPsActuales = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&select=suministro_id,importe`).catch(()=>[]);
-        const totalSrv = allPsActuales.reduce((t, ps) => { const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id); return cs?.tipo === srv ? t + (ps.importe||0) : t; }, 0);
-        const newTotal = (p.importe_alquiler||0) + await getTotalServiciosPago(p.id, srv, totalSrv);
-        const abonadoP = p.pagado_importe || (p.total||0) - (p.saldo||0);
-        await sbPatch('pagos', p.id, { ['monto_'+srv]: totalSrv, total: Math.round(newTotal*100)/100, saldo: Math.round(Math.max(0, newTotal - abonadoP)*100)/100 });
+      const montoInq = Math.round(d.importe * (sum.pct_inquilino||0) / 100 * 100) / 100;
+      const montoProp = Math.round(d.importe * (sum.pct_propietario||0) / 100 * 100) / 100;
+      if (psActual.length) {
+        await sbPatch('pagos_suministros', psActual[0].id, { importe: montoInq, importe_propietario: montoProp });
+      } else {
+        await sbPost('pagos_suministros', { pago_id: p.id, suministro_id: sum.id, importe: montoInq, importe_propietario: montoProp });
       }
+
+      // Leer todos los pagos_suministros del pago para calcular totalSrv correcto
+      const allPsActuales = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&select=suministro_id,importe`).catch(()=>[]);
+      const totalSrv = allPsActuales.reduce((t, ps) => { const cs = DB_SUMINISTROS.find(x => x.id === ps.suministro_id); return cs?.tipo === srv ? t + (ps.importe||0) : t; }, 0);
+      const newTotal = (p.importe_alquiler||0) + await getTotalServiciosPago(p.id, srv, totalSrv);
+      const abonadoP = p.pagado_importe || (p.total||0) - (p.saldo||0);
+      await sbPatch('pagos', p.id, { ['monto_'+srv]: 0, total: Math.round(newTotal*100)/100, saldo: Math.round(Math.max(0, newTotal - abonadoP)*100)/100 });
       cargados++;
     } catch(e) { console.error('EPE import error:', d.nro_cuenta, e.message); }
   }
@@ -11720,27 +11716,24 @@ async function confirmarImportarPDF() {
   for (const r of seleccionados) {
     try {
       const srv = window._pdfSrv;
-      // Find ALL suministros sharing this nro_cuenta (distributed account)
-      const allSumsForNro = r.cuenta
-        ? DB_SUMINISTROS.filter(s => s.nro_cuenta === String(r.cuenta) && s.tipo === srv && ((s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0))
-        : DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === r.contrato.id && s.tipo === srv && ((s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0));
+      // Cada fila (r) ya está resuelta a UN contrato específico (r.contrato,
+      // determinado por el número de cuenta leído en la boleta escaneada) —
+      // procesar solo el/los suministro(s) de ESE contrato puntual, no todos
+      // los contratos que comparten la misma cuenta (eso hacía que se
+      // cargaran de más contratos no tildados, solo por compartir cuenta).
+      const sums = r.cuenta
+        ? DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === r.contrato.id && s.tipo === srv && String(s.nro_cuenta) === String(r.cuenta))
+        : DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === r.contrato.id && s.tipo === srv);
 
-      // Group by contract
-      const contratosSums = {};
-      allSumsForNro.forEach(s => {
-        if (!contratosSums[s.contrato_id]) contratosSums[s.contrato_id] = [];
-        contratosSums[s.contrato_id].push(s);
-      });
+      const contrato = r.contrato;
+      if (!contrato || getEstado(contrato) !== 'vigente') continue;
+      const hoja = contrato.hoja;
+      const hojaEncoded = encodeURIComponent(hoja);
+      const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesStr}&limit=1`);
+      if (!pagos.length) continue;
+      const p = pagos[0];
 
-      for (const [contratoId, sums] of Object.entries(contratosSums)) {
-        const contrato = DB.contratos.find(c => c.id === parseInt(contratoId));
-        if (!contrato || getEstado(contrato) !== 'vigente') continue;
-        const hoja = contrato.hoja;
-        const hojaEncoded = encodeURIComponent(hoja);
-        const pagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesStr}&limit=1`);
-        if (!pagos.length) continue;
-        const p = pagos[0];
-
+      if (sums.length) {
         let totalMonto = 0;
         for (const s of sums) {
           const montoInq = Math.round(r.importe * (s.pct_inquilino||0) / 100 * 100) / 100;
@@ -11753,7 +11746,9 @@ async function confirmarImportarPDF() {
             await sbPost('pagos_suministros', { pago_id: p.id, suministro_id: s.id, importe: montoInq, importe_propietario: montoProp });
           }
         }
+      }
 
+      {
         const alq = p.importe_alquiler || 0;
         const allPsForPago = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&select=suministro_id,importe`);
         const totalSrv = allPsForPago.reduce((t, ps) => {
@@ -11762,7 +11757,7 @@ async function confirmarImportarPDF() {
         }, 0);
         const newTotal = alq + await getTotalServiciosPago(p.id, srv, totalSrv);
         const patch = { total: Math.round(newTotal*100)/100, saldo: Math.max(0, Math.round((newTotal - ((p.total||0) - (p.saldo||0)))*100)/100) };
-        patch['monto_'+srv] = totalSrv;
+        if (sums.length) patch['monto_'+srv] = 0; // limpiar campo legado una vez migrado
         await sbPatch('pagos', p.id, patch);
 
         if (window._pdfFileName) {
