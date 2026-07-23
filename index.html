@@ -836,8 +836,8 @@
         <select class="filter-select" id="caja-filtro-cuenta" style="width:auto" onchange="renderCajaMovimientos()">
           <option value="">Todas las cuentas</option>
           <option value="efectivo">Efectivo</option>
-          <option value="socio1">Cuenta Socio 1</option>
-          <option value="socio2">Cuenta Socio 2</option>
+          <option value="gregorio">Gregorio</option>
+          <option value="hugo">Hugo</option>
         </select>
         <button class="btn btn-primary" onclick="abrirNuevoMovimientoCaja()" style="margin-left:auto">+ Nuevo movimiento</button>
       </div>
@@ -861,8 +861,8 @@
             <label>Cuenta</label>
             <select id="cm-cuenta">
               <option value="efectivo">Efectivo</option>
-              <option value="socio1">Cuenta Socio 1</option>
-              <option value="socio2">Cuenta Socio 2</option>
+              <option value="gregorio">Gregorio</option>
+              <option value="hugo">Hugo</option>
             </select>
           </div>
           <div class="form-group">
@@ -9842,10 +9842,10 @@ function renderClientes() {
 
 // ============================================================
 // CAJA — ingresos y egresos del negocio, por cuenta (efectivo /
-// socio1 / socio2), con cierre y compensación mensual.
+// gregorio / hugo), con cierre y compensación mensual.
 // ============================================================
 
-const CAJA_CUENTA_LABEL = { efectivo: 'Efectivo', socio1: 'Cuenta Socio 1', socio2: 'Cuenta Socio 2' };
+const CAJA_CUENTA_LABEL = { efectivo: 'Efectivo', gregorio: 'Gregorio', hugo: 'Hugo' };
 
 async function initCaja() {
   if (cajaInicializada) { renderCajaMovimientos(); return; }
@@ -9937,7 +9937,7 @@ function renderCajaMovimientos() {
   // Resumen por cuenta (dentro del rango filtrado por fecha, sin el filtro de cuenta específico)
   const filtradosPorFecha = CAJA_MOVIMIENTOS.filter(m => (!desde || m.fecha >= desde) && (!hasta || m.fecha <= hasta));
   const resumenCont = document.getElementById('caja-resumen-cuentas');
-  resumenCont.innerHTML = ['efectivo','socio1','socio2'].map(cta => {
+  resumenCont.innerHTML = ['efectivo','gregorio','hugo'].map(cta => {
     const movs = filtradosPorFecha.filter(m => m.cuenta === cta);
     const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
     const egr = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
@@ -9986,25 +9986,25 @@ function renderCierreMensual() {
   const movsDelMes = CAJA_MOVIMIENTOS.filter(m => m.fecha && m.fecha.startsWith(mesKey));
 
   const resultadoPorCuenta = {};
-  ['efectivo','socio1','socio2'].forEach(cta => {
+  ['efectivo','gregorio','hugo'].forEach(cta => {
     const movs = movsDelMes.filter(m => m.cuenta === cta);
     const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
     const egr = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
     resultadoPorCuenta[cta] = { ing, egr, neto: ing - egr };
   });
 
-  const resultadoTotal = resultadoPorCuenta.efectivo.neto + resultadoPorCuenta.socio1.neto + resultadoPorCuenta.socio2.neto;
+  const resultadoTotal = resultadoPorCuenta.efectivo.neto + resultadoPorCuenta.gregorio.neto + resultadoPorCuenta.hugo.neto;
   const leCorresponde = resultadoTotal / 2;
 
-  const diffSocio1 = resultadoPorCuenta.socio1.neto - leCorresponde;
-  const diffSocio2 = resultadoPorCuenta.socio2.neto - leCorresponde;
+  const diffSocio1 = resultadoPorCuenta.gregorio.neto - leCorresponde;
+  const diffSocio2 = resultadoPorCuenta.hugo.neto - leCorresponde;
 
   let transferencia = '';
   if (Math.abs(diffSocio1) > 0.01) {
     if (diffSocio1 > 0) {
-      transferencia = `Socio 1 le transfiere <strong>${formatMoney(diffSocio1)}</strong> a Socio 2 para emparejar.`;
+      transferencia = `${CAJA_CUENTA_LABEL.gregorio} le transfiere <strong>${formatMoney(diffSocio1)}</strong> a ${CAJA_CUENTA_LABEL.hugo} para emparejar.`;
     } else {
-      transferencia = `Socio 2 le transfiere <strong>${formatMoney(Math.abs(diffSocio1))}</strong> a Socio 1 para emparejar.`;
+      transferencia = `${CAJA_CUENTA_LABEL.hugo} le transfiere <strong>${formatMoney(Math.abs(diffSocio1))}</strong> a ${CAJA_CUENTA_LABEL.gregorio} para emparejar.`;
     }
   } else {
     transferencia = 'Ya están emparejados — no hace falta ninguna transferencia.';
@@ -10023,7 +10023,7 @@ function renderCierreMensual() {
           <th style="padding:8px 10px;text-align:right">Resultado</th>
         </tr></thead>
         <tbody>
-          ${['efectivo','socio1','socio2'].map(cta => `
+          ${['efectivo','gregorio','hugo'].map(cta => `
             <tr style="border-bottom:1px solid #eee">
               <td style="padding:7px 10px">${CAJA_CUENTA_LABEL[cta]}</td>
               <td style="padding:7px 10px;text-align:right;color:var(--green)">${formatMoney(resultadoPorCuenta[cta].ing)}</td>
@@ -10054,14 +10054,14 @@ function renderCierreMensual() {
         </tr></thead>
         <tbody>
           <tr style="border-bottom:1px solid #eee">
-            <td style="padding:7px 10px">Socio 1</td>
-            <td style="padding:7px 10px;text-align:right">${formatMoney(resultadoPorCuenta.socio1.neto)}</td>
+            <td style="padding:7px 10px">${CAJA_CUENTA_LABEL.gregorio}</td>
+            <td style="padding:7px 10px;text-align:right">${formatMoney(resultadoPorCuenta.gregorio.neto)}</td>
             <td style="padding:7px 10px;text-align:right">${formatMoney(leCorresponde)}</td>
             <td style="padding:7px 10px;text-align:right;font-weight:600">${fmt(diffSocio1)}</td>
           </tr>
           <tr>
-            <td style="padding:7px 10px">Socio 2</td>
-            <td style="padding:7px 10px;text-align:right">${formatMoney(resultadoPorCuenta.socio2.neto)}</td>
+            <td style="padding:7px 10px">${CAJA_CUENTA_LABEL.hugo}</td>
+            <td style="padding:7px 10px;text-align:right">${formatMoney(resultadoPorCuenta.hugo.neto)}</td>
             <td style="padding:7px 10px;text-align:right">${formatMoney(leCorresponde)}</td>
             <td style="padding:7px 10px;text-align:right;font-weight:600">${fmt(diffSocio2)}</td>
           </tr>
