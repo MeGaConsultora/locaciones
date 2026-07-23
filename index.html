@@ -2867,13 +2867,6 @@ Ante cualquier duda, comunicate con nosotros.`;
           <button class="btn btn-green" style="font-size:0.82rem;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 8px" onclick="copiarMensajeAcceso()"><span>📋 Copiar mensaje</span><span style="font-size:0.7rem;opacity:0.75">(luego copiar contraseña)</span></button>
           <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 8px"><span>💬 Enviar por WhatsApp</span><span style="font-size:0.7rem;opacity:0.75">(luego enviar contraseña)</span></a>
         </div>
-        <div style="background:#fff8e1;border:1.5px solid #ffc107;border-radius:8px;padding:0.6rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
-          <div>
-            <div style="font-size:0.72rem;color:#888;margin-bottom:2px">Contraseña temporal</div>
-            <div style="font-size:1.1rem;font-weight:700;letter-spacing:0.1em;font-family:monospace;color:#333">${tempPass}</div>
-          </div>
-          <button onclick="navigator.clipboard.writeText('${tempPass}').then(()=>toast('Contraseña copiada ✓'))" style="background:#ffc107;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:0.8rem;font-weight:600;white-space:nowrap">📋 Copiar</button>
-        </div>
       </div>
     `;
     toast('Acceso modificado ✓');
@@ -2905,6 +2898,16 @@ async function crearAccesoInquilino(contratoId, hoja) {
     // User may already exist - that's ok, we still have the tempPass to share
     const authUserId = signupData?.user?.id || signupData?.id || null;
     const userAlreadyExisted = signupR.status === 400 || signupR.status === 422 || signupR.status === 404;
+    // Log the raw response always — si signupR.ok es false por un motivo
+    // DISTINTO a "ya existe" (rate limit, config del proyecto, etc.), antes
+    // quedaba oculto y el flujo seguía como si nada, guardando una
+    // contraseña temporal que en realidad nunca quedó activa en Supabase Auth.
+    if (!signupR.ok) {
+      console.warn('Respuesta de /auth/v1/signup (status ' + signupR.status + '):', signupData);
+    }
+    if (!signupR.ok && !authUserId && !userAlreadyExisted) {
+      toast('⚠ Supabase rechazó la creación de la cuenta: ' + (signupData?.msg || signupData?.error_description || signupData?.error || JSON.stringify(signupData)), 'error');
+    }
 
     // 2. Check if already in usuarios table
     const existing = await sbGet('usuarios', `email=eq.${encodeURIComponent(email)}&limit=1`);
@@ -2913,7 +2916,33 @@ async function crearAccesoInquilino(contratoId, hoja) {
     const inquilinos = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === contratoId && x.rol === 'inquilino');
     const personaId = inquilinos[0]?.persona_id || null;
 
-    if (existing.length === 0) {
+    let passwordAMostrar = tempPass;
+    if (existing.length > 0) {
+      // Update existing. Si la cuenta YA existía en Supabase Auth (signup
+      // falló por eso), el tempPass recién generado NO quedó realmente
+      // activo — guardarlo igual dejaría una contraseña mostrada que nunca
+      // va a funcionar. En ese caso, mantener la que ya estaba guardada
+      // (sigue siendo la válida) y avisar al admin.
+      const patchUsuario = {
+        aprobado: true,
+        rol: 'inquilino',
+        persona_id: existing[0].persona_id || personaId || null,
+        user_id: existing[0].user_id || authUserId,
+      };
+      if (!userAlreadyExisted && authUserId) {
+        // Este es un caso genuinamente nuevo en Auth (no debería pasar
+        // acá casi nunca, dado que existing.length>0, pero por las dudas)
+        patchUsuario.temp_password = tempPass;
+      } else if (existing[0].temp_password) {
+        // Reusar la contraseña temporal existente, que sigue siendo la real
+        passwordAMostrar = existing[0].temp_password;
+        toast('ℹ Este inquilino ya tenía una cuenta — se reenvía la contraseña temporal existente, no una nueva.', '');
+      } else {
+        toast('⚠ Este inquilino ya cambió su contraseña antes — no puedo generarle una nueva desde acá. Decile que use "¿Olvidaste tu contraseña?" en el portal.', 'error');
+        return;
+      }
+      await sbPatch('usuarios', existing[0].id, patchUsuario);
+    } else {
       await sbPost('usuarios', {
         email,
         nombre: nombre || email,
@@ -2922,15 +2951,6 @@ async function crearAccesoInquilino(contratoId, hoja) {
         rol: 'inquilino',
         persona_id: personaId || null,
         user_id: authUserId,
-        temp_password: tempPass
-      });
-    } else {
-      // Update existing
-      await sbPatch('usuarios', existing[0].id, {
-        aprobado: true,
-        rol: 'inquilino',
-        persona_id: existing[0].persona_id || personaId || null,
-        user_id: existing[0].user_id || authUserId,
         temp_password: tempPass
       });
     }
@@ -2974,9 +2994,9 @@ Ante cualquier duda, comunicate con nosotros.`;
         <div style="background:#fff8e1;border:1.5px solid #ffc107;border-radius:8px;padding:0.6rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
           <div>
             <div style="font-size:0.72rem;color:#888;margin-bottom:2px">Contraseña temporal</div>
-            <div style="font-size:1.1rem;font-weight:700;letter-spacing:0.1em;font-family:monospace;color:#333">${tempPass}</div>
+            <div style="font-size:1.1rem;font-weight:700;letter-spacing:0.1em;font-family:monospace;color:#333">${passwordAMostrar}</div>
           </div>
-          <button onclick="navigator.clipboard.writeText('${tempPass}').then(()=>toast('Contraseña copiada ✓'))" style="background:#ffc107;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:0.8rem;font-weight:600;white-space:nowrap">📋 Copiar</button>
+          <button onclick="navigator.clipboard.writeText('${passwordAMostrar}').then(()=>toast('Contraseña copiada ✓'))" style="background:#ffc107;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:0.8rem;font-weight:600;white-space:nowrap">📋 Copiar</button>
         </div>
       </div>
     `;
@@ -10528,12 +10548,15 @@ async function guardarVinculacion(usuarioId) {
 }
 
 async function reenviarAcceso(email, nombre, tempPass) {
-  // Always generate a new temp password
-  const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  tempPass = Array.from({length:8}, () => chars[Math.floor(Math.random()*chars.length)]).join('') + '!1';
-  const usuarios = await sbGet('usuarios', `email=eq.${encodeURIComponent(email)}&limit=1`);
-  if (usuarios.length) {
-    await sbPatch('usuarios', usuarios[0].id, { temp_password: tempPass });
+  // IMPORTANTE: reenviar la contraseña temporal YA EXISTENTE (la que
+  // realmente quedó configurada en Supabase Auth cuando se creó el acceso
+  // por primera vez) — antes se generaba una NUEVA acá mismo y solo se
+  // guardaba en la tabla "usuarios", sin actualizar la cuenta real de
+  // Supabase Auth. Eso dejaba la contraseña mostrada/enviada completamente
+  // desconectada de la real, y el inquilino nunca podía loguearse con ella.
+  if (!tempPass) {
+    toast('⚠ Este inquilino ya cambió su contraseña — no hay una temporal para reenviar. Decile que use "¿Olvidaste tu contraseña?" en el portal.', 'error');
+    return;
   }
   const nombreMostrar = (() => {
     if (!nombre) return '';
