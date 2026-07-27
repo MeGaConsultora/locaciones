@@ -6587,6 +6587,16 @@ function populateInformeAnios() {
   anios.forEach(a => { const o = document.createElement('option'); o.value=a; o.textContent=a; sel.appendChild(o); });
 }
 
+function sortInforme(col) {
+  if (window._informeSortCol === col) {
+    window._informeSortDir = window._informeSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    window._informeSortCol = col;
+    window._informeSortDir = 'asc';
+  }
+  renderInforme();
+}
+
 async function renderInforme() {
   const anio = document.getElementById('inf-anio')?.value;
   const mes = document.getElementById('inf-mes')?.value;
@@ -6600,8 +6610,13 @@ async function renderInforme() {
   // Get pagos for this month
   // pagosTodos: todos los pagos del mes (para % cobrado total)
   const pagosTodos = DB.pagos.filter(p => p.mes && p.mes.startsWith(mesKey));
-  // pagosMes: con alquiler o con servicios cargados
-  let pagosMes = pagosTodos.filter(p => (p.importe_alquiler||0) > 0 || (p.monto_epe||0) > 0 || (p.monto_agua||0) > 0 || (p.monto_tgiu||0) > 0 || (p.total||0) > 0);
+  // pagosMes: TODOS los contratos vigentes ese mes, carguen algo o no —
+  // antes se excluían acá mismo los que no tenían nada cargado, así que
+  // nunca se podían ver los que faltaba cargar.
+  let pagosMes = pagosTodos.filter(p => {
+    const c = DB.contratos.find(x => x.hoja === p.hoja);
+    return c && getEstado(c) === 'vigente';
+  });
 
   // Apply deuda filter
   if (deudaFiltro === 'pendiente') {
@@ -6645,7 +6660,7 @@ async function renderInforme() {
   };
 
   // Build rows
-  const rows = pagosMes.map(p => {
+  let rows = pagosMes.map(p => {
     const c = DB.contratos.find(x => x.hoja === p.hoja);
     const extrasInq = extras.filter(e => e.pago_id === p.id && e.a_cargo_de !== 'propietario');
     // Inquilino: débito suma (+), crédito resta (-)
@@ -6660,8 +6675,33 @@ async function renderInforme() {
     const saldo = p.saldo||0;
     const comision = p.comision_8 || Math.round((p.importe_alquiler||0) * ((c?.comision_porcentaje||0)/100) * 100) / 100;
     const rowColor = saldo <= 0 ? '#e8f5e9' : abonado > 0 ? '#fff8e1' : '#ffebee';
-    return { p, c, extrasInq, extrasInqTotal, extrasUnicos, abonado, saldo, comision, rowColor, totalReal, montoEpe, montoAgua, montoTgiu, montoSeguro };
-  }).sort((a,b) => (a.p.hoja||'').localeCompare(b.p.hoja||''));
+    return { p, c, extrasInq, extrasInqTotal, extrasUnicos, abonado, saldo, comision, rowColor, totalReal, alquiler: p.importe_alquiler||0, montoEpe, montoAgua, montoTgiu, montoSeguro };
+  });
+
+  // Ordenamiento: por defecto, por nombre de contrato. Si el usuario clickeó
+  // un encabezado, se aplica esa columna/dirección en su lugar.
+  const sortCol = window._informeSortCol || 'contrato';
+  const sortDir = window._informeSortDir || 'asc';
+  const sortGetters = {
+    contrato: r => (r.p.hoja||'').toLowerCase(),
+    alquiler: r => r.alquiler||0,
+    total: r => r.totalReal||0,
+    abonado: r => r.abonado||0,
+    saldo: r => r.saldo||0,
+    comision: r => r.comision||0,
+    epe: r => r.montoEpe||0,
+    agua: r => r.montoAgua||0,
+    tgiu: r => r.montoTgiu||0,
+    seguro: r => r.montoSeguro||0,
+    extras: r => r.extrasInqTotal||0,
+  };
+  const getter = sortGetters[sortCol] || sortGetters.contrato;
+  rows.sort((a,b) => {
+    const va = getter(a), vb = getter(b);
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
 
   // Totals
   const totTotal = rows.reduce((s,r) => s+(r.totalReal||0), 0);
@@ -6686,6 +6726,7 @@ async function renderInforme() {
   const vigentes = rows.length; // igual logica que dashboard: todos los pagos con importe_alquiler ese mes
 
   const mesesNombres = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const sortArrow = col => sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : '↕';
 
   // Update header totals (mensual)
   const headerElM = document.getElementById('rep-totales-header');
@@ -6720,21 +6761,23 @@ async function renderInforme() {
           <col style="width:7%"><col style="width:7%"><col style="width:7%">
         </colgroup>
         <thead><tr style="background:#1877F2;color:white">
-          <th style="padding:5px 6px">Contrato</th>
-          <th class="r" style="padding:5px 4px">Total mes</th>
-          <th class="r" style="padding:5px 4px">Abonado</th>
-          <th class="r" style="padding:5px 4px">Saldo</th>
-          <th class="r" style="padding:5px 4px">Comisión</th>
-          <th class="r" style="padding:5px 4px">EPE</th>
-          <th class="r" style="padding:5px 4px">Agua</th>
-          <th class="r" style="padding:5px 4px">TGIU</th>
-          <th class="r" style="padding:5px 4px">Seguro</th>
-          <th class="r" style="padding:5px 4px">Extras</th>
+          <th style="padding:5px 6px;cursor:pointer;user-select:none" onclick="sortInforme('contrato')">Contrato ${sortArrow('contrato')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('alquiler')">Alquiler ${sortArrow('alquiler')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('total')">Total mes ${sortArrow('total')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('abonado')">Abonado ${sortArrow('abonado')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('saldo')">Saldo ${sortArrow('saldo')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('comision')">Comisión ${sortArrow('comision')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('epe')">EPE ${sortArrow('epe')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('agua')">Agua ${sortArrow('agua')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('tgiu')">TGIU ${sortArrow('tgiu')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('seguro')">Seguro ${sortArrow('seguro')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('extras')">Extras ${sortArrow('extras')}</th>
         </tr></thead>
         <tbody>
           ${rows.map(r => `
             <tr style="background:${r.rowColor};cursor:pointer" onclick="openContrato(${r.c?.id||0})">
               <td style="padding:5px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><strong>${r.p.hoja}</strong></td>
+              <td class="r" style="padding:5px 4px">${r.alquiler>0?formatMoney(r.alquiler):'—'}</td>
               <td class="r" style="padding:5px 4px">${formatMoney(r.totalReal)}</td>
               <td class="r" style="padding:5px 4px;color:var(--green)">${r.abonado>0?formatMoney(r.abonado):'—'}</td>
               <td class="r" style="padding:5px 4px;color:${r.saldo>0?'var(--accent)':'var(--green)'}">${r.saldo>0?formatMoney(r.saldo):'✓'}</td>
@@ -6749,6 +6792,7 @@ async function renderInforme() {
         </tbody>
         <tfoot><tr style="background:#1877F2;color:white;font-weight:700">
           <td style="padding:5px 6px">TOTALES</td>
+          <td class="r" style="padding:5px 4px">${formatMoney(rows.reduce((s,r)=>s+(r.alquiler||0),0))}</td>
           <td class="r" style="padding:5px 4px">${formatMoney(totTotal)}</td>
           <td class="r" style="padding:5px 4px">${formatMoney(totAbonado)}</td>
           <td class="r" style="padding:5px 4px">${formatMoney(totSaldo)}</td>
