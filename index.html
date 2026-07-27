@@ -6540,8 +6540,9 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
 
   // Si hay excedente, imputarlo en cascada (mes siguiente, y el
   // subsiguiente si sigue sobrando, y así sucesivamente)
+  let resultadoCascada = null;
   if (excedente > 0) {
-    const resultadoCascada = await distribuirExcedenteEnCascada(hojaEncoded, p.mes, excedente);
+    resultadoCascada = await distribuirExcedenteEnCascada(hojaEncoded, p.mes, excedente);
     // Ajustar pagado_importe del mes actual: sacarle lo que sí se pudo
     // imputar a otros meses, pero si quedó un resto sin ningún mes donde
     // ponerlo, dejarlo ACÁ (visible como saldo a favor de este mes) — si no,
@@ -6618,6 +6619,19 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   const pagadoInqH = cuotasH.reduce((s,g) => s+(parseFloat(g.pagado_inquilino)||0), 0);
   const saldoHonorarios = Math.max(0, totalInqH - pagadoInqH);
 
+  // Detalle de cómo se aplicó el pago entre meses (solo tiene sentido
+  // mostrarlo si tocó más de un mes — si fue todo al mes actual, itemsAbonados
+  // ya cuenta toda la historia por sí solo).
+  const mesLabelFn = m => new Date(m + 'T12:00:00').toLocaleDateString('es-AR', {month:'long', year:'numeric'});
+  let detalleAplicacion = null;
+  if (resultadoCascada) {
+    detalleAplicacion = [];
+    const montoEsteMes = Math.round((totalSinHonorarios - excedente) * 100) / 100;
+    if (montoEsteMes > 0) detalleAplicacion.push({ mes: mesLabelFn(p.mes), monto: montoEsteMes });
+    resultadoCascada.mesesAfectados.forEach(m => detalleAplicacion.push({ mes: mesLabelFn(m.mes), monto: m.aplicado }));
+    if (resultadoCascada.restante > 0) detalleAplicacion.push({ mes: 'Saldo a favor (sin mes al cual imputar)', monto: resultadoCascada.restante });
+  }
+
   // Generate receipt
   imprimirRecibo({
     contrato: c,
@@ -6628,6 +6642,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
     totalAbonado: totalCobrado,
     nuevoSaldo,
     itemsPendientes,
+    detalleAplicacion,
     saldoHonorarios
   }, _ventanaRecibo);
 
@@ -8581,17 +8596,43 @@ async function confirmarPago(pagoId, hoja, nroMes) {
   // guardado tarda (conexión lenta/inestable).
   const _ventanaRecibo = window.open('', '_blank');
 
-  const checks = document.querySelectorAll('[id^="chk-"]');
+  const orden = ['alquiler','epe','agua','tgiu','seguro','internet','expensas'];
+  const labelsMap = {alquiler:'Alquiler',epe:'EPE',agua:'Agua',tgiu:'TGIU',seguro:'Seguro',internet:'Internet',expensas:'Expensas'};
   let totalAbonado = 0;
   const itemsAbonados = [];
-  checks.forEach(c => {
-    if (c.checked) {
-      totalAbonado += parseFloat(c.value)||0;
-      itemsAbonados.push({ label: c.closest('div').querySelector('label').textContent.trim(), monto: parseFloat(c.value) });
+  // Cada checkbox de este mini-formulario ya representa el saldo pendiente
+  // exacto de SU propio ítem (no hay un campo libre estilo "Pago a cuenta"
+  // acá) — así que lo tildado se suma directo a pagado_<item>, sin la lógica
+  // de reparto/excedente-entre-ítems que hace falta en el otro formulario.
+  const pagadoDeltaPorItem = {};
+  for (const item of orden) {
+    const chk = document.getElementById(`chk-${item}`);
+    if (chk?.checked) {
+      const val = parseFloat(chk.value)||0;
+      if (val > 0) {
+        totalAbonado += val;
+        itemsAbonados.push({ label: labelsMap[item], monto: val });
+        pagadoDeltaPorItem[item] = val;
+      }
     }
-  });
+  }
 
-  if (totalAbonado === 0) { _ventanaRecibo?.close(); toast('Seleccioná al menos un ítem','error'); return; }
+  // Otros (concepto libre)
+  let conceptoOtros = null;
+  const chkOtros = document.getElementById('chk-otros');
+  if (chkOtros?.checked) {
+    const val = parseFloat(chkOtros.value)||0;
+    if (val > 0) {
+      totalAbonado += val;
+      conceptoOtros = document.getElementById('concepto-otros')?.value || 'Otros';
+      itemsAbonados.push({ label: conceptoOtros, monto: val });
+    }
+  }
+
+  const gastosChk = document.getElementById('chk-gastos-inicio');
+  const gastosMarcado = gastosChk?.checked && (parseFloat(gastosChk.value)||0) > 0;
+
+  if (totalAbonado === 0 && !gastosMarcado) { _ventanaRecibo?.close(); toast('Seleccioná al menos un ítem','error'); return; }
 
   const fechaPago = document.getElementById('p-fecha').value;
   const contrato = DB.contratos.find(c => c.hoja === hoja);
@@ -8607,21 +8648,49 @@ async function confirmarPago(pagoId, hoja, nroMes) {
     const nuevoSaldo = Math.round(Math.max(0, (pagoActual.total||0) - nuevoPagadoImporte) * 100) / 100;
     const excedente = Math.round(Math.max(0, nuevoPagadoImporte - (pagoActual.total||0)) * 100) / 100;
 
+    // Armar el patch con el desglose por ítem (pagado_alquiler, pagado_epe...)
+    // — necesario para que el botón "↩" de cada línea, en la pestaña
+    // Ingresar Pago del GP, pueda revertir este pago con precisión después.
+    const pagadoPorItem = {};
+    for (const [item, delta] of Object.entries(pagadoDeltaPorItem)) {
+      const yaPagado = parseFloat(pagoActual[`pagado_${item}`]) || 0;
+      pagadoPorItem[`pagado_${item}`] = Math.round((yaPagado + delta) * 100) / 100;
+    }
+
     // Actualizar saldo en Supabase
-    await sbPatch('pagos', pagoId, {
+    const patchPago = {
       pagado_importe: nuevoPagadoImporte,
       saldo: nuevoSaldo,
       pagado: nuevoSaldo === 0 ? 'SI' : 'PARCIAL',
       pago_nro: String(nroMes),
-      concepto_otros: conceptoOtros
-    });
+      ...pagadoPorItem
+    };
+    if (conceptoOtros) patchPago.concepto_otros = conceptoOtros;
+    await sbPatch('pagos', pagoId, patchPago);
+
+    // Guardar el movimiento en el historial de transacciones — para que este
+    // pago aparezca en "Historial de pagos" igual que los hechos desde
+    // Ingresar Pago (antes no quedaba ningún rastro acá).
+    try {
+      await sbPost('movimientos_pagos', {
+        pago_id: pagoId,
+        contrato_id: contrato?.id,
+        hoja,
+        mes: pagoActual.mes,
+        fecha: fechaPago,
+        monto: totalAbonado,
+        concepto: 'Pago',
+        items: JSON.stringify(itemsAbonados)
+      });
+    } catch(e) { console.warn('movimientos_pagos no guardado:', e); }
 
     toast('Pago registrado ✓');
 
     // Si hay excedente, imputarlo en cascada (mes siguiente, y el
     // subsiguiente si sigue sobrando, y así sucesivamente)
+    let resultadoCascada = null;
     if (excedente > 0) {
-      const resultadoCascada = await distribuirExcedenteEnCascada(hojaEncoded, pagoActual.mes, excedente);
+      resultadoCascada = await distribuirExcedenteEnCascada(hojaEncoded, pagoActual.mes, excedente);
       // Sacarle al mes actual lo que sí se pudo imputar a otros meses —
       // si quedó un resto sin ningún mes donde ponerlo, dejarlo acá visible.
       const pagadoActualFinal = Math.round(((pagoActual.total||0) + resultadoCascada.restante) * 100) / 100;
@@ -8629,14 +8698,47 @@ async function confirmarPago(pagoId, hoja, nroMes) {
       toast(mensajeExcedenteCascada(excedente, resultadoCascada));
     }
 
+    // Detalle de cómo se aplicó el pago entre meses (solo tiene sentido
+    // mostrarlo si tocó más de un mes)
+    const mesLabelFn = m => new Date(m + 'T12:00:00').toLocaleDateString('es-AR', {month:'long', year:'numeric'});
+    let detalleAplicacion = null;
+    if (resultadoCascada) {
+      detalleAplicacion = [];
+      const montoEsteMes = Math.round((totalAbonado - excedente) * 100) / 100;
+      if (montoEsteMes > 0) detalleAplicacion.push({ mes: mesLabelFn(pagoActual.mes), monto: montoEsteMes });
+      resultadoCascada.mesesAfectados.forEach(m => detalleAplicacion.push({ mes: mesLabelFn(m.mes), monto: m.aplicado }));
+      if (resultadoCascada.restante > 0) detalleAplicacion.push({ mes: 'Saldo a favor (sin mes al cual imputar)', monto: resultadoCascada.restante });
+    }
+
     // Save gastos pagado if applicable
-    const gastosChk = document.getElementById('chk-gastos-inicio');
     if (gastosChk && gastosChk.dataset.gastosId) {
       const gastosId = parseInt(gastosChk.dataset.gastosId);
       const gastosPagado = gastosChk.checked ? (parseFloat(gastosChk.value)||0) : 0;
       await sbPatch('gastos_inicio_cuotas', gastosId, { pagado_inquilino: gastosPagado });
       const gc = DB_GASTOS_CUOTAS.find(g => g.id === gastosId);
       if (gc) gc.pagado_inquilino = gastosPagado;
+    }
+
+    // Ítems pendientes (para el desglose "Pendiente: X, Y" del recibo) — mismo
+    // criterio que confirmarCobroInquilino: usar pagos_suministros si el
+    // contrato tiene cuenta real, para no mostrar $0 en servicios migrados.
+    const psParaPendientes = window._pagosSuministros?.[pagoId] || {};
+    const itemsPendientes = [];
+    for (const item of orden) {
+      let monto;
+      if (item === 'alquiler') {
+        monto = parseFloat(pagoActual.importe_alquiler) || 0;
+      } else {
+        const sumsItem = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contrato?.id && s.tipo === item);
+        if (sumsItem.length) {
+          monto = sumsItem.reduce((t,s) => { const e = psParaPendientes[s.id]; return t + (e===undefined ? 0 : (typeof e==='object' ? (e.inq||0) : (e||0))); }, 0);
+        } else {
+          monto = parseFloat(pagoActual[`monto_${item}`]) || 0;
+        }
+      }
+      const pagadoTotal = pagadoPorItem[`pagado_${item}`] ?? (parseFloat(pagoActual[`pagado_${item}`])||0);
+      const saldoItem = Math.max(0, monto - pagadoTotal);
+      if (saldoItem > 0) itemsPendientes.push({ label: labelsMap[item], saldo: saldoItem });
     }
 
     // Total de meses del contrato (para Recibo mes N° de XXXX)
@@ -8656,7 +8758,9 @@ async function confirmarPago(pagoId, hoja, nroMes) {
       fechaPago,
       itemsAbonados,
       totalAbonado,
-      nuevoSaldo
+      nuevoSaldo,
+      itemsPendientes,
+      detalleAplicacion
     }, _ventanaRecibo);
 
     closeModal();
@@ -8714,6 +8818,11 @@ function imprimirRecibo(data, ventanaPreabierta) {
         </tr></tfoot>
       </table>
       <div style="padding:0 14px 6px">
+        ${data.detalleAplicacion && data.detalleAplicacion.length > 1 ? `
+        <div style="background:#eef4ff;border-radius:4px;padding:6px 10px;font-size:0.72rem;color:#333;margin-bottom:6px">
+          <strong>Detalle de aplicación:</strong>
+          ${data.detalleAplicacion.map(d => `<div style="display:flex;justify-content:space-between;padding:1px 0"><span>${d.mes}</span><span>${formatMoney(d.monto)}</span></div>`).join('')}
+        </div>` : ''}
         ${data.nuevoSaldo > 0 ? `<div style="background:#fff3cd;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#856404">⚠ Saldo pendiente: <strong>${formatMoney(data.nuevoSaldo)}</strong>
         ${data.itemsPendientes && data.itemsPendientes.length > 0 ? '<br><span style="font-size:0.7rem">Pendiente: ' + data.itemsPendientes.map(it => it.label + ' ' + formatMoney(it.saldo)).join(' · ') + '</span>' : ''}
       </div>` : '<div style="background:#d4edda;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#155724">✓ Mes cancelado en su totalidad</div>'}
