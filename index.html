@@ -5613,6 +5613,82 @@ async function eliminarExtraGP(extraId, hoja, contratoId, mesKey, comisionPct) {
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
+// Distribuye un excedente de pago en cascada: cubre el mes siguiente con
+// saldo pendiente, y si sobra, sigue con el subsiguiente, y así hasta agotar
+// el excedente o quedarse sin más meses cargados. Devuelve el detalle de
+// qué meses se vieron afectados y cuánto quedó sin poder acreditarse.
+async function distribuirExcedenteEnCascada(hojaEncoded, mesInicialKey, excedenteInicial) {
+  let restanteGlobal = Math.round(excedenteInicial * 100) / 100;
+  let mesCursor = mesInicialKey;
+  const mesesAfectados = [];
+
+  while (restanteGlobal > 0.004) {
+    const siguientes = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=gt.${mesCursor}&order=mes.asc&limit=1`);
+    if (!siguientes.length) {
+      return { restante: restanteGlobal, mesesAfectados, sinMasMeses: true };
+    }
+    const sp = siguientes[0];
+    mesCursor = sp.mes;
+    const totalSig = sp.total || 0;
+    const yaAbonadoSig = sp.pagado_importe || 0;
+    const pendienteSig = Math.max(0, Math.round((totalSig - yaAbonadoSig) * 100) / 100);
+
+    if (pendienteSig <= 0) {
+      // Este mes ya está cubierto (pagado por otra vía) — seguir al
+      // subsiguiente sin tocarlo.
+      continue;
+    }
+
+    const aAplicar = Math.min(restanteGlobal, pendienteSig);
+
+    // Distribuir aAplicar entre los ítems de este mes (alquiler, servicios…)
+    let restanteItem = aAplicar;
+    const patchSig = {};
+    const ordenItems = [
+      { campo: 'pagado_alquiler', monto: sp.importe_alquiler||0 },
+      { campo: 'pagado_epe',      monto: sp.monto_epe||0 },
+      { campo: 'pagado_agua',     monto: sp.monto_agua||0 },
+      { campo: 'pagado_tgiu',     monto: sp.monto_tgiu||0 },
+      { campo: 'pagado_seguro',   monto: sp.monto_seguro||0 },
+      { campo: 'pagado_internet', monto: sp.monto_internet||0 },
+      { campo: 'pagado_expensas', monto: sp.monto_expensas||0 },
+    ];
+    for (const item of ordenItems) {
+      if (restanteItem <= 0) break;
+      if (item.monto <= 0) continue;
+      const yaItemPagado = sp[item.campo] || 0;
+      const pendienteItem = Math.max(0, item.monto - yaItemPagado);
+      if (pendienteItem <= 0) continue;
+      const imputar = Math.min(restanteItem, pendienteItem);
+      patchSig[item.campo] = Math.round((yaItemPagado + imputar) * 100) / 100;
+      restanteItem = Math.round((restanteItem - imputar) * 100) / 100;
+    }
+
+    const nuevoPagadoSig = Math.round((yaAbonadoSig + aAplicar) * 100) / 100;
+    const nuevoSaldoSig = Math.max(0, Math.round((totalSig - nuevoPagadoSig) * 100) / 100);
+    const nuevoPagadoEstadoSig = nuevoSaldoSig <= 0 ? 'SI' : (nuevoPagadoSig > 0 ? 'PARCIAL' : (sp.pagado||'NO'));
+    await sbPatch('pagos', sp.id, { ...patchSig, pagado_importe: nuevoPagadoSig, saldo: nuevoSaldoSig, pagado: nuevoPagadoEstadoSig });
+
+    mesesAfectados.push({ mes: sp.mes, aplicado: aAplicar });
+    restanteGlobal = Math.round((restanteGlobal - aAplicar) * 100) / 100;
+  }
+
+  return { restante: 0, mesesAfectados, sinMasMeses: false };
+}
+
+function mensajeExcedenteCascada(excedenteInicial, resultado) {
+  const mesLabel = m => new Date(m + 'T12:00:00').toLocaleDateString('es-AR', {month:'long', year:'numeric'});
+  if (!resultado.mesesAfectados.length) {
+    return `⚠ Saldo a favor del inquilino: ${formatMoney(excedenteInicial)} — No hay mes siguiente para acreditar`;
+  }
+  const detalle = resultado.mesesAfectados.map(m => `${mesLabel(m.mes)}: ${formatMoney(m.aplicado)}`).join(' · ');
+  let msg = `Excedente de ${formatMoney(excedenteInicial)} acreditado — ${detalle}`;
+  if (resultado.restante > 0) {
+    msg += ` · ⚠ Quedan ${formatMoney(resultado.restante)} sin acreditar (no hay más meses cargados)`;
+  }
+  return msg;
+}
+
 async function _syncPagosSuministros(pagoId, contratoId, montosMap) {
   // montosMap = {epe: X, agua: Y, tgiu: Z, seguro: W, internet: V, expensas: U}
   // For each type, find suministros of that type for this contract and upsert
@@ -6418,48 +6494,13 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
 
   toast('Cobro registrado ✓');
 
-  // Si hay excedente, imputarlo al mes siguiente distribuyendo en ítems
+  // Si hay excedente, imputarlo en cascada (mes siguiente, y el
+  // subsiguiente si sigue sobrando, y así sucesivamente)
   if (excedente > 0) {
-    const todosLosPagos = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.asc&limit=500`);
-    const siguientePago = todosLosPagos.find(x => x.mes > p.mes);
-    if (siguientePago) {
-      // Distribuir excedente: primero alquiler, luego servicios cargados en orden
-      let restante = excedente;
-      const patchSig = {};
-      const ordenItems = [
-        { campo: 'pagado_alquiler', monto: siguientePago.importe_alquiler||0 },
-        { campo: 'pagado_epe',      monto: siguientePago.monto_epe||0 },
-        { campo: 'pagado_agua',     monto: siguientePago.monto_agua||0 },
-        { campo: 'pagado_tgiu',     monto: siguientePago.monto_tgiu||0 },
-        { campo: 'pagado_seguro',   monto: siguientePago.monto_seguro||0 },
-        { campo: 'pagado_internet', monto: siguientePago.monto_internet||0 },
-        { campo: 'pagado_expensas', monto: siguientePago.monto_expensas||0 },
-      ];
-      for (const item of ordenItems) {
-        if (restante <= 0) break;
-        if (item.monto <= 0) continue;
-        const yaItemPagado = siguientePago[item.campo] || 0;
-        const pendienteItem = Math.max(0, item.monto - yaItemPagado);
-        if (pendienteItem <= 0) continue;
-        const imputar = Math.min(restante, pendienteItem);
-        patchSig[item.campo] = Math.round((yaItemPagado + imputar) * 100) / 100;
-        restante = Math.round((restante - imputar) * 100) / 100;
-      }
-      const nuevoPagadoSig = Math.round(((siguientePago.pagado_importe||0) + excedente) * 100) / 100;
-      const nuevoSaldoSig = Math.max(0, Math.round(((siguientePago.total||0) - nuevoPagadoSig) * 100) / 100);
-      const nuevoPagadoEstadoSig = nuevoSaldoSig <= 0 ? 'SI' : (nuevoPagadoSig > 0 ? 'PARCIAL' : (siguientePago.pagado||'NO'));
-      await sbPatch('pagos', siguientePago.id, { ...patchSig, pagado_importe: nuevoPagadoSig, saldo: nuevoSaldoSig, pagado: nuevoPagadoEstadoSig });
-      // Ajustar pagado_importe del mes actual para no incluir el excedente
-      await sbPatch('pagos', p.id, { pagado_importe: Math.round(totalRealMes * 100) / 100 });
-      const mesSigLabel = new Date(siguientePago.mes).toLocaleDateString('es-AR', {month:'long', year:'numeric'});
-      if (restante > 0) {
-        toast(`Excedente de ${formatMoney(excedente)} acreditado a ${mesSigLabel}: ${formatMoney(excedente - restante)} imputados a ítems, ${formatMoney(restante)} sin ítem asignado ✓`);
-      } else {
-        toast(`Excedente de ${formatMoney(excedente)} acreditado a ${mesSigLabel} ✓`);
-      }
-    } else {
-      toast(`⚠ Saldo a favor del inquilino: ${formatMoney(excedente)} — No hay mes siguiente para acreditar`);
-    }
+    const resultadoCascada = await distribuirExcedenteEnCascada(hojaEncoded, p.mes, excedente);
+    // Ajustar pagado_importe del mes actual para no incluir el excedente
+    await sbPatch('pagos', p.id, { pagado_importe: Math.round(totalRealMes * 100) / 100 });
+    toast(mensajeExcedenteCascada(excedente, resultadoCascada));
   }
 
   // Save honorarios pagado if ticked
@@ -8529,44 +8570,11 @@ async function confirmarPago(pagoId, hoja, nroMes) {
 
     toast('Pago registrado ✓');
 
-    // Si hay excedente, crear extra crédito en mes siguiente
+    // Si hay excedente, imputarlo en cascada (mes siguiente, y el
+    // subsiguiente si sigue sobrando, y así sucesivamente)
     if (excedente > 0) {
-      const siguientePago = pagos.find(p => p.mes > pagoActual.mes && p.hoja === hoja);
-      if (siguientePago) {
-        let restante = excedente;
-        const patchSig = {};
-        const ordenItems = [
-          { campo: 'pagado_alquiler', monto: siguientePago.importe_alquiler||0 },
-          { campo: 'pagado_epe',      monto: siguientePago.monto_epe||0 },
-          { campo: 'pagado_agua',     monto: siguientePago.monto_agua||0 },
-          { campo: 'pagado_tgiu',     monto: siguientePago.monto_tgiu||0 },
-          { campo: 'pagado_seguro',   monto: siguientePago.monto_seguro||0 },
-          { campo: 'pagado_internet', monto: siguientePago.monto_internet||0 },
-          { campo: 'pagado_expensas', monto: siguientePago.monto_expensas||0 },
-        ];
-        for (const item of ordenItems) {
-          if (restante <= 0) break;
-          if (item.monto <= 0) continue;
-          const yaItemPagado = siguientePago[item.campo] || 0;
-          const pendienteItem = Math.max(0, item.monto - yaItemPagado);
-          if (pendienteItem <= 0) continue;
-          const imputar = Math.min(restante, pendienteItem);
-          patchSig[item.campo] = Math.round((yaItemPagado + imputar) * 100) / 100;
-          restante = Math.round((restante - imputar) * 100) / 100;
-        }
-        const nuevoPagadoSig = Math.round(((siguientePago.pagado_importe||0) + excedente) * 100) / 100;
-        const nuevoSaldoSig = Math.max(0, Math.round(((siguientePago.total||0) - nuevoPagadoSig) * 100) / 100);
-        const nuevoPagadoEstadoSig = nuevoSaldoSig <= 0 ? 'SI' : (nuevoPagadoSig > 0 ? 'PARCIAL' : (siguientePago.pagado||'NO'));
-        await sbPatch('pagos', siguientePago.id, { ...patchSig, pagado_importe: nuevoPagadoSig, saldo: nuevoSaldoSig, pagado: nuevoPagadoEstadoSig });
-        const mesSigLabel = new Date(siguientePago.mes).toLocaleDateString('es-AR', {month:'long', year:'numeric'});
-        if (restante > 0) {
-          toast(`Excedente de ${formatMoney(excedente)} acreditado a ${mesSigLabel}: ${formatMoney(excedente - restante)} imputados a ítems, ${formatMoney(restante)} sin ítem asignado ✓`);
-        } else {
-          toast(`Excedente de ${formatMoney(excedente)} acreditado a ${mesSigLabel} ✓`);
-        }
-      } else {
-        toast(`⚠ Saldo a favor del inquilino: ${formatMoney(excedente)} — No hay mes siguiente para acreditar`);
-      }
+      const resultadoCascada = await distribuirExcedenteEnCascada(hojaEncoded, pagoActual.mes, excedente);
+      toast(mensajeExcedenteCascada(excedente, resultadoCascada));
     }
 
     // Save gastos pagado if applicable
