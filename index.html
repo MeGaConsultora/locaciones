@@ -8668,6 +8668,14 @@ function closeModal(e) {
       }, 100);
     } else if (contratoId) {
       openContrato(parseInt(contratoId));
+    } else {
+      // Se cerró de verdad (no es un "volver a X") — si la pantalla de atrás
+      // es el informe de Estado de Firma, refrescarlo para reflejar
+      // cualquier cambio que se haya hecho en el contrato recién editado.
+      const panelFirmas = document.getElementById('panel-informe-firmas');
+      if (panelFirmas && panelFirmas.style.display !== 'none') {
+        renderInformeFirmas();
+      }
     }
   }
 }
