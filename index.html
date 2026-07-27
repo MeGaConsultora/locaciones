@@ -464,6 +464,7 @@
             <div class="submenu-header" onclick="toggleSubmenuMobile(event)">📅 Reportes mensuales ▸</div>
             <div class="submenu-items">
               <button onclick="selectInforme('mensual')">📋 Totalizados</button>
+              <button onclick="selectInforme('firmas')">📄 Estado de firma</button>
               <button onclick="selectInforme('srv-epe')">⚡ EPE a abonar</button>
               <button onclick="selectInforme('srv-agua')">💧 Agua a abonar</button>
               <button onclick="selectInforme('srv-tgiu')">🏛️ TGIU a abonar</button>
@@ -681,6 +682,15 @@
     <div id="hp-contenido">
       <div class="empty-state"><div class="icon">📝</div><p>Elegí un rango de fechas y hacé clic en "Buscar"</p></div>
     </div>
+  </div>
+
+  <!-- ESTADO DE FIRMA DE CONTRATOS -->
+  <div id="panel-informe-firmas" class="panel" style="display:none">
+    <div class="toolbar" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+      <strong style="font-size:0.95rem">📄 Estado de firma — Contratos vigentes</strong>
+      <input type="text" class="search-input" id="firmas-buscar" placeholder="Buscar contrato..." style="width:220px" oninput="renderInformeFirmas()">
+    </div>
+    <div id="informe-firmas-contenido"></div>
   </div>
 
   <!-- CONSORCIOS -->
@@ -6587,6 +6597,89 @@ function populateInformeAnios() {
   anios.forEach(a => { const o = document.createElement('option'); o.value=a; o.textContent=a; sel.appendChild(o); });
 }
 
+function sortInformeFirmas(col) {
+  if (window._firmasSortCol === col) {
+    window._firmasSortDir = window._firmasSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    window._firmasSortCol = col;
+    window._firmasSortDir = 'asc';
+  }
+  renderInformeFirmas();
+}
+
+function renderInformeFirmas() {
+  const cont = document.getElementById('informe-firmas-contenido');
+  const buscar = (document.getElementById('firmas-buscar')?.value || '').toLowerCase();
+
+  let contratosVigentes = DB.contratos.filter(c => getEstado(c) === 'vigente');
+  if (buscar) contratosVigentes = contratosVigentes.filter(c => (c.titulo||c.hoja||'').toLowerCase().includes(buscar));
+
+  const sortCol = window._firmasSortCol || 'contrato';
+  const sortDir = window._firmasSortDir || 'asc';
+  const getters = {
+    contrato: c => (c.titulo||c.hoja||'').toLowerCase(),
+    completados: c => CHECKLIST_ETAPAS.filter(e => c[e.key]).length,
+    archivo: c => c.archivo_contrato_path ? 1 : 0,
+    chk_redactado: c => c.chk_redactado ? 1 : 0,
+    chk_impreso: c => c.chk_impreso ? 1 : 0,
+    chk_firma_inquilino: c => c.chk_firma_inquilino ? 1 : 0,
+    chk_firma_garante: c => c.chk_firma_garante ? 1 : 0,
+    chk_firma_propietario: c => c.chk_firma_propietario ? 1 : 0,
+    chk_archivado: c => c.chk_archivado ? 1 : 0,
+  };
+  const getter = getters[sortCol] || getters.contrato;
+  contratosVigentes = [...contratosVigentes].sort((a,b) => {
+    const va = getter(a), vb = getter(b);
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  if (!contratosVigentes.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">📄</div><p>Sin contratos vigentes</p></div>';
+    return;
+  }
+
+  const sortArrow = col => sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : '↕';
+  const check = v => v ? '<span style="color:var(--green);font-weight:700">✓</span>' : '<span style="color:#ccc">—</span>';
+
+  cont.innerHTML = `
+    <div class="table-wrap" style="overflow-x:auto">
+      <table style="width:100%;min-width:900px;border-collapse:collapse;font-size:0.82rem">
+        <thead><tr style="background:var(--ink2);color:white">
+          <th style="padding:6px 8px;text-align:left;cursor:pointer;user-select:none" onclick="sortInformeFirmas('contrato')">Contrato ${sortArrow('contrato')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('chk_redactado')">Redactado ${sortArrow('chk_redactado')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('chk_impreso')">Impreso ${sortArrow('chk_impreso')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('chk_firma_inquilino')">Firma inquilino ${sortArrow('chk_firma_inquilino')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('chk_firma_garante')">Firma garante/s ${sortArrow('chk_firma_garante')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('chk_firma_propietario')">Firma propietario ${sortArrow('chk_firma_propietario')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('chk_archivado')">Archivado ${sortArrow('chk_archivado')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('archivo')">Archivo subido ${sortArrow('archivo')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('completados')">Completado ${sortArrow('completados')}</th>
+        </tr></thead>
+        <tbody>
+          ${contratosVigentes.map(c => {
+            const completados = CHECKLIST_ETAPAS.filter(e => c[e.key]).length;
+            const total = CHECKLIST_ETAPAS.length;
+            const todoCompleto = completados === total;
+            return `<tr style="border-bottom:1px solid #eee;cursor:pointer" onclick="openContrato(${c.id})" title="Clic para editar">
+              <td style="padding:6px 8px;font-weight:600">${c.titulo||c.hoja}</td>
+              <td style="padding:6px 8px;text-align:center">${check(c.chk_redactado)}</td>
+              <td style="padding:6px 8px;text-align:center">${check(c.chk_impreso)}</td>
+              <td style="padding:6px 8px;text-align:center">${check(c.chk_firma_inquilino)}</td>
+              <td style="padding:6px 8px;text-align:center">${check(c.chk_firma_garante)}</td>
+              <td style="padding:6px 8px;text-align:center">${check(c.chk_firma_propietario)}</td>
+              <td style="padding:6px 8px;text-align:center">${check(c.chk_archivado)}</td>
+              <td style="padding:6px 8px;text-align:center">${check(c.archivo_contrato_path)}</td>
+              <td style="padding:6px 8px;text-align:center;font-weight:700;color:${todoCompleto?'var(--green)':'#888'}">${completados}/${total}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function sortInforme(col) {
   if (window._informeSortCol === col) {
     window._informeSortDir = window._informeSortDir === 'asc' ? 'desc' : 'asc';
@@ -8660,7 +8753,7 @@ function selectInforme(tipo) {
   document.getElementById('informes-menu').style.display = 'none';
 
   // First hide ALL main panels (same as showTab)
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -8682,6 +8775,7 @@ function selectInforme(tipo) {
   else if (tipo === 'srv-epe' || tipo === 'srv-agua' || tipo === 'srv-tgiu') panelId = 'panel-srv-informe';
   else if (tipo === 'srv-seguro') panelId = 'panel-informe-seguro';
   else if (tipo === 'historial-pagos') panelId = 'panel-historial-pagos';
+  else if (tipo === 'firmas') panelId = 'panel-informe-firmas';
 
   const el = document.getElementById(panelId);
   if (el) { el.style.display = 'block'; el.classList.add('active'); }
@@ -8710,6 +8804,7 @@ function selectInforme(tipo) {
     if (hastaEl && !hastaEl.value) hastaEl.value = TODAY.substring(0,10);
     renderHistorialPagos();
   }
+  else if (tipo === 'firmas') renderInformeFirmas();
   else { populateInformeAnios(); renderInforme(); }
 }
 
@@ -9379,7 +9474,7 @@ function showTab(name, btn) {
   // Close Gestión dropdown
   document.getElementById('informes-menu').style.display = 'none';
   // Hide ALL panels using both class and inline style
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -10480,7 +10575,7 @@ document.addEventListener('visibilitychange', () => {
 // ============================================================
 // Initialize panel visibility
 (function() {
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) el.style.display = id === 'dashboard' ? 'block' : 'none';
