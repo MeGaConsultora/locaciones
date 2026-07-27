@@ -5076,7 +5076,14 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEst
   // a-cuenta: payment without per-item breakdown
   const yaAbonadoGP = !tieneItemsPagados ? Math.max(0, p.pagado_importe || (p.total||0) - (p.saldo||0)) : 0;
 
-  const paidSection = paidItems.length > 0 || honorariosPagadoInq > 0 || yaAbonadoGP > 0 ? `
+  // Excedente: lo que quedó pagado por encima del total de este mes (por un
+  // cobro que superó lo que se debía, y no tenía a qué mes siguiente
+  // imputarse, o se dejó acá a propósito). Antes no tenía ningún botón
+  // propio para revertirlo — quedaba pegado en pagado_importe sin que
+  // "Alquiler" ni ningún otro ítem lo representaran.
+  const excedenteVisible = Math.max(0, Math.round(((p.pagado_importe||0) - (p.total||0)) * 100) / 100);
+
+  const paidSection = paidItems.length > 0 || honorariosPagadoInq > 0 || yaAbonadoGP > 0 || excedenteVisible > 0.004 ? `
     <div style="margin-bottom:0.5rem;font-size:0.75rem;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Ya cobrado</div>
     ${yaAbonadoGP > 0 ? `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:4px 0;border-bottom:1px solid #f5f0e8;background:#f9f9f9">
@@ -5094,6 +5101,12 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEst
       <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:4px 0;border-bottom:1px solid #f5f0e8;background:#f9f9f9">
         <span style="font-size:0.85rem;color:var(--green);flex:1">✓ Honorarios — ${formatMoney(honorariosPagadoInq)}</span>
         <button onclick="revertirHonorarios(${contratoId},'${_gpHoja}','${mesKey}',${_gpComision||8})" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.75rem">↩</button>
+      </div>
+    ` : ''}
+    ${excedenteVisible > 0.004 ? `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:4px 0;border-bottom:1px solid #f5f0e8;background:#fff8e1">
+        <span style="font-size:0.85rem;color:#856404;flex:1">↑ Excedente (a favor, sin imputar) — ${formatMoney(excedenteVisible)}</span>
+        <button onclick="revertirExcedenteMes('${p.id}',${excedenteVisible},'${_gpHoja}',${contratoId},'${mesKey}',${_gpComision||8})" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.75rem">↩</button>
       </div>
     ` : ''}
     ${(p.saldo||0) > 0 ? '<div style="margin:0.5rem 0;font-size:0.75rem;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Pendiente</div>' : '<div style="background:#d4edda;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#155724;margin-top:0.5rem">✓ Mes cancelado en su totalidad</div>'}
@@ -5937,6 +5950,37 @@ async function revertirItem(pagoId, itemId, montoPagado, montoTotal, hoja, contr
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
+async function revertirExcedenteMes(pagoId, montoExcedente, hoja, contratoId, mesKey, comisionPct) {
+  if (!confirm(`¿Revertir el excedente sin imputar de este mes (${formatMoney(montoExcedente)})? Se descuenta de lo cobrado en este mes puntual, y el saldo de este mes sube esa misma cantidad.`)) return;
+  try {
+    const existing = await sbGet('pagos', `id=eq.${pagoId}&limit=1`);
+    if (!existing.length) return;
+    const p = existing[0];
+    const nuevoPagado = Math.max(0, Math.round(((p.pagado_importe||0) - montoExcedente) * 100) / 100);
+    const nuevoSaldo = Math.max(0, Math.round(((p.total||0) - nuevoPagado) * 100) / 100);
+    const nuevoPagadoEstado = nuevoSaldo <= 0 ? 'SI' : (nuevoPagado > 0 ? 'PARCIAL' : '0');
+    await sbPatch('pagos', pagoId, { pagado_importe: nuevoPagado, saldo: nuevoSaldo, pagado: nuevoPagadoEstado });
+    toast('Excedente revertido ✓');
+    const c = DB.contratos.find(x => x.id === contratoId);
+    if (c) {
+      await recargarGrilla(c);
+      const meses = [];
+      let [rsy, rsm] = c.vigencia_desde.substring(0,7).split('-').map(Number);
+      const [rey, rem] = (c.vigencia_hasta||c.vigencia_desde).substring(0,7).split('-').map(Number);
+      while (rsy < rey || (rsy === rey && rsm <= rem)) {
+        const key = `${rsy}-${String(rsm).padStart(2,'0')}`;
+        const pago = pagosActuales.find(p => p.mes && p.mes.startsWith(key));
+        meses.push({ key, label: formatDate(key+'-01'), pago });
+        rsm++; if (rsm > 12) { rsm = 1; rsy++; }
+      }
+      setTimeout(async () => {
+        await cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, 's2');
+        await loadAll();
+      }, 150);
+    }
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
 async function revertirHonorarios(contratoId, hoja, mesKey, comisionPct) {
   const mes = mesKey + '-01';
   const hojaEncoded = encodeURIComponent(hoja);
@@ -6498,8 +6542,12 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   // subsiguiente si sigue sobrando, y así sucesivamente)
   if (excedente > 0) {
     const resultadoCascada = await distribuirExcedenteEnCascada(hojaEncoded, p.mes, excedente);
-    // Ajustar pagado_importe del mes actual para no incluir el excedente
-    await sbPatch('pagos', p.id, { pagado_importe: Math.round(totalRealMes * 100) / 100 });
+    // Ajustar pagado_importe del mes actual: sacarle lo que sí se pudo
+    // imputar a otros meses, pero si quedó un resto sin ningún mes donde
+    // ponerlo, dejarlo ACÁ (visible como saldo a favor de este mes) — si no,
+    // esa plata desaparece de cualquier lado rastreable/reversible.
+    const pagadoActualFinal = Math.round((totalRealMes + resultadoCascada.restante) * 100) / 100;
+    await sbPatch('pagos', p.id, { pagado_importe: pagadoActualFinal });
     toast(mensajeExcedenteCascada(excedente, resultadoCascada));
   }
 
@@ -8574,6 +8622,10 @@ async function confirmarPago(pagoId, hoja, nroMes) {
     // subsiguiente si sigue sobrando, y así sucesivamente)
     if (excedente > 0) {
       const resultadoCascada = await distribuirExcedenteEnCascada(hojaEncoded, pagoActual.mes, excedente);
+      // Sacarle al mes actual lo que sí se pudo imputar a otros meses —
+      // si quedó un resto sin ningún mes donde ponerlo, dejarlo acá visible.
+      const pagadoActualFinal = Math.round(((pagoActual.total||0) + resultadoCascada.restante) * 100) / 100;
+      await sbPatch('pagos', pagoId, { pagado_importe: pagadoActualFinal });
       toast(mensajeExcedenteCascada(excedente, resultadoCascada));
     }
 
