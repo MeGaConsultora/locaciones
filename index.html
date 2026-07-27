@@ -2344,6 +2344,148 @@ function renderGrilla(c) {
   setTimeout(ajustarZoomGrilla, 200);
 }
 
+function calcularTotal(p, extras, psData) {
+  const totalExtras = (extras||[]).reduce((s,e) => {
+    if (e.a_cargo_de === 'propietario') return s;
+    const importe = parseFloat(e.importe)||0;
+    return (e.tipo === 'descuento' || e.tipo === 'credito') ? s - importe : s + importe;
+  }, 0);
+  let servicios;
+  if (psData && Object.keys(psData).length > 0) {
+    // Sumar pagos_suministros
+    servicios = Object.values(psData).reduce((s, v) => s + (typeof v === 'object' ? (v.inq||0) : (v||0)), 0);
+    // Detectar tipos cubiertos por pagos_suministros
+    const tiposCubiertos = new Set();
+    Object.keys(psData).forEach(sumId => {
+      const sum = (DB_SUMINISTROS||[]).find(x => x.id === parseInt(sumId));
+      if (sum?.tipo) tiposCubiertos.add(sum.tipo);
+    });
+    // Para tipos NO cubiertos, usar monto_xxx solo si el contrato tiene ese suministro
+    // con pct_inquilino > 0 (evita sumar datos residuales del sistema viejo)
+    const contratoId = (DB?.contratos||[]).find(c => c.hoja === p.hoja)?.id;
+    const srvViejos = ['epe','agua','tgiu','seguro','internet','expensas'];
+    srvViejos.forEach(srv => {
+      if (tiposCubiertos.has(srv)) return; // ya cubierto por pagos_suministros
+      if (!p['monto_'+srv]) return; // sin valor en sistema viejo (0, null o undefined — los negativos SÍ cuentan, son descuentos reales)
+      if (!contratoId) return; // no se pudo identificar el contrato
+      // Buscar suministro del tipo en el contrato con pct_inquilino > 0
+      const sum = (DB_SUMINISTROS||[]).find(s => 
+        parseInt(s.contrato_id) === contratoId && s.tipo === srv && (s.pct_inquilino||0) > 0
+      );
+      // Sumar siempre — si hay monto cargado, es porque corresponde al inquilino
+      servicios += (p['monto_'+srv]||0);
+    });
+  } else {
+    servicios = (p.monto_epe||0)+(p.monto_agua||0)+(p.monto_tgiu||0)+(p.monto_seguro||0)+(p.monto_internet||0)+(p.monto_expensas||0);
+  }
+  const raw = (p.importe_alquiler||0) + servicios + totalExtras;
+  return Math.round(raw * 100) / 100;
+}
+
+async function recalcularFilaPago(pagoId) {
+  // Leer valores frescos de Supabase para evitar usar datos en memoria con redondeos incorrectos
+  let p = null;
+  try {
+    const rows = await sbGet('pagos', `id=eq.${pagoId}&select=*&limit=1`);
+    if (rows.length) {
+      p = rows[0];
+      // Actualizar en memoria también
+      const idxPA = pagosActuales.findIndex(x => x.id === pagoId);
+      if (idxPA >= 0) Object.assign(pagosActuales[idxPA], p);
+      const idxDB = DB.pagos.findIndex(x => x.id === pagoId);
+      if (idxDB >= 0) Object.assign(DB.pagos[idxDB], p);
+    } else {
+      p = pagosActuales.find(x => x.id === pagoId);
+    }
+  } catch(e) {
+    p = pagosActuales.find(x => x.id === pagoId);
+  }
+  if (!p) return;
+  // Leer extras frescos de BD (no usar memoria para evitar datos desactualizados)
+  let extras = extrasActuales[pagoId]||[];
+  try {
+    const extrasDB = await sbGet('pagos_extras', `pago_id=eq.${pagoId}`);
+    if (extrasDB.length) {
+      extras = extrasDB;
+      extrasActuales[pagoId] = extrasDB; // sincronizar memoria también
+    }
+  } catch(e) { /* fallback a memoria */ }
+  const psData = window._pagosSuministros?.[p.id];
+  const total = calcularTotal(p, extras, psData);
+  // pagado_importe es inmutable — saldo = total - pagado_importe
+  const pagadoImporte = p.pagado_importe || 0;
+  const nuevoSaldo = Math.round((total - pagadoImporte) * 100) / 100;
+  const saldoFinal = Math.max(0, nuevoSaldo);
+  const nuevoPagado = saldoFinal <= 0 ? 'SI' : (pagadoImporte > 0 ? 'PARCIAL' : (p.pagado||'NO'));
+  await sbPatch('pagos', pagoId, { total, saldo: saldoFinal, pagado: nuevoPagado });
+  p.total = total;
+  p.saldo = saldoFinal;
+
+  // Update DOM
+  const totalEl = document.getElementById(`total-${pagoId}`);
+  if (totalEl) totalEl.innerHTML = `<strong>${formatMoney(total)}</strong>`;
+  const saldoEl = document.getElementById(`saldo-${pagoId}`);
+  if (saldoEl) saldoEl.innerHTML = saldoFinal>0?`<span class="saldo-pendiente">${formatMoney(saldoFinal)}</span>`:'<span class="saldo-ok">✓</span>';
+  const estadoEl = document.getElementById(`estado-${pagoId}`);
+  if (estadoEl) estadoEl.innerHTML = getEstadoLabel(p);
+}
+
+async function editarMes(hoja, contratoId, mesPreseleccionado) {
+  await abrirNuevoMes(hoja, mesPreseleccionado, 's1');
+}
+
+async function editarMesConSolapa(hoja, contratoId, mesPreseleccionado, solapa) {
+  await abrirNuevoMes(hoja, mesPreseleccionado, solapa);
+}
+
+async function agregarExtra(pagoId) {
+  try {
+    const r = await sbPost('pagos_extras', { pago_id: pagoId, concepto: '', importe: 0 });
+    const extra = r[0];
+    if (!extrasActuales[pagoId]) extrasActuales[pagoId] = [];
+    extrasActuales[pagoId].push(extra);
+    const div = document.getElementById(`extras-${pagoId}`);
+    if (div) {
+      const newDiv = document.createElement('div');
+      newDiv.className = 'extra-item';
+      newDiv.id = `extra-item-${extra.id}`;
+      newDiv.innerHTML = `
+        <input type="text" value="" placeholder="Concepto" style="width:120px" onchange="actualizarExtra(${extra.id},'concepto',this.value)">
+        <input type="number" value="0" placeholder="$" style="width:70px" onchange="actualizarExtra(${extra.id},'importe',this.value)">
+        <button class="grid-btn grid-btn-red" onclick="eliminarExtra(${extra.id},${pagoId})">✕</button>
+      `;
+      div.appendChild(newDiv);
+    }
+  } catch(e) { toast('Error: '+e.message,'error'); }
+}
+
+async function actualizarExtra(extraId, campo, valor) {
+  try {
+    const val = campo==='importe' ? parseFloat(valor)||0 : valor;
+    await fetch(`${SB_URL}/rest/v1/pagos_extras?id=eq.${extraId}`, {
+      method:'PATCH', headers:HEADERS, body:JSON.stringify({[campo]:val})
+    });
+    for (const pagoId in extrasActuales) {
+      const e = extrasActuales[pagoId].find(x=>x.id===extraId);
+      if (e) {
+        e[campo] = val;
+        await recalcularFilaPago(parseInt(pagoId));
+        break;
+      }
+    }
+  } catch(e) { toast('Error: '+e.message,'error'); }
+}
+
+async function eliminarExtra(extraId, pagoId) {
+  if (!confirm('¿Eliminar este concepto extra?')) return;
+  try {
+    await sbDelete('pagos_extras', extraId);
+    if (extrasActuales[pagoId]) extrasActuales[pagoId] = extrasActuales[pagoId].filter(e=>e.id!==extraId);
+    const el = document.getElementById(`extra-item-${extraId}`);
+    if (el) el.remove();
+    await recalcularFilaPago(pagoId);
+  } catch(e) { toast('Error: '+e.message,'error'); }
+}
 
 async function eliminarMes(pagoId, hoja) {
   const p = pagosActuales.find(x => x.id === pagoId);
