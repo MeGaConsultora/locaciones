@@ -6762,10 +6762,10 @@ async function renderInforme() {
         </colgroup>
         <thead><tr style="background:#1877F2;color:white">
           <th style="padding:5px 6px;cursor:pointer;user-select:none" onclick="sortInforme('contrato')">Contrato ${sortArrow('contrato')}</th>
-          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('alquiler')">Alquiler ${sortArrow('alquiler')}</th>
           <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('total')">Total mes ${sortArrow('total')}</th>
           <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('abonado')">Abonado ${sortArrow('abonado')}</th>
           <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('saldo')">Saldo ${sortArrow('saldo')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('alquiler')">Alquiler ${sortArrow('alquiler')}</th>
           <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('comision')">Comisión ${sortArrow('comision')}</th>
           <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('epe')">EPE ${sortArrow('epe')}</th>
           <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('agua')">Agua ${sortArrow('agua')}</th>
@@ -6777,10 +6777,10 @@ async function renderInforme() {
           ${rows.map(r => `
             <tr style="background:${r.rowColor};cursor:pointer" onclick="openContrato(${r.c?.id||0})">
               <td style="padding:5px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><strong>${r.p.hoja}</strong></td>
-              <td class="r" style="padding:5px 4px">${r.alquiler>0?formatMoney(r.alquiler):'—'}</td>
               <td class="r" style="padding:5px 4px">${formatMoney(r.totalReal)}</td>
               <td class="r" style="padding:5px 4px;color:var(--green)">${r.abonado>0?formatMoney(r.abonado):'—'}</td>
               <td class="r" style="padding:5px 4px;color:${r.saldo>0?'var(--accent)':'var(--green)'}">${r.saldo>0?formatMoney(r.saldo):'✓'}</td>
+              <td class="r" style="padding:5px 4px">${r.alquiler>0?formatMoney(r.alquiler):'—'}</td>
               <td class="r" style="padding:5px 4px">${r.comision>0?formatMoney(r.comision):'—'}</td>
               <td class="r" style="padding:5px 4px">${r.montoEpe>0?formatMoney(r.montoEpe):'—'}</td>
               <td class="r" style="padding:5px 4px">${r.montoAgua>0?formatMoney(r.montoAgua):'—'}</td>
@@ -6792,10 +6792,10 @@ async function renderInforme() {
         </tbody>
         <tfoot><tr style="background:#1877F2;color:white;font-weight:700">
           <td style="padding:5px 6px">TOTALES</td>
-          <td class="r" style="padding:5px 4px">${formatMoney(rows.reduce((s,r)=>s+(r.alquiler||0),0))}</td>
           <td class="r" style="padding:5px 4px">${formatMoney(totTotal)}</td>
           <td class="r" style="padding:5px 4px">${formatMoney(totAbonado)}</td>
           <td class="r" style="padding:5px 4px">${formatMoney(totSaldo)}</td>
+          <td class="r" style="padding:5px 4px">${formatMoney(rows.reduce((s,r)=>s+(r.alquiler||0),0))}</td>
           <td class="r" style="padding:5px 4px">${formatMoney(totComision)}</td>
           <td class="r" style="padding:5px 4px">${formatMoney(totEpe)}</td>
           <td class="r" style="padding:5px 4px">${formatMoney(totAgua)}</td>
