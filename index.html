@@ -6647,15 +6647,15 @@ function renderInformeFirmas() {
     <div class="table-wrap" style="overflow-x:auto">
       <table style="width:100%;min-width:900px;border-collapse:collapse;font-size:0.82rem">
         <thead><tr style="background:var(--ink2);color:white">
-          <th style="padding:6px 8px;text-align:left;cursor:pointer;user-select:none" onclick="sortInformeFirmas('contrato')">Contrato ${sortArrow('contrato')}</th>
-          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('chk_redactado')">Redactado ${sortArrow('chk_redactado')}</th>
-          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('chk_impreso')">Impreso ${sortArrow('chk_impreso')}</th>
-          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('chk_firma_inquilino')">Firma inquilino ${sortArrow('chk_firma_inquilino')}</th>
-          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('chk_firma_garante')">Firma garante/s ${sortArrow('chk_firma_garante')}</th>
-          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('chk_firma_propietario')">Firma propietario ${sortArrow('chk_firma_propietario')}</th>
-          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('chk_archivado')">Archivado ${sortArrow('chk_archivado')}</th>
-          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('archivo')">Archivo subido ${sortArrow('archivo')}</th>
-          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none" onclick="sortInformeFirmas('completados')">Completado ${sortArrow('completados')}</th>
+          <th style="padding:6px 8px;text-align:left;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:var(--ink2)" onclick="sortInformeFirmas('contrato')">Contrato ${sortArrow('contrato')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:var(--ink2)" onclick="sortInformeFirmas('chk_redactado')">Redactado ${sortArrow('chk_redactado')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:var(--ink2)" onclick="sortInformeFirmas('chk_impreso')">Impreso ${sortArrow('chk_impreso')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:var(--ink2)" onclick="sortInformeFirmas('chk_firma_inquilino')">Firma inquilino ${sortArrow('chk_firma_inquilino')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:var(--ink2)" onclick="sortInformeFirmas('chk_firma_garante')">Firma garante/s ${sortArrow('chk_firma_garante')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:var(--ink2)" onclick="sortInformeFirmas('chk_firma_propietario')">Firma propietario ${sortArrow('chk_firma_propietario')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:var(--ink2)" onclick="sortInformeFirmas('chk_archivado')">Archivado ${sortArrow('chk_archivado')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:var(--ink2)" onclick="sortInformeFirmas('archivo')">Archivo subido ${sortArrow('archivo')}</th>
+          <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:var(--ink2)" onclick="sortInformeFirmas('completados')">Completado ${sortArrow('completados')}</th>
         </tr></thead>
         <tbody>
           ${contratosVigentes.map(c => {
@@ -6854,17 +6854,17 @@ async function renderInforme() {
           <col style="width:7%"><col style="width:7%"><col style="width:7%">
         </colgroup>
         <thead><tr style="background:#1877F2;color:white">
-          <th style="padding:5px 6px;cursor:pointer;user-select:none" onclick="sortInforme('contrato')">Contrato ${sortArrow('contrato')}</th>
-          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('total')">Total mes ${sortArrow('total')}</th>
-          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('abonado')">Abonado ${sortArrow('abonado')}</th>
-          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('saldo')">Saldo ${sortArrow('saldo')}</th>
-          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('alquiler')">Alquiler ${sortArrow('alquiler')}</th>
-          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('comision')">Comisión ${sortArrow('comision')}</th>
-          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('epe')">EPE ${sortArrow('epe')}</th>
-          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('agua')">Agua ${sortArrow('agua')}</th>
-          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('tgiu')">TGIU ${sortArrow('tgiu')}</th>
-          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('seguro')">Seguro ${sortArrow('seguro')}</th>
-          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none" onclick="sortInforme('extras')">Extras ${sortArrow('extras')}</th>
+          <th style="padding:5px 6px;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:#1877F2" onclick="sortInforme('contrato')">Contrato ${sortArrow('contrato')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:#1877F2" onclick="sortInforme('total')">Total mes ${sortArrow('total')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:#1877F2" onclick="sortInforme('abonado')">Abonado ${sortArrow('abonado')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:#1877F2" onclick="sortInforme('saldo')">Saldo ${sortArrow('saldo')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:#1877F2" onclick="sortInforme('alquiler')">Alquiler ${sortArrow('alquiler')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:#1877F2" onclick="sortInforme('comision')">Comisión ${sortArrow('comision')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:#1877F2" onclick="sortInforme('epe')">EPE ${sortArrow('epe')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:#1877F2" onclick="sortInforme('agua')">Agua ${sortArrow('agua')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:#1877F2" onclick="sortInforme('tgiu')">TGIU ${sortArrow('tgiu')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:#1877F2" onclick="sortInforme('seguro')">Seguro ${sortArrow('seguro')}</th>
+          <th class="r" style="padding:5px 4px;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:#1877F2" onclick="sortInforme('extras')">Extras ${sortArrow('extras')}</th>
         </tr></thead>
         <tbody>
           ${rows.map(r => `
