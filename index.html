@@ -1927,6 +1927,7 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
   document.getElementById('modal-subtitle').textContent = `${normTipo(c.tipo_inmueble)} · Cargando...`;
   document.getElementById('modal-body').innerHTML = `
     <div id="contrato-btns-${c.id}" style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center;position:relative">
+      <button id="btn-refrescar-contrato" class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;color:#0d9488;border-color:#0d9488;white-space:nowrap" onclick="actualizarVistaContrato()" title="Volver a traer los datos desde el servidor (útil si cargaste servicios u otro cambio en otra pestaña)">🔄 Actualizar</button>
       <button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;white-space:nowrap" onclick="openEditContrato(${c.id})">✏️ Editar</button>
       <button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="abrirCrearAcceso(${c.id},'${c.hoja}')">🔑 Acceso inquilino</button>
       ${c.periodicidad_actualizacion && c.periodicidad_actualizacion !== 'Sin actualización' ? `<button class="btn btn-secondary contrato-btn-main" style="font-size:0.78rem;color:#6610f2;border-color:#6610f2;white-space:nowrap" onclick="abrirProyectarContrato(${c.id},'${c.hoja}')">📈 Proyectar alquiler</button>` : ''}
@@ -2095,6 +2096,19 @@ async function toggleChecklistItem(contratoId, key, valor) {
     toast(valor ? 'Marcado ✓' : 'Desmarcado');
   } catch(e) {
     toast('Error al guardar: ' + e.message, 'error');
+  }
+}
+
+async function actualizarVistaContrato() {
+  if (!contratoActual) return;
+  const btn = document.getElementById('btn-refrescar-contrato');
+  const originalTxt = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Actualizando...'; }
+  try {
+    await recargarGrilla(contratoActual);
+    toast('Datos actualizados ✓');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = originalTxt || '🔄 Actualizar'; }
   }
 }
 
@@ -10615,6 +10629,13 @@ setInterval(async () => {
     renderContratos();
     renderVencimientos();
     renderClientes();
+    // Si el modal de un contrato está abierto, refrescar también su grilla
+    // (por ejemplo, si se cargó un servicio desde otra pestaña mientras este quedó abierto)
+    if (contratoActual && document.getElementById('modal-overlay')?.classList.contains('open') && document.getElementById('grilla-container')) {
+      const cFresh = DB.contratos.find(x => x.id === contratoActual.id) || contratoActual;
+      contratoActual = cFresh;
+      await recargarGrilla(cFresh);
+    }
   } catch(e) {
     document.getElementById('sync-status').textContent = 'Sin conexión';
   }
