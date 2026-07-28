@@ -3300,12 +3300,18 @@ function previsualizarConfirmacion() {
       rm++; if (rm > 12) { rm = 1; ry++; }
     }
     const avisoPagoPrevio = conPagoPrevio > 0 ? `<div style="font-size:0.7rem;color:#c0392b;margin-top:2px">⚠ ${conPagoPrevio} mes/es ya tiene/n alquiler cargado (se sobreescribirá)</div>` : '';
+    // Aviso: el contrato no inicio el dia 1 -> el calculo de "cada cuantos meses corresponde actualizar" solo mira año/mes, ignora el dia
+    const diaInicio = parseInt(c.vigencia_desde?.substring(8, 10), 10);
+    const avisoDiaInicio = (diaInicio && diaInicio !== 1)
+      ? `<div style="font-size:0.7rem;color:#c0392b;margin-top:2px">⚠ Contrato inició el día ${diaInicio} (no el 1º) — el cálculo de actualización solo considera mes/año, verificar que corresponda</div>`
+      : '';
     return `<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:5px 8px;font-size:0.82rem">
         <div>${c.titulo||c.hoja}</div>
         <div style="font-size:0.72rem;color:var(--accent);margin-top:2px">📅 ${rangMeses}</div>
         <div style="font-size:0.7rem;color:#888;margin-top:2px">${existentes} existente/s · ${nuevos} nuevo/s</div>
         ${avisoPagoPrevio}
+        ${avisoDiaInicio}
       </td>
       <td style="padding:5px 8px;text-align:right;font-size:0.82rem">${formatMoney(actual)}</td>
       <td style="padding:5px 8px;text-align:right;font-size:0.82rem;color:var(--green);font-weight:700">${formatMoney(importe)}</td>
