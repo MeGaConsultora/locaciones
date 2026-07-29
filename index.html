@@ -10850,12 +10850,13 @@ async function procesarPDF() {
         let contratosMatch = [];
         if (cuenta) {
           const idsVistos = new Set();
+          const esElegible = cc => { const est = getEstado(cc); return est !== 'vencido' && est !== 'rescindido'; };
           DB_SUMINISTROS.filter(s => s.nro_cuenta === String(cuenta) && s.tipo === srv).forEach(s => {
             const cc = DB.contratos.find(x => x.id === parseInt(s.contrato_id));
-            if (cc && !idsVistos.has(cc.id)) { idsVistos.add(cc.id); contratosMatch.push(cc); }
+            if (cc && esElegible(cc) && !idsVistos.has(cc.id)) { idsVistos.add(cc.id); contratosMatch.push(cc); }
           });
           if (!contratosMatch.length) {
-            DB.contratos.filter(cc => cc[`nro_${srv}`] === String(cuenta)).forEach(cc => {
+            DB.contratos.filter(cc => cc[`nro_${srv}`] === String(cuenta) && esElegible(cc)).forEach(cc => {
               if (!idsVistos.has(cc.id)) { idsVistos.add(cc.id); contratosMatch.push(cc); }
             });
           }
@@ -11332,6 +11333,8 @@ async function procesarExcelTGIU() {
 
     if (!items.length) { toast('No se encontraron datos válidos en el Excel', 'error'); return; }
 
+    const mesStr = mesKey + '-01';
+
     // Match with DB_SUMINISTROS
     const resultados = [];
     for (const item of items) {
@@ -11343,7 +11346,11 @@ async function procesarExcelTGIU() {
         const contratos = sums.map(s => {
           const c = DB.contratos.find(x => x.id === parseInt(s.contrato_id));
           return { c, s };
-        }).filter(x => x.c && getEstado(x.c) === 'vigente');
+        }).filter(x => x.c && getEstado(x.c) === 'vigente')
+          // Marcar si a ESE contrato le falta el pago del mes: confirmarImportarExcel()
+          // lo saltea en silencio si no existe (sbGet devuelve vacío → continue), así
+          // que hay que avisarlo acá antes, no dejar que parezca que se va a cargar.
+          .map(x => ({ ...x, sinMes: !DB.pagos?.find(p => p.hoja === x.c.hoja && p.mes?.startsWith(mesStr)) }));
         if (contratos.length === 0) {
           resultados.push({ nro: item.nro, importe: item.importe, contrato: null, sinContrato: true });
         } else {
@@ -11355,6 +11362,7 @@ async function procesarExcelTGIU() {
     // Show preview with checkboxes
     const conContrato = resultados.filter(r => !r.sinContrato);
     const sinContrato = resultados.filter(r => r.sinContrato);
+    const sinMesTotalCount = conContrato.filter(r => r.contratos.every(x => x.sinMes)).length;
     window._excelImportData = { resultados: conContrato, mesKey, srv };
 
     // Hide procesar button, show preview buttons
@@ -11362,10 +11370,11 @@ async function procesarExcelTGIU() {
     const preview = document.getElementById('excel-preview');
     preview.style.display = 'block';
     preview.innerHTML = `
-      <div style="margin-bottom:0.75rem;font-size:0.85rem;color:#666;display:flex;align-items:center;gap:1rem">
-        <span><strong>${conContrato.length}</strong> registros con contrato · <strong>${sinContrato.length}</strong> sin contrato</span>
+      <div style="margin-bottom:0.75rem;font-size:0.85rem;color:#666;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+        <span><strong>${conContrato.length}</strong> registros con contrato · <strong>${sinContrato.length}</strong> sin contrato
+        ${sinMesTotalCount ? ` · <span style="color:#c0392b">⚠ ${sinMesTotalCount} sin mes ${mesKey} cargado (no se pueden guardar)</span>` : ''}</span>
         <label style="font-size:0.82rem;cursor:pointer;display:flex;align-items:center;gap:4px">
-          <input type="checkbox" id="excel-chk-all" checked onchange="document.querySelectorAll('.excel-chk-row').forEach(c=>c.checked=this.checked)">
+          <input type="checkbox" id="excel-chk-all" checked onchange="document.querySelectorAll('.excel-chk-row:not([disabled])').forEach(c=>c.checked=this.checked)">
           Seleccionar todos
         </label>
       </div>
@@ -11382,15 +11391,21 @@ async function procesarExcelTGIU() {
           </thead>
           <tbody>
             ${resultados.map((r, i) => {
+              // Si NINGÚN contrato de la fila tiene el mes cargado, no hay nada
+              // que confirmarImportarExcel() pueda guardar — tratarla como
+              // "sin contrato" (deshabilitada) en vez de dejarla tildable.
+              const ningunoCargable = !r.sinContrato && r.contratos.every(x => x.sinMes);
               const nombreContratos = r.sinContrato ? '<span style="color:var(--accent)">Sin contrato</span>' :
-                r.contratos.map(x => x.c.titulo||x.c.hoja).join(', ');
+                r.contratos.map(x => `${x.c.titulo||x.c.hoja}${x.sinMes ? ` <span style="font-size:0.7rem;color:#c0392b">(⚠ sin mes ${mesKey} cargado)</span>` : ''}`).join(', ');
               const aCargar = r.sinContrato ? '—' : r.contratos.map(x => {
+                if (x.sinMes) return `${x.c.titulo||x.c.hoja}: <span style="color:#c0392b">—</span>`;
                 const pct = x.s.pct_inquilino||0;
                 return `${x.c.titulo||x.c.hoja}: $${(Math.round(r.importe * pct / 100 * 100)/100).toLocaleString('es-AR')}`;
               }).join(' / ');
-              return `<tr style="border-bottom:1px solid #f0ece4;${r.sinContrato?'background:#fdecea;opacity:0.6':''}">
+              const deshabilitada = r.sinContrato || ningunoCargable;
+              return `<tr style="border-bottom:1px solid #f0ece4;${deshabilitada?'background:#fdecea;opacity:0.6':''}">
                 <td style="padding:5px 8px;text-align:center">
-                  ${!r.sinContrato ? `<input type="checkbox" class="excel-chk-row" data-idx="${i}" checked>` : ''}
+                  ${!deshabilitada ? `<input type="checkbox" class="excel-chk-row" data-idx="${i}" checked>` : ''}
                 </td>
                 <td style="padding:5px 8px">${r.nro}</td>
                 <td style="padding:5px 8px;text-align:right">$${r.importe.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
@@ -11508,14 +11523,15 @@ function resetImportarPDF() {
 async function mostrarResultadosPDF(resultados, mes, srv) {
   const el = document.getElementById('pdf-resultados');
   el.style.display = 'block';
+  const mesStr = mes + '-01';
   const withContrato = resultados.filter(r => r.contrato).length;
   const sinContrato = resultados.filter(r => !r.contrato && r.cuenta).length;
   const sinDatos = resultados.filter(r => !r.cuenta).length;
+  const sinMesCount = resultados.filter(r => r.contrato && !DB.pagos?.find(p => p.hoja === r.contrato.hoja && p.mes?.startsWith(mesStr))).length;
 
   // Cargar pagos_suministros de los pagos involucrados, para poder mostrar
   // la columna "Cargado" (igual criterio que en la pantalla de EPE: si es
   // una cuenta 100% propietario, mirar importe_propietario en vez de importe).
-  const mesStr = mes + '-01';
   const pagoIdsPDF = [];
   resultados.forEach(r => {
     if (!r.contrato) return;
@@ -11535,6 +11551,7 @@ async function mostrarResultadosPDF(resultados, mes, srv) {
       <span style="color:var(--green)">${withContrato} con contrato</span> · 
       <span style="color:var(--accent)">${sinContrato} sin contrato</span>
       ${sinDatos ? ` · <span style="color:#aaa">${sinDatos} sin datos</span>` : ''}
+      ${sinMesCount ? ` · <span style="color:#c0392b">⚠ ${sinMesCount} sin mes ${mes} cargado (no se pueden guardar)</span>` : ''}
     </div>
     <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">
       <button onclick="toggleTodosPDF(true)" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer">✓ Seleccionar todos</button>
@@ -11576,8 +11593,9 @@ async function mostrarResultadosPDF(resultados, mes, srv) {
             // para este pago+cuenta, con el mismo criterio de reparto que
             // "A cargar" (si es 100% propietario, mirar importe_propietario).
             let cargadoInq = null, cargadoProp = null;
+            let pagoDeEsteRow = null;
             if (r.contrato) {
-              const pagoDeEsteRow = DB.pagos?.find(p => p.hoja === r.contrato.hoja && p.mes?.startsWith(mesStr));
+              pagoDeEsteRow = DB.pagos?.find(p => p.hoja === r.contrato.hoja && p.mes?.startsWith(mesStr));
               if (pagoDeEsteRow && sumsAll.length) {
                 const sumIdsRow = sumsAll.map(s => s.id);
                 const psDeEsteRow = psPDF.filter(ps => ps.pago_id === pagoDeEsteRow.id && sumIdsRow.includes(ps.suministro_id));
@@ -11587,15 +11605,20 @@ async function mostrarResultadosPDF(resultados, mes, srv) {
                 }
               }
             }
-            const rowColor = !r.cuenta ? '#f5f5f5' : !r.contrato ? '#fff8f8' : '';
+            // Si el contrato existe pero no tiene generado el pago de este mes,
+            // confirmarImportarPDF() lo va a saltear silenciosamente (sbGet no
+            // devuelve filas → continue). Marcarlo acá para no mostrar un
+            // importe "a cargar" que en realidad nunca se va a guardar.
+            const sinMes = !!(r.contrato && !pagoDeEsteRow);
+            const rowColor = !r.cuenta ? '#f5f5f5' : !r.contrato ? '#fff8f8' : sinMes ? '#fff3e0' : '';
             const contratoLabel = r.contrato ? r.contrato.titulo : '';
             return `<tr style="border-bottom:1px solid #eee;background:${rowColor}" data-cuenta="${r.cuenta||''}" data-contrato="${contratoLabel}">
               <td style="padding:6px 8px;text-align:center">
-                <input type="checkbox" class="pdf-chk" data-idx="${i}" ${r.seleccionado ? 'checked' : ''} ${!r.contrato ? 'disabled' : ''} style="width:15px;height:15px">
+                <input type="checkbox" class="pdf-chk" data-idx="${i}" ${(r.seleccionado && !sinMes) ? 'checked' : ''} ${(!r.contrato || sinMes) ? 'disabled' : ''} style="width:15px;height:15px">
               </td>
               <td style="padding:6px 8px">${r.pagina}</td>
               <td style="padding:6px 8px;font-weight:600">${r.cuenta || '<span style="color:#aaa">—</span>'}</td>
-              <td style="padding:6px 8px">${r.contrato ? r.contrato.titulo : r.cuenta ? '<span style="color:var(--accent)">Sin contrato</span>' : '<span style="color:#aaa">Sin datos</span>'} ${r.textoRaw ? `<button onclick="alert(this.dataset.t)" data-t="${(r.textoRaw||'').replace(/"/g,'&quot;')}" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:0.7rem">🔍</button>` : ''}</td>
+              <td style="padding:6px 8px">${r.contrato ? r.contrato.titulo : r.cuenta ? '<span style="color:var(--accent)">Sin contrato</span>' : '<span style="color:#aaa">Sin datos</span>'} ${sinMes ? `<div style="font-size:0.7rem;color:#c0392b;margin-top:2px">⚠ Sin mes ${mes.replace('-','/')} cargado — no se puede guardar</div>` : ''} ${r.textoRaw ? `<button onclick="alert(this.dataset.t)" data-t="${(r.textoRaw||'').replace(/"/g,'&quot;')}" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:0.7rem">🔍</button>` : ''}</td>
               <td style="padding:6px 8px;text-align:right">${r.importe ? formatMoney(r.importe) : '—'}</td>
               <td style="padding:6px 8px;text-align:right;color:#888">${
                 cargadoInq === null ? '—' :
@@ -11604,6 +11627,7 @@ async function mostrarResultadosPDF(resultados, mes, srv) {
                 (cargadoInq>0 ? formatMoney(cargadoInq) : '—')
               }</td>
               <td style="padding:6px 8px;text-align:right;color:var(--green)">${
+                sinMes ? '<span style="color:#c0392b">—</span>' :
                 !r.importe ? '—' :
                 compartido ? `${formatMoney(montoInqRow)} <span style="font-size:0.68rem;color:#888" title="Reparto: ${pctInqTotal}% inquilino / ${pctPropTotal}% propietario">+ ${formatMoney(montoPropRow)} (prop.)</span>` :
                 esPropietario ? `${formatMoney(aCargar)} <span style="font-size:0.68rem;color:#856404" title="Este % es a cargo del propietario, no del inquilino">(prop.)</span>` :
