@@ -11553,7 +11553,11 @@ async function mostrarResultadosPDF(resultados, mes, srv) {
         </tr></thead>
         <tbody id="pdf-tabla-body">
           ${resultados.map((r, i) => {
-            const sumsAll = r.contrato ? DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === r.contrato.id && s.tipo === srv) : [];
+            const sumsAll = r.contrato
+              ? (r.cuenta
+                  ? DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === r.contrato.id && s.tipo === srv && String(s.nro_cuenta) === String(r.cuenta))
+                  : DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === r.contrato.id && s.tipo === srv))
+              : [];
             const pctInqTotal = sumsAll.reduce((t,s) => t + (s.pct_inquilino||0), 0);
             const pctPropTotal = sumsAll.reduce((t,s) => t + (s.pct_propietario||0), 0);
             const compartido = pctInqTotal > 0 && pctPropTotal > 0;
