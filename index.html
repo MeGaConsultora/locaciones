@@ -10842,24 +10842,34 @@ async function procesarPDF() {
           }
         }
 
-        // Find contrato by nro_cuenta — check contrato_suministros first, then old field
-        let contrato = null;
+        // Find contrato(s) por nro_cuenta — chequear contrato_suministros primero,
+        // luego el campo legado como fallback. IMPORTANTE: usamos filter, no find,
+        // porque una misma cuenta puede estar repartida entre varios contratos
+        // (ej: 50%/50%, 25%/25%). find() solo agarraba el primero y dejaba al
+        // resto sin cargar aunque la cuenta se haya leído perfectamente bien.
+        let contratosMatch = [];
         if (cuenta) {
-          const sum = DB_SUMINISTROS.find(s => s.nro_cuenta === String(cuenta) && s.tipo === srv);
-          if (sum) {
-            contrato = DB.contratos.find(c => c.id === parseInt(sum.contrato_id)) || null;
-          }
-          if (!contrato) {
-            contrato = DB.contratos.find(c => c[`nro_${srv}`] === String(cuenta)) || null;
+          const idsVistos = new Set();
+          DB_SUMINISTROS.filter(s => s.nro_cuenta === String(cuenta) && s.tipo === srv).forEach(s => {
+            const cc = DB.contratos.find(x => x.id === parseInt(s.contrato_id));
+            if (cc && !idsVistos.has(cc.id)) { idsVistos.add(cc.id); contratosMatch.push(cc); }
+          });
+          if (!contratosMatch.length) {
+            DB.contratos.filter(cc => cc[`nro_${srv}`] === String(cuenta)).forEach(cc => {
+              if (!idsVistos.has(cc.id)) { idsVistos.add(cc.id); contratosMatch.push(cc); }
+            });
           }
         }
-        resultados.push({
-          pagina: i,
-          cuenta: cuenta || null,
-          importe: importe || null,
-          contrato: contrato || null,
-          seleccionado: !!contrato,
-          textoRaw: cleanText.substring(0, 500)
+        if (!contratosMatch.length) contratosMatch = [null];
+        contratosMatch.forEach(contrato => {
+          resultados.push({
+            pagina: i,
+            cuenta: cuenta || null,
+            importe: importe || null,
+            contrato: contrato || null,
+            seleccionado: !!contrato,
+            textoRaw: cleanText.substring(0, 500)
+          });
         });
       } catch(e) {
         resultados.push({ pagina: i, cuenta: null, importe: null, contrato: null, seleccionado: false, error: e.message });
