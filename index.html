@@ -2612,19 +2612,30 @@ async function regenerarMeses(contratoId, hoja) {
     let [y, m] = c.vigencia_desde.substring(0,7).split('-').map(Number);
     const [fy, fm] = c.vigencia_hasta.substring(0,7).split('-').map(Number);
 
+    // Solo el primer mes que se genera lleva el importe inicial, y únicamente
+    // si el contrato no tenía NINGÚN pago cargado todavía (arranque desde
+    // cero). Si ya había pagos previos (ej: el primer período ya se había
+    // proyectado y solo faltan los meses siguientes), los nuevos quedan en $0
+    // — si les pusiéramos el importe de una, "Actualización de alquileres"
+    // los daría por ya resueltos y no los ofrecería para actualizar cuando
+    // les toque, aunque el % de índice ya se haya cumplido.
+    let esPrimerMesGenerado = mesesExistentes.size === 0;
+
     const nuevos = [];
     while (y < fy || (y === fy && m <= fm)) {
       const key = `${y}-${String(m).padStart(2,'0')}`;
       if (!mesesExistentes.has(key)) {
+        const imp = esPrimerMesGenerado ? importe : 0;
         nuevos.push({
           hoja,
           mes: key + '-01',
           corresponde_a_mes: key + '-01',
-          importe_alquiler: importe,
-          total: importe,
-          saldo: importe,
+          importe_alquiler: imp,
+          total: imp,
+          saldo: imp,
           pagado: '0'
         });
+        esPrimerMesGenerado = false;
       }
       m++; if (m > 12) { m = 1; y++; }
     }
@@ -8426,21 +8437,34 @@ async function actualizarContrato(id) {
       nuevaHasta !== (contratoOriginal.vigencia_hasta?.substring(0,10)||'')
     );
 
-    // Generate missing months if vigencia was extended
+    // Generate missing months if vigencia was extended (o si es la primera vez
+    // que se completan las fechas y todavía no había NINGÚN pago cargado)
     if (nuevaHasta && fechasChanged) {
       const hoja = contratoOriginal?.hoja || contratoOriginal?.titulo;
       if (hoja) {
         const hojaEncoded = encodeURIComponent(hoja);
         const pagosExistentes = await sbGet('pagos', `hoja=eq.${hojaEncoded}&order=mes.desc&limit=1`);
         const ultimoMes = pagosExistentes[0]?.mes?.substring(0,7);
-        if (ultimoMes && ultimoMes < nuevaHasta.substring(0,7)) {
-          // Generate months from after last existing to new end
+        // Si NO hay ningún pago todavía (ultimoMes es undefined), arrancar
+        // desde vigencia_desde en vez de quedarse sin generar nada — antes,
+        // al no haber "último mes" del cual partir, este bloque no generaba
+        // ni un solo mes y solo quedaban creados los que proyectarPeriodo()
+        // arma más abajo (limitados al primer período de la periodicidad).
+        const inicioGen = ultimoMes
+          ? (() => { let [y,m] = ultimoMes.split('-').map(Number); m++; if (m>12){m=1;y++;} return `${y}-${String(m).padStart(2,'0')}`; })()
+          : (nuevaDesde ? nuevaDesde.substring(0,7) : null);
+        if (inicioGen && inicioGen <= nuevaHasta.substring(0,7)) {
+          // Generate months from inicioGen to new end
           const mesesNuevos = [];
-          let [y, m] = ultimoMes.split('-').map(Number);
+          let [y, m] = inicioGen.split('-').map(Number);
           const [ey, em] = nuevaHasta.substring(0,7).split('-').map(Number);
-          m++; if (m > 12) { m = 1; y++; }
           const impNuevo = parseMonto(document.getElementById('f-importe-inicial')?.value) || 0;
-          let esPrimerMesNuevo = true;
+          // El importe inicial solo va en el primer mes generado si es la
+          // primera carga de meses del contrato (sin pago previo); si ya
+          // había pagos y solo se está extendiendo la vigencia, los meses
+          // nuevos arrancan en $0 igual que antes, a la espera de que les
+          // toque su actualización.
+          let esPrimerMesNuevo = !ultimoMes;
           while (y < ey || (y === ey && m <= em)) {
             const mesStr = `${y}-${String(m).padStart(2,'0')}-01`;
             const imp = esPrimerMesNuevo ? impNuevo : 0;
