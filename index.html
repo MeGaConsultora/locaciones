@@ -7565,7 +7565,12 @@ async function duplicarContrato(id) {
     fecha_rescision: null,
     inmueble_id: c.inmueble_id,
     _propietariosCopia: DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === id && x.rol === 'propietario'),
-    _suministrosCopia: DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === id)
+    // IMPORTANTE: sacarle el id real de la base a cada suministro copiado.
+    // Si se deja el id original, _renderSuministroRow() lo marca como
+    // "existente" y guardarSuministros() termina haciendo sbPatch sobre el
+    // suministro del contrato VIEJO (reasignándolo al nuevo) en vez de crear
+    // uno nuevo — corrompe el contrato original y descuadra los %.
+    _suministrosCopia: DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === id).map(s => ({ ...s, id: null }))
   };
 
   _abrirFormularioContrato(copia, true);
