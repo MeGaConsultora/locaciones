@@ -3563,8 +3563,14 @@ async function cargarListaServicios(filtro='') {
         if (!c.vigencia_hasta) return false;
         if (c.vigencia_hasta.substring(0,7) !== mesKey) return false;
       }
-      // Only show contracts that started on or before the selected month
-      if (c.vigencia_desde && c.vigencia_desde.substring(0,7) > mesKey) return false;
+      // Only show contracts that started on or before the selected month —
+      // salvo que el mes YA tenga un pago cargado para este contrato: si lo
+      // tiene, es un mes real que hay que poder seguir editando, sin importar
+      // que vigencia_desde se haya movido hacia adelante después (ej: al
+      // renovar el mismo contrato extendiendo su vigencia, en vez de crear
+      // uno nuevo, actualizar vigencia_desde escondía retroactivamente todos
+      // los meses anteriores de este mismo contrato en Cargar Servicios).
+      if (c.vigencia_desde && c.vigencia_desde.substring(0,7) > mesKey && !pagosPorHoja[c.hoja]) return false;
       const tieneSum = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === parseInt(c.id) && s.tipo === srv && ((s.pct_inquilino||0) > 0 || (s.pct_propietario||0) > 0));
       // fallback to old field if no suministros row
       const hasSuministros = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === parseInt(c.id));
