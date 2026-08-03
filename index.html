@@ -4867,7 +4867,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       </div>
       <div class="form-actions" style="justify-content:space-between">
         ${((p.total||0) > (p.saldo||0) || (p.pagado && p.pagado !== '0')) ? `<button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="revertirCobro('${hoja}',${contratoId},'${mesKey}',${comisionPct})">↩ Revertir cobro</button>` : '<div></div>'}
-        <button class="btn btn-secondary" onclick="verDetalleDeuda('${hoja}',${contratoId},'${mesKey}',document.getElementById('gp-interes-chk')?.checked||false,document.getElementById('gp-fecha-pago')?.value)" style="margin-right:0.5rem">📋 Detalle de deuda</button>
+        <button class="btn btn-secondary" onclick="verDetalleDeuda('${hoja}',${contratoId},'${mesKey}',document.getElementById('gp-interes-chk')?.checked||false,document.getElementById('gp-fecha-pago')?.value,obtenerChecksCobroGP())" style="margin-right:0.5rem">📋 Detalle de deuda</button>
         <button class="btn btn-green" style="white-space:normal;text-align:center" onclick="confirmarCobroInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct})">✓ Confirmar cobro + Imprimir recibo</button>
       </div>`}
     </div>
@@ -6083,7 +6083,19 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
-async function verDetalleDeuda(hoja, contratoId, mesKey, conIntereses = false, fechaPago = null) {
+function obtenerChecksCobroGP() {
+  const chk = {};
+  ['alquiler','epe','agua','tgiu','seguro','internet','expensas'].forEach(k => {
+    const el = document.getElementById('cobro-chk-'+k);
+    // Si no existe el checkbox para este ítem (porque ya está totalmente
+    // pagado o no aplica), no lo filtramos — solo excluimos los que el
+    // usuario destildó explícitamente en la pantalla de cobro.
+    chk[k] = el ? el.checked : true;
+  });
+  return chk;
+}
+
+async function verDetalleDeuda(hoja, contratoId, mesKey, conIntereses = false, fechaPago = null, itemsChecked = null) {
   const fechaCalculo = fechaPago || TODAY;
   const mes = mesKey+'-01';
   const hojaEncoded = encodeURIComponent(hoja);
@@ -6104,19 +6116,26 @@ async function verDetalleDeuda(hoja, contratoId, mesKey, conIntereses = false, f
     return p['monto_'+tipo]||0;
   };
   const items = [
-    { label:'Alquiler', monto: p.importe_alquiler||0 },
-    { label:'EPE', monto: getSrv('epe') },
-    { label:'Agua', monto: getSrv('agua') },
-    { label:'TGIU', monto: getSrv('tgiu') },
-    { label:'Seguro', monto: getSrv('seguro') },
-    { label:'Internet', monto: getSrv('internet') },
-    { label:'Expensas', monto: getSrv('expensas') },
+    { label:'Alquiler', monto: p.importe_alquiler||0, key:'alquiler' },
+    { label:'EPE', monto: getSrv('epe'), key:'epe' },
+    { label:'Agua', monto: getSrv('agua'), key:'agua' },
+    { label:'TGIU', monto: getSrv('tgiu'), key:'tgiu' },
+    { label:'Seguro', monto: getSrv('seguro'), key:'seguro' },
+    { label:'Internet', monto: getSrv('internet'), key:'internet' },
+    { label:'Expensas', monto: getSrv('expensas'), key:'expensas' },
     ...extras.map(e => {
       const importe = parseFloat(e.importe)||0;
       const esCredito = e.tipo === 'descuento' || e.tipo === 'credito';
       return { label: e.concepto||'Extra', monto: esCredito ? -importe : importe };
     })
-  ].filter(i => i.monto !== 0);
+  ]
+    .filter(i => i.monto !== 0)
+    // Si el usuario destildó un ítem en "Ingresar Pago" (ej: Agua, porque
+    // se va a cobrar aparte), el Detalle de deuda tiene que reflejar lo
+    // mismo que se está por cobrar — antes ignoraba los checkboxes y
+    // siempre mostraba todos los ítems con importe, aunque estuvieran
+    // destildados en pantalla.
+    .filter(i => !itemsChecked || i.key === undefined || itemsChecked[i.key] !== false);
 
   // Incluir interés punitorio solo si el checkbox del GP estaba tildado
   if (conIntereses) {
