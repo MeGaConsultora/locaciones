@@ -4740,9 +4740,9 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
             }
             if (!habilitado) {
               const disabledHint = `<div style="font-size:0.72rem;color:#aaa;margin-top:2px">Esta cuenta es compartida (con otro contrato o con el propietario) — modificala desde "Cargar Servicios"</div>`;
-              return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" ${onInput} style="background:#f5f5f5;color:#999;cursor:not-allowed" readonly title="Esta cuenta es compartida — modificala desde Cargar Servicios">${disabledHint}</div>`;
+              return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="text" inputmode="decimal" value="${val||''}" placeholder="0" data-pct="${pct}" ${onInput} style="background:#f5f5f5;color:#999;cursor:not-allowed" readonly title="Esta cuenta es compartida — modificala desde Cargar Servicios">${disabledHint}</div>`;
             }
-            return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="number" value="${val||''}" placeholder="0" data-pct="${pct}" data-sum-id="${sumIdUnico||''}" ${onInput}></div>`;
+            return `<div class="form-group"><label>${label}${pct<100?' ('+pct+'%)':''}</label><input id="${id}" type="text" inputmode="decimal" value="${val||''}" placeholder="0" data-pct="${pct}" data-sum-id="${sumIdUnico||''}" ${onInput}></div>`;
           };
           // Get value from pagos_suministros — fallback to monto_xxx if no suministros data
           const getSrvVal = (srv) => {
@@ -5710,7 +5710,7 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
   const applyFieldPct = (id) => {
     const el = document.getElementById(id);
     if (!el) return 0;
-    const val = parseFloat(el.value)||0;
+    const val = parseMonto(el.value);
     const pct = parseFloat(el.dataset.pct)||100;
     return Math.round(val * pct / 100 * 100) / 100;
   };
