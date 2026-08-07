@@ -9149,8 +9149,13 @@ function imprimirSrvInforme() {
   const tabla = document.getElementById('srv-inf-contenido')?.querySelector('table');
   if (!tabla) { toast('No hay datos para imprimir', 'error'); return; }
 
-  // Clonar tabla sin checkboxes
+  // Clonar tabla, sacar las filas NO tildadas (no se van a abonar) y
+  // reemplazar los checkboxes restantes por indicadores de solo texto
   const clone = tabla.cloneNode(true);
+  clone.querySelectorAll('tbody tr').forEach(tr => {
+    const chkSel = tr.querySelector('.srv-chk');
+    if (chkSel && !chkSel.checked) tr.remove();
+  });
   clone.querySelectorAll('input[type="checkbox"]').forEach(chk => {
     const span = document.createElement('span');
     span.textContent = chk.checked ? '✓' : '—';
