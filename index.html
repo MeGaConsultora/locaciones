@@ -5751,8 +5751,23 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
   // correspondiente — quedando invisible para "Ingresar Pago", que ya no
   // mira ese campo viejo una vez que el contrato tiene una cuenta real.
   const usaSuministrosPorTipo = {};
+  // sincronizablePorTipo: distinto de usaSuministrosPorTipo — acá exigimos
+  // que haya EXACTAMENTE un suministro de este tipo para el contrato. Si hay
+  // más de uno (ej: una cuenta exclusiva 100% + la porción de una cuenta
+  // compartida con otros contratos), el campo del GP ya queda de solo
+  // lectura (ver mkSrvField) porque no hay forma de editarlo desde ahí — pero
+  // el guardado igual llamaba a _syncPagosSuministros con el TOTAL combinado
+  // y lo repartía mal entre los dos suministros usando pct_inquilino como si
+  // fueran porciones de la misma boleta (no lo son: cada uno es % de una
+  // boleta distinta). Eso pisaba con un valor incorrecto lo que ya estaba
+  // bien cargado desde "Cargar Servicios" o una importación. Con más de un
+  // suministro del mismo tipo, no sincronizar nada acá — se edita solo desde
+  // "Cargar Servicios".
+  const sincronizablePorTipo = {};
   TIPOS_SERVICIO.forEach(srv => {
-    usaSuministrosPorTipo[srv] = DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === contratoId && s.tipo === srv);
+    const sumsTipo = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === srv);
+    usaSuministrosPorTipo[srv] = sumsTipo.length > 0;
+    sincronizablePorTipo[srv] = sumsTipo.length === 1;
   });
 
   let totalActualPorTipo = {};
@@ -5810,10 +5825,11 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       });
       await sbPatch('pagos', pagoId, patchData);
 
-      // Tipos CON cuenta real: sincronizar pagos_suministros — siempre, sin
-      // importar si este mes puntual ya tenía filas cargadas antes.
+      // Tipos CON cuenta real y SIN ambigüedad (un solo suministro de este
+      // tipo): sincronizar pagos_suministros — siempre, sin importar si este
+      // mes puntual ya tenía filas cargadas antes.
       const montosParaSync = {};
-      TIPOS_SERVICIO.forEach(srv => { if (usaSuministrosPorTipo[srv]) montosParaSync[srv] = montoPorTipo[srv]; });
+      TIPOS_SERVICIO.forEach(srv => { if (sincronizablePorTipo[srv]) montosParaSync[srv] = montoPorTipo[srv]; });
       if (Object.keys(montosParaSync).length) {
         await _syncPagosSuministros(pagoId, contratoId, montosParaSync);
       }
@@ -5842,7 +5858,7 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       pagoId = r[0]?.id;
       if (pagoId) {
         const montosParaSync = {};
-        TIPOS_SERVICIO.forEach(srv => { if (usaSuministrosPorTipo[srv]) montosParaSync[srv] = montoPorTipo[srv]; });
+        TIPOS_SERVICIO.forEach(srv => { if (sincronizablePorTipo[srv]) montosParaSync[srv] = montoPorTipo[srv]; });
         if (Object.keys(montosParaSync).length) await _syncPagosSuministros(pagoId, contratoId, montosParaSync);
       }
     }
