@@ -618,6 +618,10 @@
         <option value="pagado_proveedor">Pagados a proveedor</option>
       </select>
       <input type="text" class="search-input" id="srv-inf-buscar" placeholder="Buscar contrato o N° cuenta…" style="width:220px" oninput="renderSrvInforme()">
+      <select class="filter-select" id="srv-inf-orden" style="width:auto" onchange="renderSrvInforme()">
+        <option value="contrato">Ordenar por Contrato</option>
+        <option value="nro">Ordenar por N° servicio</option>
+      </select>
       <button class="btn btn-secondary" onclick="srvInfSelAll(true)" style="font-size:0.78rem">✓ Todos</button>
       <button class="btn btn-secondary" onclick="srvInfSelAll(false)" style="font-size:0.78rem">✕ Ninguno</button>
       <button class="btn btn-secondary" onclick="imprimirSrvInforme()" style="font-size:0.78rem">🖨️ Imprimir</button>
@@ -9042,8 +9046,17 @@ async function renderSrvInforme() {
     (f.nro||f.sum?.nro_cuenta||'').toLowerCase().includes(buscar)
   );
 
-  // Orden alfabético
-  filas.sort((a, b) => (a.c?.titulo||a.pago?.hoja||'').toLowerCase().localeCompare((b.c?.titulo||b.pago?.hoja||'').toLowerCase()));
+  // Orden: por contrato (alfabético, default) o por N° de servicio
+  const orden = document.getElementById('srv-inf-orden')?.value || 'contrato';
+  if (orden === 'nro') {
+    filas.sort((a, b) => {
+      const nroA = (a.sum?.nro_cuenta || a.nro || (a.c ? (tipo==='srv-epe' ? a.c.nro_epe : tipo==='srv-agua' ? a.c.nro_agua : a.c.nro_tgiu) : '') || '').toString();
+      const nroB = (b.sum?.nro_cuenta || b.nro || (b.c ? (tipo==='srv-epe' ? b.c.nro_epe : tipo==='srv-agua' ? b.c.nro_agua : b.c.nro_tgiu) : '') || '').toString();
+      return nroA.localeCompare(nroB, undefined, { numeric: true });
+    });
+  } else {
+    filas.sort((a, b) => (a.c?.titulo||a.pago?.hoja||'').toLowerCase().localeCompare((b.c?.titulo||b.pago?.hoja||'').toLowerCase()));
+  }
 
   if (!filas.length) {
     contenedor.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Sin registros para el período</p></div>';
