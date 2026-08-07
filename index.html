@@ -3808,7 +3808,17 @@ async function cargarListaServicios(filtro='') {
       let totalBoleta = 0;
       for (const {c, sumId} of g.items) {
         if (sumId && psSumMap[sumId] !== undefined) {
-          const inq = psSumMap[sumId] || 0;
+          // Cuenta 100% a cargo del propietario (pct_inquilino=0): el campo
+          // del inquilino (psSumMap/ps.importe) da $0 legítimamente, porque
+          // el inquilino no paga nada de esta cuenta — el importe real de la
+          // boleta está en importe_propietario. Sin este chequeo, la fila
+          // siempre mostraba "$0,00 cargado" aunque el importe correcto ya
+          // estuviera guardado y aplicado bien al contrato.
+          const sumObj = DB_SUMINISTROS.find(x => x.id === sumId);
+          const esPropSolo = sumObj && (sumObj.pct_inquilino||0) === 0 && (sumObj.pct_propietario||0) > 0;
+          const inq = esPropSolo
+            ? (pagosSuministros.find(ps => ps.suministro_id === sumId)?.importe_propietario || 0)
+            : (psSumMap[sumId] || 0);
           const pct = getPctRef(c, sumId);
           if (inq > 0 && pct > 0) { totalBoleta = Math.round(inq * 100 / pct * 100) / 100; break; }
           const p = pagosPorHoja[c.hoja];
