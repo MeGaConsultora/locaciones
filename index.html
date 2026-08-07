@@ -618,10 +618,6 @@
         <option value="pagado_proveedor">Pagados a proveedor</option>
       </select>
       <input type="text" class="search-input" id="srv-inf-buscar" placeholder="Buscar contrato o N° cuenta…" style="width:220px" oninput="renderSrvInforme()">
-      <select class="filter-select" id="srv-inf-orden" style="width:auto" onchange="renderSrvInforme()">
-        <option value="contrato">Ordenar por Contrato</option>
-        <option value="nro">Ordenar por N° servicio</option>
-      </select>
       <button class="btn btn-secondary" onclick="srvInfSelAll(true)" style="font-size:0.78rem">✓ Todos</button>
       <button class="btn btn-secondary" onclick="srvInfSelAll(false)" style="font-size:0.78rem">✕ Ninguno</button>
       <button class="btn btn-secondary" onclick="imprimirSrvInforme()" style="font-size:0.78rem">🖨️ Imprimir</button>
@@ -9046,8 +9042,9 @@ async function renderSrvInforme() {
     (f.nro||f.sum?.nro_cuenta||'').toLowerCase().includes(buscar)
   );
 
-  // Orden: por contrato (alfabético, default) o por N° de servicio
-  const orden = document.getElementById('srv-inf-orden')?.value || 'contrato';
+  // Orden: por contrato (alfabético, default) o por N° de servicio — se
+  // cambia haciendo click en el encabezado de la columna correspondiente.
+  const orden = window._srvInfOrden || 'contrato';
   if (orden === 'nro') {
     filas.sort((a, b) => {
       const nroA = (a.sum?.nro_cuenta || a.nro || (a.c ? (tipo==='srv-epe' ? a.c.nro_epe : tipo==='srv-agua' ? a.c.nro_agua : a.c.nro_tgiu) : '') || '').toString();
@@ -9086,8 +9083,8 @@ async function renderSrvInforme() {
   contenedor.innerHTML = `<table style="width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
     <thead><tr style="background:#1877F2;color:white">
       <th style="padding:8px;width:32px"></th>
-      <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Contrato</th>
-      <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Nº servicio</th>
+      <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase;cursor:pointer;user-select:none" onclick="srvInfOrdenarPor('contrato')" title="Ordenar por contrato">Contrato${orden==='contrato'?' ▾':''}</th>
+      <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase;cursor:pointer;user-select:none" onclick="srvInfOrdenarPor('nro')" title="Ordenar por N° de servicio">Nº servicio${orden==='nro'?' ▾':''}</th>
       <th style="padding:8px;text-align:right;font-size:0.72rem;text-transform:uppercase">Importe</th>
       <th style="padding:8px;text-align:center;font-size:0.72rem;text-transform:uppercase">Inq. abonó</th>
       <th style="padding:8px;text-align:center;font-size:0.72rem;text-transform:uppercase">
@@ -9195,6 +9192,11 @@ function imprimirSrvInforme() {
   </body></html>`);
   doc.close();
   setTimeout(() => iframe.contentWindow.print(), 300);
+}
+
+function srvInfOrdenarPor(campo) {
+  window._srvInfOrden = campo;
+  renderSrvInforme();
 }
 
 function srvInfActualizarTotal() {
