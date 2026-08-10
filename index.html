@@ -2763,6 +2763,12 @@ async function abrirCrearAcceso(contratoId, hoja) {
       <div class="form-group">
         <label>Nombre (para el portal)</label>
         <input id="acc-nombre" type="text" value="${nombrePortal}" autocomplete="new-password" style="margin-top:4px" placeholder="Primer nombre">
+      </div>
+    </div>
+    <div id="acc-resultado" style="display:none;margin-top:1rem"></div>
+    <div class="form-actions" style="margin-top:1rem">
+      <button class="btn btn-secondary" onclick="openContrato(${contratoId})">← Volver</button>
+      <button class="btn btn-green" onclick="modificarAccesoInquilino(${contratoId},'${hoja}')">✎ Actualizar acceso</button>
     </div>
   ` : `
     <p style="font-size:0.85rem;color:#666;margin-bottom:1.2rem">
@@ -2784,7 +2790,11 @@ async function abrirCrearAcceso(contratoId, hoja) {
       <button class="btn btn-green" onclick="crearAccesoInquilino(${contratoId},'${hoja}')">🔑 Crear acceso</button>
     </div>
   `;
-  document.getElementById('modal-overlay').dataset.contratoId = '';
+  // Guardar el contratoId acá para que el botón ✕ del modal (closeModal
+  // genérico) vuelva a la ficha del contrato en vez de cerrar todo — antes
+  // se vaciaba, y el reflejo natural de cerrar con la ✕ (en vez del botón
+  // "← Volver") sacaba a la persona del contrato por completo.
+  document.getElementById('modal-overlay').dataset.contratoId = contratoId;
   document.getElementById('modal-overlay').classList.add('open');
 }
 
