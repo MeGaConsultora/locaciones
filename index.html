@@ -6471,10 +6471,17 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
       }
     }
   } else {
-    // No items ticked: distribute full amount in order
+    // No items ticked: distribute full amount in order.
+    // IMPORTANTE: usar getItemMonto() (que revisa pagos_suministros para las
+    // cuentas migradas) en vez del campo legado monto_xxx directo — ese
+    // campo queda en 0 una vez migrado, así que EPE/Agua/etc. se trataban
+    // como si no se debiera nada ahí, y un pago "a cuenta" sin tildar nada
+    // terminaba volcándose todo en Alquiler/TGIU/Seguro, dejando parte del
+    // importe sin asignar a ningún concepto puntual (aunque el saldo TOTAL
+    // quedaba bien, el desglose de "pendiente" del recibo salía mal).
     for (const item of orden) {
       if (restante <= 0) break;
-      const monto = parseFloat(p[`monto_${item}`] || (item==='alquiler'?p.importe_alquiler:0)) || 0;
+      const monto = getItemMonto(item);
       const yaPagado = parseFloat(p[`pagado_${item}`]) || 0;
       const saldoItem = Math.max(0, monto - yaPagado);
       if (saldoItem <= 0) continue;
