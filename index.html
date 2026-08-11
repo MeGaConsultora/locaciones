@@ -7343,7 +7343,17 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
   }
   if (yaEmitidoFecha) {
     const fecha = new Date(yaEmitidoFecha).toLocaleDateString('es-AR');
-    if (!confirm(`⚠ El recibo de ${propietarioNombreActivo} ya fue emitido el ${fecha}.\n\n¿Querés generarlo nuevamente de todas formas?`)) return;
+    // Si ya hay ítems marcados como rendidos antes (rendido_prop_items no
+    // vacío), lo que se está por generar es el SALDO restante, no una
+    // repetición de lo mismo — el aviso fuerte de "¿generarlo de nuevo?"
+    // queda confuso/alarmante en ese caso. Se usa un mensaje más suave.
+    // Si el mapa está vacío (emisión de antes de este tracking, o realmente
+    // no quedó nada nuevo), se mantiene el aviso original.
+    const huboRendicionParcial = Object.keys(window._gpRendidoPropItems || {}).length > 0;
+    const mensaje = huboRendicionParcial
+      ? `ℹ️ Este mes ya tiene una rendición parcial a ${propietarioNombreActivo} (${fecha}).\n\nVas a generar el recibo por el saldo restante que quedó pendiente. ¿Continuar?`
+      : `⚠ El recibo de ${propietarioNombreActivo} ya fue emitido el ${fecha}.\n\n¿Querés generarlo nuevamente de todas formas?`;
+    if (!confirm(mensaje)) return;
   }
 
   const checks = document.querySelectorAll('[id^="prop-chk-"]');
