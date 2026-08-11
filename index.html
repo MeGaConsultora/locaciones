@@ -4711,17 +4711,23 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
   const esMultiPropGP = propsCpGP.length > 1;
   const activePropIdGP = window._gpPropietarioId ? parseInt(window._gpPropietarioId) : (propsCpGP[0]?.persona_id ? parseInt(propsCpGP[0].persona_id) : null);
   let reciboPropEmitidoActivo = false, reciboPropFechaActivo = null;
+  // Qué ya se rindió (por ítem) en emisiones anteriores de este mismo mes,
+  // para que generarItemsPropietario() solo ofrezca el saldo pendiente de
+  // cada concepto en vez de todo el importe de nuevo.
+  let rendidoPropItemsGP = {};
   if (p) {
     if (esMultiPropGP && activePropIdGP) {
       try {
-        const emitidosGP = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${p.id}&persona_id=eq.${activePropIdGP}&select=fecha&limit=1`);
-        if (emitidosGP.length) { reciboPropEmitidoActivo = true; reciboPropFechaActivo = emitidosGP[0].fecha; }
+        const emitidosGP = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${p.id}&persona_id=eq.${activePropIdGP}&select=fecha,items_rendidos&limit=1`);
+        if (emitidosGP.length) { reciboPropEmitidoActivo = true; reciboPropFechaActivo = emitidosGP[0].fecha; rendidoPropItemsGP = emitidosGP[0].items_rendidos || {}; }
       } catch(e) {}
     } else {
       reciboPropEmitidoActivo = !!p.recibo_prop_emitido;
       reciboPropFechaActivo = p.recibo_prop_fecha;
+      rendidoPropItemsGP = p.rendido_prop_items || {};
     }
   }
+  window._gpRendidoPropItems = rendidoPropItemsGP;
 
   const alq = p?.importe_alquiler||0;
   const comisionMonto = alq * (comisionPct/100);
@@ -4912,7 +4918,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
         const tieneParteProp = Object.values(psDeEsteP).some(e => (typeof e === 'object' ? (e.prop||0) : 0) > 0);
         return (!p || (!p.total && !(p.pagado_importe > 0) && !tieneParteProp)) && !_sH;
       })() ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
-      <div id="gp-prop-items">${generarItemsPropietario(p, extrasProp, comisionPct, c, window._gpPropietarioId||null)}</div>
+      <div id="gp-prop-items">${generarItemsPropietario(p, extrasProp, comisionPct, c, window._gpPropietarioId||null, rendidoPropItemsGP)}</div>
       <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem;font-size:1rem">
         <span>Total a rendir:</span>
         <span id="gp-total-prop" style="color:var(--green)">—</span>
@@ -5165,8 +5171,6 @@ async function cambiarPropietarioGP(personaId) {
   const comisionPct = window._gpComision || 8;
   const c = DB.contratos.find(x => x.id === contratoId);
   const extrasProp = (extrasActuales[p?.id]||[]).filter(e => e.a_cargo_de === 'propietario' || e.propietario_persona_id);
-  document.getElementById('gp-prop-items').innerHTML = generarItemsPropietario(p, extrasProp, comisionPct, c, personaId);
-  recalcProp();
 
   // Refrescar también el cartel "✓ Emitido" y el botón de abajo para el
   // propietario recién seleccionado — antes quedaban con el estado del
@@ -5175,26 +5179,33 @@ async function cambiarPropietarioGP(personaId) {
   const propsCpCambio = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId) && x.rol === 'propietario');
   const esMultiPropCambio = propsCpCambio.length > 1;
   const activePropIdCambio = personaId ? parseInt(personaId) : (propsCpCambio[0]?.persona_id ? parseInt(propsCpCambio[0].persona_id) : null);
-  let emitidoCambio = false, fechaCambio = null;
+  let emitidoCambio = false, fechaCambio = null, rendidoCambio = {};
   if (p) {
     if (esMultiPropCambio && activePropIdCambio) {
       try {
-        const emitidosCambio = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${p.id}&persona_id=eq.${activePropIdCambio}&select=fecha&limit=1`);
-        if (emitidosCambio.length) { emitidoCambio = true; fechaCambio = emitidosCambio[0].fecha; }
+        const emitidosCambio = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${p.id}&persona_id=eq.${activePropIdCambio}&select=fecha,items_rendidos&limit=1`);
+        if (emitidosCambio.length) { emitidoCambio = true; fechaCambio = emitidosCambio[0].fecha; rendidoCambio = emitidosCambio[0].items_rendidos || {}; }
       } catch(e) {}
     } else {
       emitidoCambio = !!p.recibo_prop_emitido;
       fechaCambio = p.recibo_prop_fecha;
+      rendidoCambio = p.rendido_prop_items || {};
     }
   }
+  window._gpRendidoPropItems = rendidoCambio;
+  document.getElementById('gp-prop-items').innerHTML = generarItemsPropietario(p, extrasProp, comisionPct, c, personaId, rendidoCambio);
+  recalcProp();
+
   const wrapBadge = document.getElementById('gp-prop-emitido-wrap');
   if (wrapBadge) {
     wrapBadge.innerHTML = renderReciboPropBadgeYBoton(p?.id, esMultiPropCambio, activePropIdCambio, contratoId, window._gpMesKey, comisionPct, hoja, emitidoCambio, fechaCambio);
   }
 }
 
-function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
+function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId, rendidoMap = {}) {
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
+  rendidoMap = rendidoMap || {};
+  let huboAlgoPendiente = false;
   // Get propietarios for this contract
   const propsCp = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(c?.id) && x.rol === 'propietario');
   // If multiple propietarios and no specific one selected, show first
@@ -5204,7 +5215,13 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
   const pctAlq = activeCp?.pct_alquiler ?? 100;
   const alqTotal = p.importe_alquiler||0;
   const alq = Math.round(alqTotal * pctAlq / 100 * 100) / 100;
-  const comision = Math.round(alq * (comisionPct/100) * 100) / 100;
+  // Ya rendido de alquiler (emisiones anteriores de este mismo mes) — la
+  // comisión se deriva proporcional al alquiler pendiente, no se trackea
+  // aparte: si ya se rindió una parte del alquiler, la comisión de esa
+  // parte también quedó descontada entonces en la misma proporción.
+  const alqRendido = rendidoMap['alquiler'] || 0;
+  const alqPendiente = Math.round(Math.max(0, alq - alqRendido) * 100) / 100;
+  const comision = Math.round(alqPendiente * (comisionPct/100) * 100) / 100;
   const propNombre = activeCp ? (DB_PERSONAS.find(x=>x.id===parseInt(activeCp.persona_id)) ? formatNombrePersona(DB_PERSONAS.find(x=>x.id===parseInt(activeCp.persona_id))) : '') : '';
   const pctLabel = pctAlq < 100 ? ` (${pctAlq}%)` : '';
   const propSelectorHtml = propsCp.length > 1 ? '<div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap">' +
@@ -5217,14 +5234,16 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
       return '<button onclick="cambiarPropietarioGP('+cp.persona_id+')" style="padding:4px 12px;border-radius:20px;border:1.5px solid '+borderColor+';background:'+bg+';color:'+color+';font-size:0.82rem;cursor:pointer">'+
         formatNombrePersona(per)+' ('+(cp.pct_alquiler??100)+'%)</button>';
     }).join('') + '</div>' : '';
-  return `
+  if (alqPendiente > 0.01) huboAlgoPendiente = true;
+  const bodyHtml = `
     ${propSelectorHtml}
+    ${alqPendiente > 0.01 ? `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
-        <input type="checkbox" id="prop-chk-alquiler" value="${alq}" checked onchange="recalcProp()" style="width:15px;height:15px">
+        <input type="checkbox" id="prop-chk-alquiler" value="${alqPendiente}" checked onchange="recalcProp()" style="width:15px;height:15px">
         Alquiler${pctLabel}
       </label>
-      <span style="font-size:0.85rem;color:#666">${formatMoney(alq)}</span>
+      <span style="font-size:0.85rem;color:#666">${formatMoney(alqPendiente)}</span>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
@@ -5232,7 +5251,7 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
         Comisión ${comisionPct}%${pctLabel}
       </label>
       <span style="font-size:0.85rem;color:var(--accent)">− ${formatMoney(comision)}</span>
-    </div>
+    </div>` : ''}
     ${(() => {
       const activePropIdStr = activeCp ? String(parseInt(activeCp.persona_id)) : null;
       const hayMultiplesProp = propsCp.length > 1;
@@ -5280,12 +5299,17 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
         const color = e.tipo==='credito' ? 'var(--green)' : 'var(--accent)';
         const signoLabel = e.tipo==='credito' ? '+' : '−';
         const estaAgrupado = conceptosAgrupados.has((e.concepto||'').trim().toLowerCase());
+        const extraTotal = Math.abs(e.importe||0);
+        const extraRendido = rendidoMap['extra-'+e.id] || 0;
+        const extraPendiente = Math.round(Math.max(0, extraTotal - extraRendido) * 100) / 100;
+        if (extraPendiente <= 0.01) return '';
+        huboAlgoPendiente = true;
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
-            <input type="checkbox" id="prop-chk-extra-${e.id}" value="${Math.abs(e.importe||0)}" data-signo="${signo}" checked onchange="recalcProp()" style="width:15px;height:15px">
+            <input type="checkbox" id="prop-chk-extra-${e.id}" value="${extraPendiente}" data-signo="${signo}" checked onchange="recalcProp()" style="width:15px;height:15px">
             ${e.concepto||'Extra'}${estaAgrupado ? ' <span style="font-size:0.68rem;color:#2980b9;background:#e8f4fd;padding:1px 5px;border-radius:3px">parte</span>' : ''} <span style="font-size:0.72rem;color:${color}">(${e.tipo==='credito'?'crédito':'débito'})</span>
           </label>
-          <span style="font-size:0.85rem;color:${color}">${signoLabel} ${formatMoney(Math.abs(e.importe||0))}</span>
+          <span style="font-size:0.85rem;color:${color}">${signoLabel} ${formatMoney(extraPendiente)}</span>
         </div>`;
       }).join('');
     })()}
@@ -5368,23 +5392,33 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
           const sumLabel = srv.label + (nro && allSums.length > 1 ? ` Cta.${nro}` : '');
 
           if (seRinde) {
-            const mesKey = p.mes?.substring(0,7) || '';
-            const totalRendidoInq = montoInqSum;
-            html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
-              <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
-                <input type="checkbox" id="prop-chk-srv-${srv.key}-${sum?.id||0}" value="${totalRendidoInq}" data-signo="1" checked onchange="recalcProp()" style="width:15px;height:15px">
-                ${sumLabel} (a rendir)
-              </label>
-              <span style="font-size:0.85rem;color:var(--green)">+ ${formatMoney(totalRendidoInq)}</span>
-            </div>`;
+            const rendKey = `srv-${srv.key}-${sum?.id||0}`;
+            const yaRendidoSrv = rendidoMap[rendKey] || 0;
+            const pendienteSrv = Math.round(Math.max(0, montoInqSum - yaRendidoSrv) * 100) / 100;
+            if (pendienteSrv > 0.01) {
+              huboAlgoPendiente = true;
+              html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
+                <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
+                  <input type="checkbox" id="prop-chk-${rendKey}" value="${pendienteSrv}" data-signo="1" checked onchange="recalcProp()" style="width:15px;height:15px">
+                  ${sumLabel} (a rendir)
+                </label>
+                <span style="font-size:0.85rem;color:var(--green)">+ ${formatMoney(pendienteSrv)}</span>
+              </div>`;
+            }
           } else if (seDescuenta && montoPropSum > 0) {
-            html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
-              <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
-                <input type="checkbox" id="prop-chk-srv-prop-${srv.key}-${sum?.id||0}" value="${montoPropSum}" data-signo="-1" checked onchange="recalcProp()" style="width:15px;height:15px">
-                ${sumLabel} (propietario ${pctProp}%)
-              </label>
-              <span style="font-size:0.85rem;color:var(--accent)">− ${formatMoney(montoPropSum)}</span>
-            </div>`;
+            const rendKeyProp = `srv-prop-${srv.key}-${sum?.id||0}`;
+            const yaRendidoSrvProp = rendidoMap[rendKeyProp] || 0;
+            const pendienteSrvProp = Math.round(Math.max(0, montoPropSum - yaRendidoSrvProp) * 100) / 100;
+            if (pendienteSrvProp > 0.01) {
+              huboAlgoPendiente = true;
+              html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
+                <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer">
+                  <input type="checkbox" id="prop-chk-${rendKeyProp}" value="${pendienteSrvProp}" data-signo="-1" checked onchange="recalcProp()" style="width:15px;height:15px">
+                  ${sumLabel} (propietario ${pctProp}%)
+                </label>
+                <span style="font-size:0.85rem;color:var(--accent)">− ${formatMoney(pendienteSrvProp)}</span>
+              </div>`;
+            }
           }
         }
       }
@@ -5397,6 +5431,7 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
       const pagadoProp = cuotasH.reduce((s,g) => s+(parseFloat(g.pagado_propietario)||0), 0);
       const saldoProp = Math.round(Math.max(0, totalProp - pagadoProp) * 100) / 100;
       if (saldoProp <= 0) return '';
+      huboAlgoPendiente = true;
       const montoCuota = cuotasH[0]?.monto_propietario || 0;
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
         <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer;flex:1">
@@ -5409,6 +5444,10 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId) {
       </div>`;
     })()}
   `;
+  if (!huboAlgoPendiente) {
+    return `${propSelectorHtml}<div class="empty-state"><div class="icon">✓</div><p>Ya se rindió todo lo disponible de este mes — no queda nada pendiente para ${propNombre||'este propietario'}.</p></div>`;
+  }
+  return bodyHtml;
 }
 
 function recalcIntereses() {
@@ -7359,19 +7398,31 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
   // Mark as emitted — por propietario si el contrato tiene más de uno
   try {
     const now = new Date().toISOString();
+    // Acumular lo rendido en esta emisión sobre lo que ya se había rendido
+    // antes (window._gpRendidoPropItems), para que la próxima vez que se
+    // abra este mes solo se ofrezca el saldo que quede. Se excluye
+    // "honorarios" porque ese ítem ya se trackea aparte, en gastos_inicio_cuotas.
+    const nuevoRendidoMap = { ...(window._gpRendidoPropItems || {}) };
+    checks.forEach(chk => {
+      if (!chk.checked) return;
+      const itemKey = chk.id.replace('prop-chk-', '');
+      if (itemKey === 'honorarios') return;
+      const val = parseFloat(chk.value) || 0;
+      nuevoRendidoMap[itemKey] = Math.round(((nuevoRendidoMap[itemKey] || 0) + val) * 100) / 100;
+    });
     if (esMultiProp && activePropId) {
       try {
         const existenteEmision = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${p.id}&persona_id=eq.${activePropId}&limit=1`);
         if (existenteEmision.length) {
-          await sbPatch('recibos_propietario_emitidos', existenteEmision[0].id, { fecha: now });
+          await sbPatch('recibos_propietario_emitidos', existenteEmision[0].id, { fecha: now, items_rendidos: nuevoRendidoMap });
         } else {
-          await sbPost('recibos_propietario_emitidos', { pago_id: p.id, persona_id: activePropId, fecha: now });
+          await sbPost('recibos_propietario_emitidos', { pago_id: p.id, persona_id: activePropId, fecha: now, items_rendidos: nuevoRendidoMap });
         }
-      } catch(e) { console.warn('No se pudo marcar la emisión por propietario (¿falta crear la tabla recibos_propietario_emitidos?):', e); }
+      } catch(e) { console.warn('No se pudo marcar la emisión por propietario (¿falta crear la tabla recibos_propietario_emitidos o la columna items_rendidos?):', e); }
     } else {
-      await sbPatch('pagos', p.id, { recibo_prop_emitido: true, recibo_prop_fecha: now });
+      await sbPatch('pagos', p.id, { recibo_prop_emitido: true, recibo_prop_fecha: now, rendido_prop_items: nuevoRendidoMap });
       const pLocal = DB.pagos.find(x => x.id === p.id);
-      if (pLocal) { pLocal.recibo_prop_emitido = true; pLocal.recibo_prop_fecha = now; }
+      if (pLocal) { pLocal.recibo_prop_emitido = true; pLocal.recibo_prop_fecha = now; pLocal.rendido_prop_items = nuevoRendidoMap; }
     }
     // Reload GP panel to show emitted indicator
     if (window._gpHoja && window._gpContratoId && window._gpMesKey) {
@@ -11905,16 +11956,17 @@ async function confirmarImportarPDF() {
 }
 
 async function revertirReciboEmitido(pagoId, personaId) {
-  if (!confirm('¿Revertir la emisión de este recibo? Volverá a aparecer en la lista de recibos a emitir.')) return;
+  if (!confirm('¿Revertir la emisión de este recibo? Volverá a aparecer en la lista de recibos a emitir, con todos los ítems otra vez disponibles para rendir.')) return;
   try {
     if (personaId) {
       // Multi-propietario: revertir solo la emisión de este propietario puntual
+      // (borrar la fila entera también borra items_rendidos, que vive ahí)
       const existente = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${pagoId}&persona_id=eq.${personaId}&limit=1`);
       if (existente.length) await sbDelete('recibos_propietario_emitidos', existente[0].id);
     } else {
-      await sbPatch('pagos', pagoId, { recibo_prop_emitido: false, recibo_prop_fecha: null });
+      await sbPatch('pagos', pagoId, { recibo_prop_emitido: false, recibo_prop_fecha: null, rendido_prop_items: {} });
       const p = DB.pagos.find(x => x.id === pagoId);
-      if (p) { p.recibo_prop_emitido = false; p.recibo_prop_fecha = null; }
+      if (p) { p.recibo_prop_emitido = false; p.recibo_prop_fecha = null; p.rendido_prop_items = {}; }
     }
     toast('Emisión revertida ✓');
     // Reload GP panel if open
@@ -12212,13 +12264,19 @@ async function generarRecibosSeleccionados() {
 
   let allHtml = '';
   const pagoIds = [];
+  const detalleRendido = []; // {pagoId, personaId, itemsRendidos} — para persistir en confirmarRecibosEmitidos
   // Cargar qué (pago_id, persona_id) ya fueron emitidos individualmente desde
-  // el GP, para no reimprimir de más ni volver a marcarlos acá.
+  // el GP, para no reimprimir de más ni volver a marcarlos acá — y de paso
+  // traer qué se rindió antes (items_rendidos) para ofrecer solo el saldo.
   let emitidosIndividual = [];
   try {
-    emitidosIndividual = await sbGet('recibos_propietario_emitidos', `pago_id=in.(${pagoIdsSel.join(',')})&select=pago_id,persona_id`);
+    emitidosIndividual = await sbGet('recibos_propietario_emitidos', `pago_id=in.(${pagoIdsSel.join(',')})&select=pago_id,persona_id,items_rendidos`);
   } catch(e) { console.warn('No se pudo chequear emisiones individuales por propietario:', e); }
   const yaEmitido = (pagoId, personaId) => emitidosIndividual.some(e => e.pago_id === pagoId && parseInt(e.persona_id) === parseInt(personaId));
+  const rendidoDeEsePropietario = (pagoId, personaId) => {
+    const fila = emitidosIndividual.find(e => e.pago_id === pagoId && parseInt(e.persona_id) === parseInt(personaId));
+    return fila?.items_rendidos || {};
+  };
 
   for (const [idx, chk] of checks.entries()) {
     const pagoId = parseInt(chk.dataset.pagoId);
@@ -12226,7 +12284,6 @@ async function generarRecibosSeleccionados() {
     const c = DB.contratos.find(x => x.hoja === hoja);
     const p = DB.pagos.find(x => x.id === pagoId);
     if (!c || !p) continue;
-    pagoIds.push(pagoId);
     let extras = [];
     try { extras = await sbGet('pagos_extras', `pago_id=eq.${pagoId}&order=id.asc`); } catch(e) {}
     const extrasProp = extras.filter(e => e.a_cargo_de === 'propietario' || e.propietario_persona_id);
@@ -12241,9 +12298,13 @@ async function generarRecibosSeleccionados() {
     if (propsCp.length > 1 && !propsToRender.length) continue; // ya se emitieron todos individualmente
     for (const cp of propsToRender) {
       const propPersonaId = cp ? cp.persona_id : null;
-      const reciboHtml = generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPersonaId);
+      const rendidoMap = propsCp.length > 1 ? rendidoDeEsePropietario(pagoId, propPersonaId) : (p.rendido_prop_items || {});
+      const { html: reciboHtml, itemsRendidos } = generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPersonaId, rendidoMap);
+      if (!reciboHtml) continue; // nada pendiente de rendir para este propietario este mes
+      if (!pagoIds.includes(pagoId)) pagoIds.push(pagoId);
+      detalleRendido.push({ pagoId, personaId: propPersonaId, itemsRendidos });
       const propNombreLabel = cp ? (DB_PERSONAS.find(x=>x.id===parseInt(cp.persona_id)) ? formatNombrePersona(DB_PERSONAS.find(x=>x.id===parseInt(cp.persona_id))) : c?.locador||'') : c?.locador||'';
-      const isFirst = idx === 0 && propsToRender.indexOf(cp) === 0;
+      const isFirst = allHtml === '';
       allHtml += `
         <div class="recibo-mitad recibo-original"${!isFirst?' style="page-break-before:always"':''}>
           <div class="recibo-label">▶ ORIGINAL &nbsp;·&nbsp; <span style="font-size:0.85rem;letter-spacing:0.05em">${propNombreLabel}</span></div>
@@ -12251,6 +12312,11 @@ async function generarRecibosSeleccionados() {
         </div>
         <div class="recibo-mitad"><div class="recibo-label">▶ DUPLICADO</div><div class="recibo-inner">${reciboHtml}</div></div>`;
     }
+  }
+  if (!allHtml) {
+    ventana.close();
+    toast('No queda nada pendiente de rendir en los recibos seleccionados — ya se rindió todo antes.', 'error');
+    return;
   }
   ventana.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8"><title>Recibos Propietario — ${fechaMes}</title>
@@ -12318,35 +12384,42 @@ async function generarRecibosSeleccionados() {
   </body></html>`);
   ventana.document.close();
   window._recibosPendientesMarcar = pagoIds;
+  window._recibosDetalleRendido = detalleRendido;
 }
 
 async function confirmarRecibosEmitidos() {
   const pagoIds = window._recibosPendientesMarcar || [];
   if (!pagoIds.length) return;
+  const detalleRendido = window._recibosDetalleRendido || [];
   const now = new Date().toISOString();
 
   // Para contratos con UN propietario: sigue usando el campo de siempre en
   // `pagos`. Para contratos con MÁS de un propietario: marca cada uno en la
   // tabla nueva (recibos_propietario_emitidos), igual criterio que el GP
   // individual — así los dos caminos quedan siempre consistentes entre sí.
-  for (const id of pagoIds) {
-    const p = DB.pagos.find(x => x.id === id);
-    const c = p ? DB.contratos.find(x => x.hoja === p.hoja) : null;
-    const propsCp = c ? DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === c.id && x.rol === 'propietario') : [];
-    if (propsCp.length > 1) {
-      for (const cp of propsCp) {
-        try {
-          const existente = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${id}&persona_id=eq.${cp.persona_id}&limit=1`);
-          if (existente.length) {
-            await sbPatch('recibos_propietario_emitidos', existente[0].id, { fecha: now });
-          } else {
-            await sbPost('recibos_propietario_emitidos', { pago_id: id, persona_id: cp.persona_id, fecha: now });
-          }
-        } catch(e) { console.warn('No se pudo marcar emisión por propietario (¿falta la tabla?):', id, cp.persona_id, e); }
-      }
+  // Se recorre detalleRendido (no todos los propietarios del contrato a
+  // ciegas) para marcar como emitido solo lo que realmente se incluyó en
+  // esta tanda de impresión, y para poder acumular items_rendidos.
+  for (const { pagoId, personaId, itemsRendidos } of detalleRendido) {
+    const p = DB.pagos.find(x => x.id === pagoId);
+    if (personaId) {
+      try {
+        const existente = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${pagoId}&persona_id=eq.${personaId}&select=id,items_rendidos&limit=1`);
+        const rendidoPrevio = existente.length ? (existente[0].items_rendidos || {}) : {};
+        const rendidoNuevo = { ...rendidoPrevio };
+        Object.entries(itemsRendidos || {}).forEach(([k,v]) => { rendidoNuevo[k] = Math.round(((rendidoNuevo[k]||0) + v) * 100) / 100; });
+        if (existente.length) {
+          await sbPatch('recibos_propietario_emitidos', existente[0].id, { fecha: now, items_rendidos: rendidoNuevo });
+        } else {
+          await sbPost('recibos_propietario_emitidos', { pago_id: pagoId, persona_id: personaId, fecha: now, items_rendidos: rendidoNuevo });
+        }
+      } catch(e) { console.warn('No se pudo marcar emisión por propietario (¿falta la tabla o la columna items_rendidos?):', pagoId, personaId, e); }
     } else {
-      await sbPatch('pagos', id, { recibo_prop_emitido: true, recibo_prop_fecha: now });
-      if (p) { p.recibo_prop_emitido = true; p.recibo_prop_fecha = now; }
+      const rendidoPrevio = p?.rendido_prop_items || {};
+      const rendidoNuevo = { ...rendidoPrevio };
+      Object.entries(itemsRendidos || {}).forEach(([k,v]) => { rendidoNuevo[k] = Math.round(((rendidoNuevo[k]||0) + v) * 100) / 100; });
+      await sbPatch('pagos', pagoId, { recibo_prop_emitido: true, recibo_prop_fecha: now, rendido_prop_items: rendidoNuevo });
+      if (p) { p.recibo_prop_emitido = true; p.recibo_prop_fecha = now; p.rendido_prop_items = rendidoNuevo; }
     }
   }
 
@@ -12375,11 +12448,14 @@ async function confirmarRecibosEmitidos() {
   }
 
   window._recibosPendientesMarcar = [];
+  window._recibosDetalleRendido = [];
   toast(`${pagoIds.length} recibo/s marcados como emitidos ✓`);
   renderRecibosEmitir();
 }
 
-function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPersonaId) {
+function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPersonaId, rendidoMap = {}) {
+  rendidoMap = rendidoMap || {};
+  const itemsRendidos = {}; // itemKey -> monto incluido en ESTA emisión (para persistir después)
   // Soporte multi-propietario: igual que GP
   const propsCp = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(c?.id) && x.rol === 'propietario');
   const activeCp = propPersonaId
@@ -12388,17 +12464,24 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPers
   const pctAlq = activeCp?.pct_alquiler ?? 100;
   const alquilerTotal = p.importe_alquiler || 0;
   const alquiler = Math.round(alquilerTotal * pctAlq / 100 * 100) / 100;
-  const comision = Math.round(alquiler * comisionPct / 100 * 100) / 100;
-  const neto = alquiler - comision;
+  // Igual criterio que generarItemsPropietario (GP): solo se rinde el saldo
+  // de alquiler que no se haya rendido ya en una emisión anterior de este
+  // mismo mes, y la comisión se deriva proporcional a ese saldo.
+  const alqRendido = rendidoMap['alquiler'] || 0;
+  const alquilerPendiente = Math.round(Math.max(0, alquiler - alqRendido) * 100) / 100;
+  const comision = Math.round(alquilerPendiente * comisionPct / 100 * 100) / 100;
+  const neto = alquilerPendiente - comision;
   let totalRendir = neto;
   const activePropId = activeCp ? parseInt(activeCp.persona_id) : null;
   const activePropIdStr = activePropId ? String(activePropId) : null;
   const propNombre = activeCp ? (DB_PERSONAS.find(x=>x.id===activePropId) ? formatNombrePersona(DB_PERSONAS.find(x=>x.id===activePropId)) : c?.locador||'—') : c?.locador||'—';
   const pctLabel = pctAlq < 100 ? ` (${pctAlq}%)` : '';
-  const items = [
-    { label: `Alquiler${pctLabel}`, monto: alquiler },
-    { label: `Comisión ${comisionPct}%`, monto: -comision },
-  ];
+  const items = [];
+  if (alquilerPendiente > 0.01) {
+    items.push({ label: `Alquiler${pctLabel}`, monto: alquilerPendiente });
+    items.push({ label: `Comisión ${comisionPct}%`, monto: -comision });
+    itemsRendidos['alquiler'] = alquilerPendiente;
+  }
   const servRinde = (c?.servicios_rendir_propietario||'').toLowerCase();
   const psProp = window._pagosSuministros?.[p?.id] || {};
   const allSumsCont = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c?.id));
@@ -12433,11 +12516,23 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPers
       const srvLabel = (srv.charAt(0).toUpperCase()+srv.slice(1)) + (nro && sumsOfType.length > 1 ? ` Cta.${nro}` : '');
 
       if (seRinde && montoInqSum > 0) {
-        totalRendir += montoInqSum;
-        items.push({ label: `${srvLabel} (a rendir)`, monto: montoInqSum });
+        const rendKey = `srv-${srv}-${sum?.id||0}`;
+        const yaRendidoSrv = rendidoMap[rendKey] || 0;
+        const pendienteSrv = Math.round(Math.max(0, montoInqSum - yaRendidoSrv) * 100) / 100;
+        if (pendienteSrv > 0.01) {
+          totalRendir += pendienteSrv;
+          items.push({ label: `${srvLabel} (a rendir)`, monto: pendienteSrv });
+          itemsRendidos[rendKey] = pendienteSrv;
+        }
       } else if (seDescuenta && montoPropSum > 0) {
-        totalRendir -= montoPropSum;
-        items.push({ label: `${srvLabel} (prop. ${pctProp}%)`, monto: -montoPropSum });
+        const rendKeyProp = `srv-prop-${srv}-${sum?.id||0}`;
+        const yaRendidoSrvProp = rendidoMap[rendKeyProp] || 0;
+        const pendienteSrvProp = Math.round(Math.max(0, montoPropSum - yaRendidoSrvProp) * 100) / 100;
+        if (pendienteSrvProp > 0.01) {
+          totalRendir -= pendienteSrvProp;
+          items.push({ label: `${srvLabel} (prop. ${pctProp}%)`, monto: -pendienteSrvProp });
+          itemsRendidos[rendKeyProp] = pendienteSrvProp;
+        }
       }
     });
   });
@@ -12448,12 +12543,19 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPers
   });
   extrasFiltered.forEach(e => {
     const signo = e.tipo === 'credito' ? 1 : -1;
-    totalRendir += signo * (e.importe||0);
-    items.push({ label: e.concepto||'Extra', monto: signo * (e.importe||0) });
+    const extraTotal = Math.abs(e.importe||0);
+    const extraRendido = rendidoMap['extra-'+e.id] || 0;
+    const extraPendiente = Math.round(Math.max(0, extraTotal - extraRendido) * 100) / 100;
+    if (extraPendiente <= 0.01) return;
+    totalRendir += signo * extraPendiente;
+    items.push({ label: e.concepto||'Extra', monto: signo * extraPendiente });
+    itemsRendidos['extra-'+e.id] = extraPendiente;
   });
 
   // Honorarios a cargo del propietario (mismo criterio que el GP): si hay
-  // saldo pendiente, se descuenta del total a rendir.
+  // saldo pendiente, se descuenta del total a rendir. No se trackea en
+  // rendidoMap/itemsRendidos porque ya tiene su propio acumulado aparte
+  // (gastos_inicio_cuotas.pagado_propietario), igual que en el GP individual.
   const cuotasHProp = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === parseInt(c?.id));
   const totalHProp = cuotasHProp.reduce((s,g) => s+(g.monto_propietario||0), 0);
   const pagadoHProp = cuotasHProp.reduce((s,g) => s+(parseFloat(g.pagado_propietario)||0), 0);
@@ -12481,7 +12583,7 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPers
     }
   }
 
-  return `<div style="font-family:'DM Sans',Arial,sans-serif;width:100%;max-width:680px;margin:0 auto;padding:18px;border:2px solid #1a1a2e;border-radius:8px">
+  const htmlRecibo = `<div style="font-family:'DM Sans',Arial,sans-serif;width:100%;max-width:680px;margin:0 auto;padding:18px;border:2px solid #1a1a2e;border-radius:8px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;border-bottom:2px solid #1a1a2e;padding-bottom:10px">
       <div><div style="font-size:1.2rem;font-weight:700;color:#1a1a2e">MeGa Consultora</div><div style="font-size:0.75rem;color:#666">Recibo de Rendición al Propietario</div></div>
       <div style="text-align:right">${nroRecibo ? `<div style="font-size:0.68rem;color:#888">Recibo mes N°</div><div style="font-size:1rem;font-weight:700;color:#c8483a">${String(nroRecibo).padStart(2,'0')}${totalMesesContrato ? `<span style="font-size:0.58rem;font-weight:600;color:#888"> de ${String(totalMesesContrato).padStart(2,'0')}</span>` : ''}</div>` : ''}<div style="font-size:0.68rem;color:#888;margin-top:3px">Fecha</div><div style="font-size:0.92rem;font-weight:700">${fechaHoy}</div></div>
@@ -12501,6 +12603,10 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPers
       <div style="border-top:1px solid #333;padding-top:4px;font-size:0.7rem;color:#666;margin-top:20px">Firma propietario</div>
     </div>
   </div>`;
+  // Si no quedó ningún ítem con saldo pendiente de rendir (todo ya se rindió
+  // en una emisión anterior de este mismo mes), no hay nada que imprimir acá
+  // — el llamador debe saltear este (pago, propietario).
+  return { html: items.length ? htmlRecibo : null, itemsRendidos, totalRendir };
 }
 
 
