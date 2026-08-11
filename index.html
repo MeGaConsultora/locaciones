@@ -4906,26 +4906,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
 
     <!-- SOLAPA 3: RECIBO PROPIETARIO -->
     <div id="s3" class="solapa-panel">
-      ${(() => {
-        const _cH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
-        const _sH = Math.max(0, _cH.reduce((s,g)=>s+(g.monto_inquilino||0),0) - _cH.reduce((s,g)=>s+(parseFloat(g.pagado_inquilino)||0),0));
-        // Si el inquilino tiene 0% en algún servicio (100% a cargo del
-        // propietario), el total/pagado_importe del pago pueden dar $0
-        // genuinamente — pero igual hay algo real para mostrarle al
-        // propietario (el descuento). Chequear pagos_suministros antes de
-        // bloquear la pestaña con el cartel de "cargá los importes primero".
-        const psDeEsteP = p ? (window._pagosSuministros?.[p.id] || {}) : {};
-        const tieneParteProp = Object.values(psDeEsteP).some(e => (typeof e === 'object' ? (e.prop||0) : 0) > 0);
-        return (!p || (!p.total && !(p.pagado_importe > 0) && !tieneParteProp)) && !_sH;
-      })() ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
-      <div id="gp-prop-items">${generarItemsPropietario(p, extrasProp, comisionPct, c, window._gpPropietarioId||null, rendidoPropItemsGP)}</div>
-      <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem;font-size:1rem">
-        <span>Total a rendir:</span>
-        <span id="gp-total-prop" style="color:var(--green)">—</span>
-      </div>
-      <div class="form-actions" id="gp-prop-emitido-wrap">
-        ${renderReciboPropBadgeYBoton(p?.id, esMultiPropGP, activePropIdGP, contratoId, mesKey, comisionPct, hoja, reciboPropEmitidoActivo, reciboPropFechaActivo)}
-      </div>`}
+      ${renderSolapaReciboPropHtml(p, extrasProp, comisionPct, c, hoja, contratoId, mesKey, rendidoPropItemsGP, esMultiPropGP, activePropIdGP, reciboPropEmitidoActivo, reciboPropFechaActivo)}
     </div>
   `;
 
@@ -4938,6 +4919,81 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
   if (solapaInicial !== 's1') {
     const btn = document.querySelector(`.solapa-btn:nth-child(${solapaInicial==='s2'?2:3})`);
     if (btn) mostrarSolapa(solapaInicial, btn);
+  }
+}
+
+function renderSolapaReciboPropHtml(p, extrasProp, comisionPct, c, hoja, contratoId, mesKey, rendidoPropItemsGP, esMultiPropGP, activePropIdGP, reciboPropEmitidoActivo, reciboPropFechaActivo) {
+  const _cH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId);
+  const _sH = Math.max(0, _cH.reduce((s,g)=>s+(g.monto_inquilino||0),0) - _cH.reduce((s,g)=>s+(parseFloat(g.pagado_inquilino)||0),0));
+  // Si el inquilino tiene 0% en algún servicio (100% a cargo del
+  // propietario), el total/pagado_importe del pago pueden dar $0
+  // genuinamente — pero igual hay algo real para mostrarle al
+  // propietario (el descuento). Chequear pagos_suministros antes de
+  // bloquear la pestaña con el cartel de "cargá los importes primero".
+  const psDeEsteP = p ? (window._pagosSuministros?.[p.id] || {}) : {};
+  const tieneParteProp = Object.values(psDeEsteP).some(e => (typeof e === 'object' ? (e.prop||0) : 0) > 0);
+  // Mismo motivo: un extra a cargo del propietario (ej: una cuota de
+  // un gasto grande repartida en varios meses) es algo real para
+  // rendir/descontar aunque no haya ni alquiler ni servicios cargados
+  // todavía ese mes — no debería quedar tapado por este cartel.
+  const tieneExtraProp = extrasProp.some(e => Math.abs(e.importe||0) > 0);
+  const vacio = (!p || (!p.total && !(p.pagado_importe > 0) && !tieneParteProp && !tieneExtraProp)) && !_sH;
+  if (vacio) return `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>`;
+  return `
+      <div id="gp-prop-items">${generarItemsPropietario(p, extrasProp, comisionPct, c, window._gpPropietarioId||null, rendidoPropItemsGP)}</div>
+      <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem;font-size:1rem">
+        <span>Total a rendir:</span>
+        <span id="gp-total-prop" style="color:var(--green)">—</span>
+      </div>
+      <div class="form-actions" id="gp-prop-emitido-wrap">
+        ${renderReciboPropBadgeYBoton(p?.id, esMultiPropGP, activePropIdGP, contratoId, mesKey, comisionPct, hoja, reciboPropEmitidoActivo, reciboPropFechaActivo)}
+      </div>`;
+}
+
+// Vuelve a traer p/extras/rendido frescos y reconstruye SOLO la pestaña
+// "Recibo Propietario" (#s3) — se llama después de agregar/editar/borrar un
+// extra desde "Cargar / Modificar", porque cambiar de pestaña (mostrarSolapa)
+// no refresca nada por sí solo: solo muestra/oculta el HTML que ya estaba
+// armado desde que se abrió el modal. Sin esto, un extra recién cargado no
+// aparecía en "Recibo Propietario" hasta cerrar y volver a abrir el GP.
+async function refrescarSolapaPropGP() {
+  const hoja = window._gpHoja, contratoId = window._gpContratoId, mesKey = window._gpMesKey;
+  const comisionPct = window._gpComision || 8;
+  if (!hoja || !contratoId || !mesKey) return;
+  const c = DB.contratos.find(x => x.id === contratoId);
+  let p = null;
+  try {
+    const hojaEncoded = encodeURIComponent(hoja);
+    const pagosDelMes = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=eq.${mesKey}-01&limit=1`);
+    p = pagosDelMes.length > 0 ? pagosDelMes[0] : null;
+    window._gpPagoActual = p;
+  } catch(e) { return; }
+  let extrasDelMes = [];
+  if (p) { try { extrasDelMes = await sbGet('pagos_extras', `pago_id=eq.${p.id}&order=id.asc`); } catch(e) {} }
+  const extrasProp = extrasDelMes.filter(e => e.a_cargo_de === 'propietario' || e.propietario_persona_id);
+
+  const propsCpGP = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId) && x.rol === 'propietario');
+  const esMultiPropGP = propsCpGP.length > 1;
+  const activePropIdGP = window._gpPropietarioId ? parseInt(window._gpPropietarioId) : (propsCpGP[0]?.persona_id ? parseInt(propsCpGP[0].persona_id) : null);
+  let reciboPropEmitidoActivo = false, reciboPropFechaActivo = null, rendidoPropItemsGP = {};
+  if (p) {
+    if (esMultiPropGP && activePropIdGP) {
+      try {
+        const emitidosGP = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${p.id}&persona_id=eq.${activePropIdGP}&select=fecha,items_rendidos&limit=1`);
+        if (emitidosGP.length) { reciboPropEmitidoActivo = true; reciboPropFechaActivo = emitidosGP[0].fecha; rendidoPropItemsGP = emitidosGP[0].items_rendidos || {}; }
+      } catch(e) {}
+    } else {
+      reciboPropEmitidoActivo = !!p.recibo_prop_emitido;
+      reciboPropFechaActivo = p.recibo_prop_fecha;
+      rendidoPropItemsGP = p.rendido_prop_items || {};
+    }
+  }
+  window._gpRendidoPropItems = rendidoPropItemsGP;
+
+  const panel = document.getElementById('s3');
+  if (panel) {
+    panel.innerHTML = renderSolapaReciboPropHtml(p, extrasProp, comisionPct, c, hoja, contratoId, mesKey, rendidoPropItemsGP, esMultiPropGP, activePropIdGP, reciboPropEmitidoActivo, reciboPropFechaActivo);
+    recalcProp();
   }
 }
 
@@ -5692,6 +5748,12 @@ async function guardarExtraGP(extraId, pagoId) {
       return DB.pagos.find(p => p.hoja === hoja && p.mes && p.mes.startsWith(mesKey))?.id;
     })();
     if (pid) await recalcularFilaPago(pid);
+    // Refrescar la pestaña "Recibo Propietario" — no se actualiza sola al
+    // cambiar de pestaña (mostrarSolapa solo muestra/oculta lo que ya está
+    // armado), así que sin esto un extra recién cargado o modificado quedaba
+    // desactualizado ahí hasta cerrar y volver a abrir el GP. Es una consulta
+    // liviana, así que se refresca siempre, sin importar el "cargo" del extra.
+    await refrescarSolapaPropGP();
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
@@ -5745,6 +5807,7 @@ async function eliminarExtraGP(extraId, hoja, contratoId, mesKey, comisionPct) {
     const mesStr = mesKey + '-01';
     const pagos = await sbGet('pagos', `hoja=eq.${encodeURIComponent(hoja)}&mes=eq.${mesStr}&limit=1`);
     if (pagos.length) await recalcularFilaPago(pagos[0].id);
+    await refrescarSolapaPropGP();
     toast('Concepto eliminado ✓');
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
