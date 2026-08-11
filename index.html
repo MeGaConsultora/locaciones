@@ -12439,13 +12439,20 @@ async function generarRecibosSeleccionados() {
     const propsCp = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(c?.id) && x.rol === 'propietario');
     // Si hay más de un propietario, saltear los que ya se emitieron
     // individualmente desde el GP (para no reimprimir ni remarcar de más).
+    // IMPORTANTE: con UN solo propietario (el caso normal), propPersonaId
+    // tiene que quedar en null — igual criterio que usa el GP individual
+    // (esMultiPropGP = propsCp.length > 1) y el filtro de la lista. Antes,
+    // con exactamente un propietario, se le pasaba igual su persona_id real,
+    // y eso hacía que la emisión se guardara en la tabla de multi-propietario
+    // en vez del campo simple del contrato — quedando invisible tanto para
+    // el GP individual como para el listado, que siguen mirando ese campo.
     const propsToRender = propsCp.length > 1
       ? propsCp.filter(cp => !yaEmitido(pagoId, cp.persona_id))
-      : (propsCp.length > 0 ? propsCp : [null]);
+      : [null];
     if (propsCp.length > 1 && !propsToRender.length) continue; // ya se emitieron todos individualmente
     for (const cp of propsToRender) {
       const propPersonaId = cp ? cp.persona_id : null;
-      const rendidoMap = propsCp.length > 1 ? rendidoDeEsePropietario(pagoId, propPersonaId) : (p.rendido_prop_items || {});
+      const rendidoMap = propPersonaId ? rendidoDeEsePropietario(pagoId, propPersonaId) : (p.rendido_prop_items || {});
       const { html: reciboHtml, itemsRendidos } = generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPersonaId, rendidoMap);
       if (!reciboHtml) continue; // nada pendiente de rendir para este propietario este mes
       if (!pagoIds.includes(pagoId)) pagoIds.push(pagoId);
