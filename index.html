@@ -12523,7 +12523,7 @@ async function generarRecibosSeleccionados() {
       });
       function confirmar() {
         if (window.opener && !window.opener.closed) {
-          window.opener.confirmarRecibosEmitidos();
+          window.opener.confirmarRecibosEmitidos().catch(e => console.error('Error marcando recibos como emitidos:', e));
         }
         window.close();
       }
@@ -12539,6 +12539,7 @@ async function confirmarRecibosEmitidos() {
   if (!pagoIds.length) return;
   const detalleRendido = window._recibosDetalleRendido || [];
   const now = new Date().toISOString();
+  const errores = [];
 
   // Para contratos con UN propietario: sigue usando el campo de siempre en
   // `pagos`. Para contratos con MÁS de un propietario: marca cada uno en la
@@ -12547,10 +12548,13 @@ async function confirmarRecibosEmitidos() {
   // Se recorre detalleRendido (no todos los propietarios del contrato a
   // ciegas) para marcar como emitido solo lo que realmente se incluyó en
   // esta tanda de impresión, y para poder acumular items_rendidos.
+  // IMPORTANTE: cada iteración va en su propio try/catch — si UN contrato
+  // falla (ej: columna nueva no encontrada en Supabase), no debe frenar el
+  // resto del lote ni fallar en silencio sin avisar nada.
   for (const { pagoId, personaId, itemsRendidos } of detalleRendido) {
     const p = DB.pagos.find(x => x.id === pagoId);
-    if (personaId) {
-      try {
+    try {
+      if (personaId) {
         const existente = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${pagoId}&persona_id=eq.${personaId}&select=id,items_rendidos&limit=1`);
         const rendidoPrevio = existente.length ? (existente[0].items_rendidos || {}) : {};
         const rendidoNuevo = { ...rendidoPrevio };
@@ -12560,13 +12564,16 @@ async function confirmarRecibosEmitidos() {
         } else {
           await sbPost('recibos_propietario_emitidos', { pago_id: pagoId, persona_id: personaId, fecha: now, items_rendidos: rendidoNuevo });
         }
-      } catch(e) { console.warn('No se pudo marcar emisión por propietario (¿falta la tabla o la columna items_rendidos?):', pagoId, personaId, e); }
-    } else {
-      const rendidoPrevio = p?.rendido_prop_items || {};
-      const rendidoNuevo = { ...rendidoPrevio };
-      Object.entries(itemsRendidos || {}).forEach(([k,v]) => { const prevMonto = _rendidoMonto(rendidoNuevo[k]); rendidoNuevo[k] = { monto: Math.round((prevMonto + v) * 100) / 100, fecha: now }; });
-      await sbPatch('pagos', pagoId, { recibo_prop_emitido: true, recibo_prop_fecha: now, rendido_prop_items: rendidoNuevo });
-      if (p) { p.recibo_prop_emitido = true; p.recibo_prop_fecha = now; p.rendido_prop_items = rendidoNuevo; }
+      } else {
+        const rendidoPrevio = p?.rendido_prop_items || {};
+        const rendidoNuevo = { ...rendidoPrevio };
+        Object.entries(itemsRendidos || {}).forEach(([k,v]) => { const prevMonto = _rendidoMonto(rendidoNuevo[k]); rendidoNuevo[k] = { monto: Math.round((prevMonto + v) * 100) / 100, fecha: now }; });
+        await sbPatch('pagos', pagoId, { recibo_prop_emitido: true, recibo_prop_fecha: now, rendido_prop_items: rendidoNuevo });
+        if (p) { p.recibo_prop_emitido = true; p.recibo_prop_fecha = now; p.rendido_prop_items = rendidoNuevo; }
+      }
+    } catch(e) {
+      console.error('No se pudo marcar como emitido:', pagoId, personaId, e);
+      errores.push({ pagoId, mensaje: e.message || String(e) });
     }
   }
 
@@ -12596,7 +12603,12 @@ async function confirmarRecibosEmitidos() {
 
   window._recibosPendientesMarcar = [];
   window._recibosDetalleRendido = [];
-  toast(`${pagoIds.length} recibo/s marcados como emitidos ✓`);
+  const exitosos = detalleRendido.length - errores.length;
+  if (errores.length) {
+    toast(`⚠ ${exitosos} marcado/s ✓, pero ${errores.length} fallaron: ${errores.map(e=>e.mensaje).slice(0,2).join(' / ')}${errores.length>2?'…':''}`, 'error');
+  } else {
+    toast(`${pagoIds.length} recibo/s marcados como emitidos ✓`);
+  }
   renderRecibosEmitir();
 }
 
