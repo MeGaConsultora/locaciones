@@ -12238,6 +12238,12 @@ async function renderRecibosEmitir() {
       const rendidoMap = personaId
         ? (emitidosMulti.find(e => e.pago_id === p.id && parseInt(e.persona_id) === parseInt(personaId))?.items_rendidos || {})
         : (p.rendido_prop_items || {});
+      // Un mapa vacío en un pago ya marcado como emitido significa que esa
+      // emisión es de ANTES de que existiera este tracking por ítem (la
+      // columna todavía no existía) — no que no se haya rendido nada. En
+      // ese caso hay que confiar en el flag simple de siempre y darlo por
+      // terminado, no reabrirlo con los importes completos de nuevo.
+      if (!Object.keys(rendidoMap).length) continue;
       const { html } = generarHtmlReciboProp(p, extrasProp, comisionPct, c, '', personaId, rendidoMap);
       if (html) { idsConSaldoPendiente.add(p.id); break; }
     }
