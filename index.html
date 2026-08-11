@@ -5256,7 +5256,7 @@ function _construirYaRendidoHtml(rendidoMap, extrasProp, comisionPct, compacto =
     porFecha[fechaLabel].push({ label: _labelItemKeyRendido(key, extrasProp), monto, signo });
   };
   Object.entries(rendidoMap).forEach(([key, entry]) => {
-    if (key === 'honorarios') return;
+    if (key === 'honorarios' || key === 'comision') return;
     let signo = '+';
     if (key.startsWith('srv-prop-')) signo = '−';
     else if (key.startsWith('extra-')) {
@@ -7496,13 +7496,16 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     const now = new Date().toISOString();
     // Acumular lo rendido en esta emisión sobre lo que ya se había rendido
     // antes (window._gpRendidoPropItems), para que la próxima vez que se
-    // abra este mes solo se ofrezca el saldo que quede. Se excluye
-    // "honorarios" porque ese ítem ya se trackea aparte, en gastos_inicio_cuotas.
+    // abra este mes solo se ofrezca el saldo que quede. Se excluyen
+    // "honorarios" (se trackea aparte, en gastos_inicio_cuotas) y "comision"
+    // (se deriva siempre del alquiler rendido, no se guarda como clave
+    // propia — si se guardara acá también, quedaba duplicada: una vez con
+    // el valor guardado directo y otra reconstruida a partir del alquiler).
     const nuevoRendidoMap = { ...(window._gpRendidoPropItems || {}) };
     checks.forEach(chk => {
       if (!chk.checked) return;
       const itemKey = chk.id.replace('prop-chk-', '');
-      if (itemKey === 'honorarios') return;
+      if (itemKey === 'honorarios' || itemKey === 'comision') return;
       const val = parseFloat(chk.value) || 0;
       const montoPrevio = _rendidoMonto(nuevoRendidoMap[itemKey]);
       nuevoRendidoMap[itemKey] = { monto: Math.round((montoPrevio + val) * 100) / 100, fecha: now };
