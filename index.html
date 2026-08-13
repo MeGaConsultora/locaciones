@@ -1992,6 +1992,7 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
         : `<button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px" onclick="abrirAsignarInmueble(${c.id})">＋ Asignar inmueble</button>`}
       </span></div>
     </div>
+    <div id="notas-contrato">${renderNotasContrato(c.id, [])}</div>
     <div id="checklist-contrato">${renderChecklistContrato(c)}</div>
     <div id="honorarios-row"></div>
     <div id="grilla-container"><div class="loading-overlay">Cargando grilla de pagos...</div></div>
@@ -2003,6 +2004,7 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
     if (btn) { mostrarSolapa(tabInicial, btn); }
   }
   await recargarGrilla(c);
+  cargarNotasContrato(c.id);
 }
 
 const CHECKLIST_ETAPAS = [
@@ -2043,6 +2045,75 @@ function renderChecklistContrato(c) {
         }).join('')}
       </div>
     </div>`;
+}
+
+// Bitácora de notas del contrato: entradas puntuales con fecha (ej: "Inquilino
+// solicitó ver ventana", "Hablar por renovación con propietario"), visibles
+// directo en la ficha del contrato — a diferencia del campo "notas" único de
+// texto libre que solo se ve/edita entrando a "Editar contrato".
+function renderNotasContrato(contratoId, notas) {
+  const filas = (notas||[]).map(n => {
+    const fecha = n.fecha ? new Date(n.fecha).toLocaleDateString('es-AR', { day:'2-digit', month:'short', year:'numeric' }) : '';
+    const hora = n.fecha ? new Date(n.fecha).toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' }) : '';
+    return `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #f0ece4">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:0.85rem;white-space:pre-wrap;word-break:break-word">${(n.texto||'').replace(/</g,'&lt;')}</div>
+        <div style="font-size:0.7rem;color:#999;margin-top:3px">${fecha}${hora?' · '+hora:''}${n.usuario?' · '+n.usuario:''}</div>
+      </div>
+      <button onclick="eliminarNotaContrato(${n.id},${contratoId})" title="Eliminar nota" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.85rem;flex-shrink:0;padding:2px 4px">✕</button>
+    </div>`;
+  }).join('');
+  return `
+    <div style="background:white;border-radius:12px;box-shadow:var(--shadow);padding:1rem 1.4rem;margin-bottom:1.2rem">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:0.7rem">
+        <strong style="font-size:0.9rem;color:var(--ink)">📝 Notas</strong>
+        ${notas && notas.length ? `<span style="font-size:0.72rem;color:#999">${notas.length}</span>` : ''}
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:${filas?'0.4rem':'0'}">
+        <input type="text" id="nota-nueva-${contratoId}" placeholder="Agregar una nota rápida…" style="flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:0.85rem" onkeydown="if(event.key==='Enter'){event.preventDefault();agregarNotaContrato(${contratoId});}">
+        <button class="btn btn-secondary" style="font-size:0.8rem;white-space:nowrap" onclick="agregarNotaContrato(${contratoId})">＋ Agregar</button>
+      </div>
+      ${filas || `<p style="font-size:0.8rem;color:#aaa;margin-top:0.3rem">Sin notas todavía.</p>`}
+    </div>`;
+}
+
+async function cargarNotasContrato(contratoId) {
+  const cont = document.getElementById('notas-contrato');
+  if (!cont) return;
+  try {
+    const notas = await sbGet('contrato_notas', `contrato_id=eq.${contratoId}&order=fecha.desc`);
+    window._notasContratoCache = window._notasContratoCache || {};
+    window._notasContratoCache[contratoId] = notas;
+    cont.innerHTML = renderNotasContrato(contratoId, notas);
+  } catch(e) {
+    // Si la tabla todavía no existe en Supabase, no romper el resto de la
+    // ficha del contrato — solo dejar la sección vacía en silencio.
+    console.warn('No se pudieron cargar las notas (¿falta crear la tabla contrato_notas?):', e);
+  }
+}
+
+async function agregarNotaContrato(contratoId) {
+  const input = document.getElementById(`nota-nueva-${contratoId}`);
+  const texto = input?.value.trim();
+  if (!texto) return;
+  try {
+    await sbPost('contrato_notas', {
+      contrato_id: contratoId,
+      texto,
+      fecha: new Date().toISOString(),
+      usuario: currentUsuario?.nombre || currentUsuario?.email || null
+    });
+    if (input) input.value = '';
+    await cargarNotasContrato(contratoId);
+  } catch(e) { toast('Error al guardar la nota: '+e.message, 'error'); }
+}
+
+async function eliminarNotaContrato(notaId, contratoId) {
+  if (!confirm('¿Eliminar esta nota?')) return;
+  try {
+    await sbDelete('contrato_notas', notaId);
+    await cargarNotasContrato(contratoId);
+  } catch(e) { toast('Error: '+e.message, 'error'); }
 }
 
 async function subirArchivoContrato(contratoId, inputEl) {
