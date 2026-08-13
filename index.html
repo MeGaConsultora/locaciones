@@ -2055,26 +2055,61 @@ function renderNotasContrato(contratoId, notas) {
   const filas = (notas||[]).map(n => {
     const fecha = n.fecha ? new Date(n.fecha).toLocaleDateString('es-AR', { day:'2-digit', month:'short', year:'numeric' }) : '';
     const hora = n.fecha ? new Date(n.fecha).toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' }) : '';
-    return `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #f0ece4">
+    const textoEscapado = (n.texto||'').replace(/</g,'&lt;');
+    const textoAttr = (n.texto||'').replace(/"/g,'&quot;');
+    return `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;background:white;border-radius:8px;padding:9px 12px;margin-bottom:7px;box-shadow:0 1px 2px rgba(146,64,14,0.08)">
       <div style="flex:1;min-width:0">
-        <div style="font-size:0.85rem;white-space:pre-wrap;word-break:break-word">${(n.texto||'').replace(/</g,'&lt;')}</div>
-        <div style="font-size:0.7rem;color:#999;margin-top:3px">${fecha}${hora?' · '+hora:''}${n.usuario?' · '+n.usuario:''}</div>
+        <div id="nota-texto-${n.id}" onclick="activarEdicionNota(${n.id},${contratoId})" data-original="${textoAttr}" title="Click para editar" style="font-size:0.85rem;white-space:pre-wrap;word-break:break-word;cursor:text;border-radius:4px;padding:2px 4px;margin:-2px -4px" onmouseover="this.style.background='#fdf3e3'" onmouseout="this.style.background='transparent'">${textoEscapado}</div>
+        <div style="font-size:0.7rem;color:#b08a52;margin-top:3px">${fecha}${hora?' · '+hora:''}${n.usuario?' · '+n.usuario:''}</div>
       </div>
       <button onclick="eliminarNotaContrato(${n.id},${contratoId})" title="Eliminar nota" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.85rem;flex-shrink:0;padding:2px 4px">✕</button>
     </div>`;
   }).join('');
   return `
-    <div style="background:white;border-radius:12px;box-shadow:var(--shadow);padding:1rem 1.4rem;margin-bottom:1.2rem">
+    <div style="background:linear-gradient(135deg,#FFF8E7,#FFF1D6);border-left:5px solid #F0A93B;border-radius:12px;box-shadow:var(--shadow);padding:1rem 1.4rem;margin-bottom:1.2rem">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:0.7rem">
-        <strong style="font-size:0.9rem;color:var(--ink)">📝 Notas</strong>
-        ${notas && notas.length ? `<span style="font-size:0.72rem;color:#999">${notas.length}</span>` : ''}
+        <strong style="font-size:0.98rem;color:#92400E">📝 Notas</strong>
+        ${notas && notas.length ? `<span style="font-size:0.72rem;color:white;background:#F0A93B;padding:1px 8px;border-radius:10px;font-weight:600">${notas.length}</span>` : ''}
       </div>
-      <div style="display:flex;gap:8px;margin-bottom:${filas?'0.4rem':'0'}">
-        <input type="text" id="nota-nueva-${contratoId}" placeholder="Agregar una nota rápida…" style="flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:0.85rem" onkeydown="if(event.key==='Enter'){event.preventDefault();agregarNotaContrato(${contratoId});}">
-        <button class="btn btn-secondary" style="font-size:0.8rem;white-space:nowrap" onclick="agregarNotaContrato(${contratoId})">＋ Agregar</button>
+      <div style="display:flex;gap:8px;margin-bottom:${filas?'0.6rem':'0'}">
+        <input type="text" id="nota-nueva-${contratoId}" placeholder="Agregar una nota rápida…" style="flex:1;padding:7px 10px;border:1.5px solid #eecb8f;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:0.85rem;background:white" onkeydown="if(event.key==='Enter'){event.preventDefault();agregarNotaContrato(${contratoId});}">
+        <button class="btn btn-secondary" style="font-size:0.8rem;white-space:nowrap;background:#F0A93B;color:white;border-color:#F0A93B" onclick="agregarNotaContrato(${contratoId})">＋ Agregar</button>
       </div>
-      ${filas || `<p style="font-size:0.8rem;color:#aaa;margin-top:0.3rem">Sin notas todavía.</p>`}
+      ${filas || `<p style="font-size:0.8rem;color:#b08a52;margin-top:0.3rem">Sin notas todavía.</p>`}
     </div>`;
+}
+
+function activarEdicionNota(notaId, contratoId) {
+  const div = document.getElementById(`nota-texto-${notaId}`);
+  if (!div || div.dataset.editando) return;
+  const original = div.dataset.original || '';
+  div.dataset.editando = '1';
+  div.innerHTML = `<textarea id="nota-edit-${notaId}" rows="2" style="width:100%;padding:5px 7px;border:1.5px solid var(--accent);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem;resize:vertical">${original}</textarea>`;
+  const ta = document.getElementById(`nota-edit-${notaId}`);
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+  let cancelado = false;
+  ta.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ta.blur(); }
+    if (ev.key === 'Escape') { cancelado = true; ta.blur(); }
+  });
+  ta.addEventListener('blur', () => guardarEdicionNota(notaId, contratoId, cancelado));
+}
+
+async function guardarEdicionNota(notaId, contratoId, cancelado) {
+  const ta = document.getElementById(`nota-edit-${notaId}`);
+  if (!ta) return;
+  const nuevoTexto = ta.value.trim();
+  const div = document.getElementById(`nota-texto-${notaId}`);
+  const original = div?.dataset.original || '';
+  if (cancelado || !nuevoTexto || nuevoTexto === original) {
+    await cargarNotasContrato(contratoId); // descarta el cambio, vuelve a mostrar como estaba
+    return;
+  }
+  try {
+    await sbPatch('contrato_notas', notaId, { texto: nuevoTexto });
+    await cargarNotasContrato(contratoId);
+  } catch(e) { toast('Error al guardar la nota: '+e.message, 'error'); }
 }
 
 async function cargarNotasContrato(contratoId) {
