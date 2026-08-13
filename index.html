@@ -10819,12 +10819,11 @@ async function loadUsuarios() {
                 : `<span class="badge badge-green" title="Ya cambió su contraseña — solo puede entrar con la suya o recuperándola por email${fechaIngreso ? ' · último ingreso: '+fechaIngreso : ''}">✓ Ya cambiada</span>`)
             : `<span style="font-size:0.75rem;color:#aaa">—</span>`}
         </td>
-        <td style="display:flex;gap:6px;flex-wrap:wrap">
+        <td style="display:flex;gap:6px;flex-wrap:nowrap;white-space:nowrap">
           ${!u.aprobado ? `<button class="btn btn-green" style="padding:4px 10px;font-size:0.75rem" onclick="aprobarUsuario('${u.id}')">✓ Aprobar</button>` : ''}
           ${u.aprobado && u.rol!=='admin' ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="toggleAdmin('${u.id}',true)">↑ Admin</button>` : ''}
           ${u.rol==='admin' && u.email !== currentUsuario?.email ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="toggleAdmin('${u.id}',false)">↓ Quitar admin</button>` : ''}
-          ${u.aprobado && u.rol==='inquilino' ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;color:var(--green);border-color:var(--green)" onclick="reenviarAcceso('${u.email}','${u.nombre||''}','${u.temp_password||''}')">📤 Reenviar acceso</button>` : ''}
-          ${u.aprobado && u.rol==='inquilino' && u.temp_password ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;color:#888;border-color:#ccc" title="Usar si ya cambió su contraseña por otro medio y esto no se actualizó solo" onclick="marcarPasswordCambiada('${u.id}','${u.nombre||u.email}')">🔓 Ya cambió su contraseña</button>` : ''}
+          ${u.aprobado && u.rol==='inquilino' && u.temp_password ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;color:var(--green);border-color:var(--green)" onclick="reenviarAcceso('${u.email}','${u.nombre||''}','${u.temp_password||''}')">📤 Reenviar acceso</button>` : ''}
           ${u.email !== currentUsuario?.email && u.rol!=='admin' ? `<button class="btn" style="padding:4px 10px;font-size:0.75rem;background:#f8d7da;color:#721c24" onclick="darDeBaja('${u.id}','${u.email}')">✕ Baja</button>` : u.email === currentUsuario?.email ? '<span style="font-size:0.75rem;color:#aaa">(vos)</span>' : '<span style="font-size:0.75rem;color:#aaa">Admin</span>'}
         </td>
       </tr>`;
@@ -10966,21 +10965,6 @@ async function guardarVinculacion(usuarioId) {
     await loadUsuarios();
     closeModal();
   } catch(e) { toast('Error: '+e.message,'error'); }
-}
-
-// Limpia temp_password a mano. Sirve principalmente para corregir casos de
-// ANTES de que se emparejaran los dos caminos de cambio de contraseña del
-// portal (login forzado con la temporal, y "¿Olvidaste tu contraseña?") —
-// pero queda disponible de forma permanente como corrección manual, por si
-// en algún momento se cambia una contraseña por fuera del portal (ej: desde
-// el panel de Supabase directo) y por lo tanto temp_password no se limpia sola.
-async function marcarPasswordCambiada(usuarioId, nombreMostrar) {
-  if (!confirm(`¿Marcar que ${nombreMostrar} ya cambió su contraseña?\n\nDeja de poder reenviarle la temporal — a partir de ahora, si necesita entrar de nuevo, va a tener que usar "¿Olvidaste tu contraseña?" en el portal.`)) return;
-  try {
-    await sbPatch('usuarios', usuarioId, { temp_password: null });
-    toast('Marcado ✓');
-    await loadUsuarios();
-  } catch(e) { toast('Error: '+e.message, 'error'); }
 }
 
 async function reenviarAcceso(email, nombre, tempPass) {
