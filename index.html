@@ -2193,6 +2193,52 @@ function verArchivoContrato(contratoId) {
   window.open(url, '_blank');
 }
 
+// Sube el comprobante (foto o PDF) de un concepto extra puntual — mismo
+// bucket que ya usa el contrato, path aparte para no mezclarlos. Se ve desde
+// el botón 📎 de la fila del extra, y desde el visor de adjuntos agrupado al
+// final de cada mes en la grilla del contrato (junto con las boletas de
+// servicios), no como un ícono aparte por cada extra.
+async function subirArchivoExtra(extraId, inputEl) {
+  const file = inputEl.files?.[0];
+  if (!file) return;
+  if (file.size > 20 * 1024 * 1024) { toast('El archivo supera los 20MB', 'error'); return; }
+  const btn = document.getElementById(`gpe-btn-archivo-${extraId}`);
+  const originalHtml = btn ? btn.innerHTML : '';
+  if (btn) { btn.innerHTML = '⏳'; btn.disabled = true; }
+  try {
+    const ext = file.name.split('.').pop();
+    const path = `extras-docs/${extraId}_${Date.now()}.${ext}`;
+    const arrayBuffer = await file.arrayBuffer();
+    const res = await fetch(`${SB_URL}/storage/v1/object/contratos-archivos/${path}`, {
+      method: 'PUT',
+      headers: {
+        'apikey': SB_KEY,
+        'Authorization': `Bearer ${SB_KEY}`,
+        'Content-Type': file.type || 'application/octet-stream',
+        'x-upsert': 'true',
+      },
+      body: arrayBuffer
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(()=>'');
+      throw new Error(`Error al subir (${res.status}): ${errText}`);
+    }
+    await sbPatch('pagos_extras', extraId, { archivo_path: path, archivo_nombre: file.name });
+    // Actualizar el cache en memoria para que el botón agrupado de la grilla
+    // (verAdjuntosPago) lo detecte sin tener que recargar todo el contrato.
+    Object.values(extrasActuales).forEach(lista => {
+      const ex = lista.find(x => x.id === extraId);
+      if (ex) { ex.archivo_path = path; ex.archivo_nombre = file.name; }
+    });
+    if (btn) { btn.style.background = 'var(--green)'; btn.style.color = 'white'; btn.title = 'Comprobante adjunto: '+file.name; }
+    toast('Comprobante adjuntado ✓');
+  } catch(e) {
+    toast('Error al subir el comprobante: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.innerHTML = originalHtml || '📎'; btn.disabled = false; }
+  }
+}
+
 async function toggleChecklistItem(contratoId, key, valor) {
   try {
     await sbPatch('contratos', contratoId, { [key]: valor });
@@ -2440,7 +2486,7 @@ function renderGrilla(c) {
       <td onclick="event.stopPropagation()">
         <div class="grid-actions">
           ${(!saldoReal||saldoReal===0)?'':`<button class="grid-btn grid-btn-green" onclick="editarMesConSolapa('${c.hoja}',${c.id},'${p.mes?.substring(0,7)}','s2')">✓ Cobrar</button>`}
-          ${window._pagosPdf?.[+p.id]?.length ? `<button class="grid-btn" style="background:var(--ink2);color:white" onclick="verBoleta(${p.id})" title="Ver boleta PDF">📄</button>` : ''}
+          ${(window._pagosPdf?.[+p.id]?.length || (extrasActuales[p.id]||[]).some(e=>e.archivo_path)) ? `<button class="grid-btn" style="background:var(--ink2);color:white" onclick="verAdjuntosPago(${p.id})" title="Ver documentos adjuntos">📄</button>` : ''}
           <button class="grid-btn grid-btn-red" onclick="eliminarMes(${p.id},'${c.hoja}')" title="Eliminar mes">🗑</button>
         </div>
       </td>
@@ -4631,39 +4677,59 @@ function toggleYaCargados(srv) {
   if (sinCargarWrap) sinCargarWrap.style.display = visible ? 'flex' : 'none';
 }
 
-async function verBoleta(pagoId, srv, pdfId) {
-  // Query pagos_pdf for this pago
+async function verAdjuntosPago(pagoId, tipoPre, idPre) {
+  // Unifica dos fuentes de adjuntos para el mismo mes: las boletas de
+  // servicios importadas (pagos_pdf, con página específica dentro de un PDF
+  // más grande) y los comprobantes sueltos de conceptos extras
+  // (pagos_extras.archivo_path, un archivo autónomo por extra — foto o PDF).
   let pdfs = [];
-  try {
-    pdfs = await sbGet('pagos_pdf', `pago_id=eq.${pagoId}${srv ? '&servicio=eq.'+srv : ''}&order=servicio.asc,id.asc`);
-  } catch(e) {}
-  if (!pdfs.length) { toast('No hay boleta PDF disponible para este mes', 'error'); return; }
+  try { pdfs = await sbGet('pagos_pdf', `pago_id=eq.${pagoId}&order=servicio.asc,id.asc`); } catch(e) {}
+  const extrasConArchivo = (extrasActuales[pagoId]||[]).filter(e => e.archivo_path);
 
-  // Si se especificó un pdfId concreto, usarlo directamente
-  let pdfRec = pdfId ? (pdfs.find(r => r.id === pdfId) || pdfs[0]) : pdfs[0];
-
-  // If multiple PDFs and no specific one selected, show selector
-  if (pdfs.length > 1 && !pdfId) {
-    const labels = { epe: '⚡ EPE', agua: '💧 Agua', tgiu: '🏛️ TGIU', seguro: '🔒 Seguro', internet: '🌐 Internet', expensas: '🏢 Expensas' };
-    const btns = pdfs.map(r => {
-      let label = labels[r.servicio] || r.servicio;
-      // Para múltiples EPE, mostrar el nro de cuenta del suministro
+  const labelsSrv = { epe: '⚡ EPE', agua: '💧 Agua', tgiu: '🏛️ TGIU', seguro: '🔒 Seguro', internet: '🌐 Internet', expensas: '🏢 Expensas' };
+  const items = [
+    ...pdfs.map(r => {
+      let label = labelsSrv[r.servicio] || r.servicio;
       if (r.servicio === 'epe' && r.suministro_id) {
         const sum = DB_SUMINISTROS.find(s => s.id === r.suministro_id);
         if (sum?.nro_cuenta) label += ` (${sum.nro_cuenta})`;
       }
-      return `<button onclick="verBoleta(${pagoId},'${r.servicio}',${r.id});this.closest('.modal-overlay-inner')?.remove()" style="padding:8px 16px;margin:4px;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:0.9rem">${label}</button>`;
-    }).join('');
-    const div = document.createElement('div');
-    div.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999';
-    div.className = 'modal-overlay-inner';
-    div.innerHTML = `<div style="background:white;border-radius:12px;padding:1.5rem;text-align:center;min-width:200px"><div style="font-weight:600;margin-bottom:1rem">¿Qué boleta querés ver?</div>${btns}<br><button onclick="this.closest('.modal-overlay-inner').remove()" style="margin-top:8px;padding:6px 16px;border:none;background:#eee;border-radius:6px;cursor:pointer">Cancelar</button></div>`;
-    div.onclick = e => { if (e.target === div) div.remove(); };
-    document.body.appendChild(div);
-    return;
+      return { tipo: 'pdf', id: r.id, label, rec: r };
+    }),
+    ...extrasConArchivo.map(e => ({ tipo: 'extra', id: e.id, label: `🧾 ${e.concepto||'Extra'}`, rec: e }))
+  ];
+
+  if (!items.length) { toast('No hay documentos adjuntos para este mes', 'error'); return; }
+
+  // Si se pidió un ítem concreto (desde el selector), abrirlo directo
+  if (tipoPre && idPre) {
+    const item = items.find(i => i.tipo === tipoPre && i.id === idPre);
+    if (item) return abrirAdjunto(item);
   }
 
-  // Get signed URL from Supabase Storage (valid 1 hour)
+  // Un solo adjunto en total: abrirlo directo, sin selector
+  if (items.length === 1) return abrirAdjunto(items[0]);
+
+  // Varios adjuntos: mostrar selector
+  const btns = items.map(i =>
+    `<button onclick="verAdjuntosPago(${pagoId},'${i.tipo}',${i.id});this.closest('.modal-overlay-inner')?.remove()" style="padding:8px 16px;margin:4px;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:0.9rem">${i.label}</button>`
+  ).join('');
+  const div = document.createElement('div');
+  div.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999';
+  div.className = 'modal-overlay-inner';
+  div.innerHTML = `<div style="background:white;border-radius:12px;padding:1.5rem;text-align:center;min-width:200px"><div style="font-weight:600;margin-bottom:1rem">¿Qué documento querés ver?</div>${btns}<br><button onclick="this.closest('.modal-overlay-inner').remove()" style="margin-top:8px;padding:6px 16px;border:none;background:#eee;border-radius:6px;cursor:pointer">Cancelar</button></div>`;
+  div.onclick = e => { if (e.target === div) div.remove(); };
+  document.body.appendChild(div);
+}
+
+function abrirAdjunto(item) {
+  return item.tipo === 'pdf' ? abrirBoletaPdf(item.rec) : abrirComprobanteExtra(item.rec);
+}
+
+// Boleta importada (pagos_pdf): vive dentro de un PDF más grande en el
+// bucket "servicios", en una página específica — se renderiza esa página
+// puntual con pdf.js.
+async function abrirBoletaPdf(pdfRec) {
   try {
     const resp = await fetch(
       `${SB_URL}/storage/v1/object/sign/servicios/${pdfRec.pdf_path}`,
@@ -4702,6 +4768,30 @@ async function verBoleta(pagoId, srv, pdfId) {
 
   } catch(e) {
     toast('Error al cargar la boleta: ' + e.message, 'error');
+    console.error(e);
+  }
+}
+
+// Comprobante de un extra (pagos_extras.archivo_path): es un archivo
+// autónomo (foto o PDF completo, no una página dentro de otro más grande),
+// vive en el bucket "contratos-archivos" — se abre directo con el visor
+// nativo del navegador, sin necesidad de renderizar nada con pdf.js.
+async function abrirComprobanteExtra(extraRec) {
+  try {
+    const resp = await fetch(
+      `${SB_URL}/storage/v1/object/sign/contratos-archivos/${extraRec.archivo_path}`,
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expiresIn: 3600 })
+      }
+    );
+    const data = await resp.json();
+    const signedUrl = data.signedURL ? `${SB_URL}/storage/v1${data.signedURL}` : null;
+    if (!signedUrl) throw new Error('No se pudo obtener URL');
+    window.open(signedUrl, '_blank');
+  } catch(e) {
+    toast('Error al abrir el comprobante: ' + e.message, 'error');
     console.error(e);
   }
 }
@@ -4958,6 +5048,8 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
               <option value="debito" ${e.tipo!=='credito'?'selected':''}>${e.a_cargo_de==='propietario'?'Debitar':'Cargo extra'}</option>
               <option value="credito" ${e.tipo==='credito'?'selected':''}>${e.a_cargo_de==='propietario'?'Acreditar':'Descuento'}</option>
             </select>
+            <input type="file" id="gpe-file-${e.id}" accept="image/*,.pdf" style="display:none" onchange="subirArchivoExtra(${e.id},this)">
+            <button type="button" class="grid-btn" id="gpe-btn-archivo-${e.id}" style="background:${e.archivo_path?'var(--green)':'#eee'};color:${e.archivo_path?'white':'#888'}" title="${e.archivo_path?'Comprobante adjunto: '+(e.archivo_nombre||''):'Adjuntar foto o PDF del comprobante'}" onclick="document.getElementById('gpe-file-${e.id}').click()">📎</button>
             <button class="grid-btn grid-btn-red" onclick="eliminarExtraGP(${e.id},'${hoja}',${contratoId},'${mesKey}',${comisionPct})">✕</button>
           </div>
         `).join('')}
