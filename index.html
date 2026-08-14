@@ -751,6 +751,7 @@
     <div style="background:#f5f0e8;border-radius:8px;padding:0.65rem 1rem;margin-bottom:1rem;font-size:0.8rem;color:#666;line-height:1.5">
       Este listado incluye únicamente los recibos de rendición a propietarios <strong>pendientes de emisión</strong> para el período seleccionado. Solo se muestran los contratos cuyo alquiler ha sido <strong>abonado en su totalidad</strong> a la fecha. Los recibos ya emitidos no se vuelven a listar.
     </div>
+    <div id="recibos-pendiente-confirmar-banner"></div>
     <div id="recibos-emitir-contenido">
       <div class="empty-state"><div class="icon">🖨️</div><p>Seleccioná un año y mes</p></div>
     </div>
@@ -12465,7 +12466,31 @@ function sortRecibos(campo) {
   renderRecibosEmitir();
 }
 
+// Si quedó una emisión de recibos sin confirmar (ej: se cerró o recargó la
+// pestaña principal antes de que la ventana de impresión pudiera avisarle
+// que terminó — ver confirmarRecibosEmitidos), esto la detecta al abrir la
+// pantalla y ofrece confirmarla o descartarla, en vez de dejarla perdida en
+// silencio y que el contrato vuelva a aparecer como si nunca se hubiera
+// emitido.
+function renderBannerRecibosPendientes() {
+  const cont = document.getElementById('recibos-pendiente-confirmar-banner');
+  if (!cont) return;
+  let guardado = null;
+  try { guardado = JSON.parse(localStorage.getItem('recibosPendientesMarcar') || 'null'); } catch(e) {}
+  if (!guardado || !guardado.pagoIds?.length) { cont.innerHTML = ''; return; }
+  const fecha = guardado.fecha ? new Date(guardado.fecha).toLocaleString('es-AR') : '';
+  cont.innerHTML = `
+    <div style="background:#fff3cd;border:1px solid #ffe08a;border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:#856404;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+      <div>⚠ Hay una tanda de <strong>${guardado.pagoIds.length} recibo/s</strong> impresos el ${fecha} que quedaron <strong>sin confirmar</strong> como emitidos (la pestaña se cerró o recargó antes de tiempo). Si ya los imprimiste, confirmalos ahora — si no estás seguro, volvé a generarlos e imprimirlos de nuevo antes de confirmar.</div>
+      <div style="display:flex;gap:0.5rem;flex-shrink:0">
+        <button class="btn btn-green" style="font-size:0.8rem" onclick="confirmarRecibosEmitidos()">✓ Confirmar ahora</button>
+        <button class="btn btn-secondary" style="font-size:0.8rem" onclick="localStorage.removeItem('recibosPendientesMarcar');renderBannerRecibosPendientes()">Descartar</button>
+      </div>
+    </div>`;
+}
+
 async function renderRecibosEmitir() {
+  renderBannerRecibosPendientes();
   const anio = document.getElementById('recibos-anio')?.value;
   const mes = document.getElementById('recibos-mes')?.value;
   const cont = document.getElementById('recibos-emitir-contenido');
@@ -12854,22 +12879,49 @@ async function generarRecibosSeleccionados() {
         document.querySelectorAll('.recibo-mitad').forEach(m => ajustarEscala(m, null));
       });
       function confirmar() {
-        if (window.opener && !window.opener.closed) {
-          window.opener.confirmarRecibosEmitidos().catch(e => console.error('Error marcando recibos como emitidos:', e));
+        const btn = document.querySelector('.btn-confirmar');
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Marcando...'; }
+        if (window.opener && !window.opener.closed && window.opener.confirmarRecibosEmitidos) {
+          window.opener.confirmarRecibosEmitidos()
+            .then(ok => {
+              if (ok === false) {
+                alert('⚠ No se pudo marcar como emitido. Volvé a la app y revisá el listado de "Recibos Propietarios" — si sigue apareciendo, avisá para revisarlo.');
+                if (btn) { btn.disabled = false; btn.textContent = '✓ Imprimí correctamente — marcar como emitidos'; }
+                return;
+              }
+              window.close();
+            })
+            .catch(e => {
+              console.error('Error marcando recibos como emitidos:', e);
+              alert('⚠ Hubo un error al marcar como emitido: ' + e.message + '\\n\\nVolvé a la app y revisá el listado de "Recibos Propietarios".');
+              if (btn) { btn.disabled = false; btn.textContent = '✓ Imprimí correctamente — marcar como emitidos'; }
+            });
+        } else {
+          // La pestaña principal se cerró o se recargó (perdiendo su estado
+          // en memoria) — no hay forma de confirmar desde acá. Como los datos
+          // quedaron guardados en localStorage (mismo origen, sobrevive a
+          // recargas), avisar y dejar que la propia app los detecte y
+          // ofrezca confirmarlos la próxima vez que se abra "Recibos
+          // Propietarios" — en vez de cerrar en silencio como si hubiese
+          // funcionado.
+          alert('⚠ No se pudo confirmar automáticamente porque se cerró o recargó la pestaña principal.\\n\\nVolvé a abrir "Recibos Propietarios" en la app — va a aparecer un aviso para confirmar esta emisión pendiente.');
         }
-        window.close();
       }
     <\/script>
   </body></html>`);
   ventana.document.close();
-  window._recibosPendientesMarcar = pagoIds;
-  window._recibosDetalleRendido = detalleRendido;
+  try {
+    localStorage.setItem('recibosPendientesMarcar', JSON.stringify({ pagoIds, detalleRendido, fecha: new Date().toISOString() }));
+  } catch(e) { console.warn('No se pudo guardar en localStorage:', e); }
 }
 
 async function confirmarRecibosEmitidos() {
-  const pagoIds = window._recibosPendientesMarcar || [];
-  if (!pagoIds.length) return;
-  const detalleRendido = window._recibosDetalleRendido || [];
+  let pagoIds = [], detalleRendido = [];
+  try {
+    const guardado = JSON.parse(localStorage.getItem('recibosPendientesMarcar') || 'null');
+    if (guardado) { pagoIds = guardado.pagoIds || []; detalleRendido = guardado.detalleRendido || []; }
+  } catch(e) {}
+  if (!pagoIds.length) return false;
   const now = new Date().toISOString();
   const errores = [];
 
@@ -12933,15 +12985,17 @@ async function confirmarRecibosEmitidos() {
     } catch(e) { console.warn('Error marcando honorarios propietario como pagados:', pagoId, e); }
   }
 
-  window._recibosPendientesMarcar = [];
-  window._recibosDetalleRendido = [];
   const exitosos = detalleRendido.length - errores.length;
   if (errores.length) {
     toast(`⚠ ${exitosos} marcado/s ✓, pero ${errores.length} fallaron: ${errores.map(e=>e.mensaje).slice(0,2).join(' / ')}${errores.length>2?'…':''}`, 'error');
+    // No limpiar localStorage si hubo errores — así, si se reintenta, no se
+    // pierde el detalle de lo que faltó marcar.
   } else {
+    try { localStorage.removeItem('recibosPendientesMarcar'); } catch(e) {}
     toast(`${pagoIds.length} recibo/s marcados como emitidos ✓`);
   }
   renderRecibosEmitir();
+  return errores.length === 0;
 }
 
 function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPersonaId, rendidoMap = {}) {
