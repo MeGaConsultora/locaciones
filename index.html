@@ -5991,9 +5991,16 @@ async function agregarExtraGP(hoja, contratoId, mesKey, pagoId, comisionPct) {
           <option value="debito" selected>Cargo extra</option>
           <option value="credito">Descuento</option>
         </select>
+        <input type="file" id="gpe-file-${extra.id}" accept="image/*,.pdf" style="display:none" onchange="subirArchivoExtra(${extra.id},this)">
+        <button type="button" class="grid-btn" id="gpe-btn-archivo-${extra.id}" style="background:#eee;color:#888" title="Adjuntar foto o PDF del comprobante" onclick="document.getElementById('gpe-file-${extra.id}').click()">📎</button>
         <button class="grid-btn grid-btn-red" onclick="eliminarExtraGP(${extra.id},'${hoja}',${contratoId},'${mesKey}',${comisionPct})">✕</button>
       `;
       div.appendChild(el);
+      // Registrar el extra recién creado también en extrasActuales (el cache
+      // global que usa la grilla/verAdjuntosPago), para que subirArchivoExtra
+      // lo encuentre sin tener que esperar a un refresh completo del contrato.
+      if (!extrasActuales[pagoId]) extrasActuales[pagoId] = [];
+      extrasActuales[pagoId].push(extra);
     }
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
