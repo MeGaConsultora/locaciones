@@ -412,6 +412,7 @@
 
     <div id="forgot-panel-admin" class="login-form" style="display:none">
       <p style="font-size:0.82rem;color:#666;text-align:center">Ingresá tu email y te enviaremos un link para restablecer tu contraseña.</p>
+      <p style="font-size:0.76rem;color:#b8860b;text-align:center;background:#fff8e1;border-radius:6px;padding:6px 10px">⚠ El email puede llegar a la carpeta de Spam o No deseados — revisá ahí si no lo ves en la bandeja de entrada en unos minutos.</p>
       <input type="email" id="forgot-email-admin" placeholder="Tu email" autocomplete="off">
       <button class="login-btn" onclick="doForgotAdmin()">Enviar link</button>
       <div style="text-align:center;margin-top:0.5rem">
@@ -2940,8 +2941,8 @@ Ante cualquier duda, comunicate con nosotros.`;
         <div style="font-weight:600;color:#155724;margin-bottom:0.5rem">✓ Acceso actualizado</div>
         <div style="background:white;border-radius:8px;padding:0.75rem;font-size:0.82rem;color:#333;margin-bottom:0.75rem;border:1px solid #c3e6cb">${mensaje}</div>
         <div style="display:flex;gap:0.5rem;justify-content:center;margin-bottom:0.75rem">
-          <button class="btn btn-green" style="font-size:0.82rem;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 8px" onclick="copiarMensajeAcceso()"><span>📋 Copiar mensaje</span><span style="font-size:0.7rem;opacity:0.75">(luego copiar contraseña)</span></button>
-          <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 8px"><span>💬 Enviar por WhatsApp</span><span style="font-size:0.7rem;opacity:0.75">(luego enviar contraseña)</span></a>
+          <button class="btn btn-green" style="font-size:0.82rem;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 8px" onclick="copiarMensajeAcceso()"><span>📋 Copiar mensaje</span></button>
+          <a href="https://wa.me/?text=${msgEncoded}" target="_blank" class="btn btn-secondary" style="font-size:0.82rem;text-decoration:none;flex:1;max-width:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 8px"><span>💬 Enviar por WhatsApp</span></a>
         </div>
       </div>
     `;
@@ -3014,10 +3015,20 @@ async function crearAccesoInquilino(contratoId, hoja) {
         passwordAMostrar = existing[0].temp_password;
         toast('ℹ Este inquilino ya tenía una cuenta — se reenvía la contraseña temporal existente, no una nueva.', '');
       } else {
-        toast('⚠ Este inquilino ya cambió su contraseña antes — no puedo generarle una nueva desde acá. Decile que use "¿Olvidaste tu contraseña?" en el portal.', 'error');
+        toast('⚠ Este inquilino ya cambió su contraseña antes — no puedo generarle una nueva desde acá. Decile que use "¿Olvidaste tu contraseña?" en el portal, y que revise Spam / No deseados si no le llega el email.', 'error');
         return;
       }
       await sbPatch('usuarios', existing[0].id, patchUsuario);
+    } else if (userAlreadyExisted) {
+      // La fila de "usuarios" no existe (ej: se le dio de Baja antes), pero
+      // la cuenta real en Supabase Auth SIGUE existiendo (Baja no la borra,
+      // solo borra la fila de "usuarios" — ver eliminar_usuario). Supabase
+      // rechazó crear una cuenta nueva con la tempPass recién generada, así
+      // que esa contraseña NUNCA quedó realmente activa. Guardarla igual acá
+      // dejaría al admin creyendo que tiene una temporal válida para
+      // compartir, cuando en los hechos no le va a funcionar al inquilino.
+      toast('⚠ Ya existe una cuenta de Supabase Auth con este email (probablemente de un acceso anterior dado de baja), pero no tengo forma de saber ni de resetear su contraseña actual desde acá. Decile al inquilino que use "¿Olvidaste tu contraseña?" en el portal para poner una nueva, y que revise Spam / No deseados si no le llega el email.', 'error');
+      return;
     } else {
       await sbPost('usuarios', {
         email,
@@ -10728,7 +10739,7 @@ async function doForgotAdmin() {
       body: JSON.stringify({ email })
     });
     const el = document.getElementById('forgot-msg-admin');
-    el.textContent = '✓ Si el email existe, recibirás el link en minutos.';
+    el.textContent = '✓ Si el email existe, recibirás el link en minutos. Revisá también la carpeta de Spam / No deseados.';
     el.className = 'login-msg success';
   } catch(e) {
     const el = document.getElementById('forgot-msg-admin');
@@ -10975,7 +10986,7 @@ async function reenviarAcceso(email, nombre, tempPass) {
   // Supabase Auth. Eso dejaba la contraseña mostrada/enviada completamente
   // desconectada de la real, y el inquilino nunca podía loguearse con ella.
   if (!tempPass) {
-    toast('⚠ Este inquilino ya cambió su contraseña — no hay una temporal para reenviar. Decile que use "¿Olvidaste tu contraseña?" en el portal.', 'error');
+    toast('⚠ Este inquilino ya cambió su contraseña — no hay una temporal para reenviar. Decile que use "¿Olvidaste tu contraseña?" en el portal, y que revise Spam / No deseados si no le llega el email.', 'error');
     return;
   }
   const nombreMostrar = (() => {
@@ -10998,7 +11009,7 @@ Ante cualquier duda, comunicate con nosotros.`;
   document.getElementById('modal-subtitle').textContent = email;
   document.getElementById('modal-body').innerHTML = `
     <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.75rem;font-size:0.82rem">
-      ⚠ <strong>Solo válido si el inquilino aún no cambió su contraseña.</strong> Si ya la cambió, deberá usar "¿Olvidaste tu contraseña?" en el portal.
+      ⚠ <strong>Solo válido si el inquilino aún no cambió su contraseña.</strong> Si ya la cambió, deberá usar "¿Olvidaste tu contraseña?" en el portal — avisale que revise Spam / No deseados si no le llega el email.
     </div>
     <div style="background:#f0fff4;border:1px solid var(--green);border-radius:10px;padding:1rem;margin-bottom:1rem">
       <div style="font-weight:600;color:#155724;margin-bottom:0.5rem">Datos de acceso</div>
