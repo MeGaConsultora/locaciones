@@ -7105,7 +7105,15 @@ function populateInformeAnios() {
   const anios = [...new Set(DB.pagos.map(p => p.mes?.substring(0,4)).filter(Boolean))].sort().reverse();
   const sel = document.getElementById('inf-anio');
   if (!sel || sel.options.length > 1) return;
+  const anioActual = TODAY.substring(0,4);
+  if (!anios.includes(anioActual)) anios.unshift(anioActual); // por si el año en curso todavía no tiene ningún pago cargado
+  anios.sort().reverse();
   anios.forEach(a => { const o = document.createElement('option'); o.value=a; o.textContent=a; sel.appendChild(o); });
+  // Precargar mes y año actuales — antes quedaba en "-- Año --" / "-- Mes --"
+  // y había que elegirlos a mano cada vez que se abría el informe.
+  sel.value = anioActual;
+  const selMes = document.getElementById('inf-mes');
+  if (selMes) selMes.value = TODAY.substring(5,7);
 }
 
 function sortInformeFirmas(col) {
@@ -7217,9 +7225,20 @@ async function renderInforme() {
   // pagosMes: TODOS los contratos vigentes ese mes, carguen algo o no —
   // antes se excluían acá mismo los que no tenían nada cargado, así que
   // nunca se podían ver los que faltaba cargar.
+  // También se incluyen los contratos RESCINDIDOS y VENCIDOS que todavía
+  // tengan saldo pendiente ese mes — antes desaparecían del informe apenas
+  // dejaban de estar vigentes, aunque siguieran debiendo plata (que es justo
+  // lo que este informe, sobre todo con el filtro "Con deuda", tiene que
+  // mostrar). Los "indefinidos" (sin vigencia_hasta cargada, contratos que
+  // en teoría no deberían existir sin esa fecha pero por las dudas) se tratan
+  // igual que vigentes, siempre visibles — son contratos activos, no
+  // vencidos ni rescindidos, así que no tiene sentido condicionarlos a tener
+  // deuda para aparecer.
   let pagosMes = pagosTodos.filter(p => {
     const c = DB.contratos.find(x => x.hoja === p.hoja);
-    return c && getEstado(c) === 'vigente';
+    if (!c) return false;
+    const estado = getEstado(c);
+    return estado === 'vigente' || estado === 'indefinido' || ((estado === 'rescindido' || estado === 'vencido') && (p.saldo||0) > 0);
   });
 
   // Apply deuda filter
@@ -10085,7 +10104,7 @@ function showTab(name, btn) {
   if (name === 'clientes') renderClientes();
   if (name === 'contratos') renderContratos();
   if (name === 'consorcios') renderConsorcios();
-  if (name === 'informes') { populateInformeAnios(); document.getElementById('informes-menu').style.display = 'none'; }
+  if (name === 'informes') { populateInformeAnios(); document.getElementById('informes-menu').style.display = 'none'; renderInforme(); }
   if (name === 'inmuebles') { if (!DB_INMUEBLES.length) loadAll().then(renderInmuebles); else renderInmuebles(); }
   if (name === 'caja') initCaja();
 }
