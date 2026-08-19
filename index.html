@@ -500,6 +500,7 @@
   <button class="tab-btn" onclick="showTab('inmuebles',this)">🏠 Inmuebles</button>
   <button class="tab-btn" onclick="showTab('clientes',this)">🧑‍🤝‍🧑 Clientes</button>
   <button class="tab-btn" onclick="showTab('caja',this)">💰 Caja</button>
+  <button class="tab-btn" onclick="showTab('noticias',this)">📢 Noticias</button>
   <div class="tab-dropdown" id="dropdown-mantenimiento">
     <button class="tab-btn" onclick="toggleMantenimientoMenu(event)">🔧 Mantenimiento ▾</button>
     <div class="tab-dropdown-menu" id="mantenimiento-menu" style="display:none">
@@ -702,6 +703,82 @@
       <button class="btn btn-primary" style="font-size:0.82rem" onclick="abrirFormConsorcio()">+ Nuevo consorcio</button>
     </div>
     <div id="consorcios-lista"></div>
+  </div>
+
+  <!-- NOTICIAS DEL PORTAL -->
+  <div id="panel-noticias" class="panel" style="display:none">
+    <div class="toolbar" style="margin-bottom:1rem;gap:0.75rem;flex-wrap:wrap">
+      <strong style="font-size:0.95rem">📢 Noticias del portal</strong>
+    </div>
+    <div style="background:white;border-radius:12px;box-shadow:var(--shadow);padding:1.2rem 1.4rem;margin-bottom:1.2rem">
+      <div class="section-title" style="margin-bottom:0.75rem">Nueva noticia</div>
+      <div class="form-group">
+        <label>Texto</label>
+        <textarea id="not-texto" rows="2" placeholder="Ej: Este mes aumentó la TGIU un 15%" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:0.88rem;resize:vertical"></textarea>
+      </div>
+      <div class="form-grid" style="margin-top:0.75rem">
+        <div class="form-group">
+          <label>Desde</label>
+          <input type="date" id="not-desde">
+        </div>
+        <div class="form-group">
+          <label>Hasta</label>
+          <input type="date" id="not-hasta">
+        </div>
+        <div class="form-group">
+          <label>Tipo</label>
+          <select id="not-tipo">
+            <option value="info">ℹ️ Informativa</option>
+            <option value="importante">⚠️ Importante</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-grid" style="margin-top:0.75rem">
+        <div class="form-group">
+          <label>¿A quién le hablás?</label>
+          <select id="not-alcance" onchange="actualizarCamposAlcanceNoticia()">
+            <option value="general">Todos los inquilinos</option>
+            <option value="servicio">Solo quienes tengan a cargo un servicio puntual</option>
+            <option value="indice">Solo quienes actualicen con un índice puntual</option>
+            <option value="contrato">Un contrato en particular</option>
+          </select>
+        </div>
+        <div class="form-group" id="not-alcance-servicio-wrap" style="display:none">
+          <label>Servicio</label>
+          <select id="not-alcance-servicio">
+            <option value="epe">EPE</option>
+            <option value="agua">Agua</option>
+            <option value="tgiu">TGIU</option>
+            <option value="seguro">Seguro</option>
+            <option value="internet">Internet</option>
+            <option value="expensas">Expensas</option>
+          </select>
+        </div>
+        <div class="form-group" id="not-alcance-indice-wrap" style="display:none">
+          <label>Índice</label>
+          <select id="not-alcance-indice">
+            <option value="IPC (Índice de Precios al Consumidor)">IPC (Índice de Precios al Consumidor)</option>
+            <option value="ICL (Índice Contratos de Locación)">ICL (Índice Contratos de Locación)</option>
+            <option value="IRL (Índice de Referencia de Locaciones)">IRL (Índice de Referencia de Locaciones)</option>
+            <option value="Kg de novillos">Kg de novillos</option>
+            <option value="Dólar oficial">Dólar oficial</option>
+            <option value="Acuerdo entre partes">Acuerdo entre partes</option>
+            <option value="Otro">Otro</option>
+          </select>
+        </div>
+        <div class="form-group" id="not-alcance-contrato-wrap" style="display:none">
+          <label>Contrato</label>
+          <input type="text" id="not-alcance-contrato-buscar" list="not-contratos-datalist" placeholder="Buscar contrato..." oninput="actualizarContratoSeleccionadoNoticia()" autocomplete="off">
+          <datalist id="not-contratos-datalist"></datalist>
+          <input type="hidden" id="not-alcance-contrato-id">
+          <div id="not-alcance-contrato-confirmado" style="font-size:0.75rem;color:var(--green);margin-top:3px"></div>
+        </div>
+      </div>
+      <div class="form-actions" style="margin-top:1rem">
+        <button class="btn btn-primary" onclick="guardarNoticia()">＋ Publicar noticia</button>
+      </div>
+    </div>
+    <div id="noticias-lista"></div>
   </div>
 
   <!-- NUMERACIÓN DE SERVICIOS -->
@@ -9362,7 +9439,7 @@ function selectInforme(tipo) {
   document.getElementById('informes-menu').style.display = 'none';
 
   // First hide ALL main panels (same as showTab)
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -10108,7 +10185,7 @@ function showTab(name, btn) {
   // Close Gestión dropdown
   document.getElementById('informes-menu').style.display = 'none';
   // Hide ALL panels using both class and inline style
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -10130,6 +10207,7 @@ function showTab(name, btn) {
   if (name === 'informes') { populateInformeAnios(); document.getElementById('informes-menu').style.display = 'none'; renderInforme(); }
   if (name === 'inmuebles') { if (!DB_INMUEBLES.length) loadAll().then(renderInmuebles); else renderInmuebles(); }
   if (name === 'caja') initCaja();
+  if (name === 'noticias') renderNoticias();
 }
 
 
@@ -11242,7 +11320,7 @@ document.addEventListener('visibilitychange', () => {
 // ============================================================
 // Initialize panel visibility
 (function() {
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) el.style.display = id === 'dashboard' ? 'block' : 'none';
@@ -13753,6 +13831,130 @@ function suministrosToServiciosStr(suministros) {
   return tipos.join(', ');
 }
 
+
+function actualizarCamposAlcanceNoticia() {
+  const alcance = document.getElementById('not-alcance')?.value;
+  document.getElementById('not-alcance-servicio-wrap').style.display = alcance === 'servicio' ? '' : 'none';
+  document.getElementById('not-alcance-indice-wrap').style.display = alcance === 'indice' ? '' : 'none';
+  document.getElementById('not-alcance-contrato-wrap').style.display = alcance === 'contrato' ? '' : 'none';
+  if (alcance === 'contrato') poblarDatalistContratosNoticia();
+}
+
+function poblarDatalistContratosNoticia() {
+  const dl = document.getElementById('not-contratos-datalist');
+  if (!dl || dl.children.length) return; // ya poblado
+  DB.contratos
+    .slice()
+    .sort((a,b) => (a.titulo||a.hoja||'').localeCompare(b.titulo||b.hoja||''))
+    .forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.titulo || c.hoja;
+      o.dataset.id = c.id;
+      dl.appendChild(o);
+    });
+}
+
+function actualizarContratoSeleccionadoNoticia() {
+  const input = document.getElementById('not-alcance-contrato-buscar');
+  const confirmadoEl = document.getElementById('not-alcance-contrato-confirmado');
+  const idField = document.getElementById('not-alcance-contrato-id');
+  const c = DB.contratos.find(x => (x.titulo||x.hoja) === input.value);
+  if (c) {
+    idField.value = c.id;
+    confirmadoEl.textContent = `✓ ${c.titulo||c.hoja}`;
+  } else {
+    idField.value = '';
+    confirmadoEl.textContent = '';
+  }
+}
+
+async function guardarNoticia() {
+  const texto = document.getElementById('not-texto')?.value.trim();
+  const desde = document.getElementById('not-desde')?.value;
+  const hasta = document.getElementById('not-hasta')?.value;
+  const tipo = document.getElementById('not-tipo')?.value || 'info';
+  const alcance = document.getElementById('not-alcance')?.value || 'general';
+  if (!texto) { toast('Escribí el texto de la noticia', 'error'); return; }
+  if (!desde || !hasta) { toast('Completá el rango de fechas', 'error'); return; }
+  if (hasta < desde) { toast('La fecha "hasta" no puede ser anterior a "desde"', 'error'); return; }
+  let alcance_valor = null;
+  if (alcance === 'servicio') alcance_valor = document.getElementById('not-alcance-servicio')?.value || null;
+  else if (alcance === 'indice') alcance_valor = document.getElementById('not-alcance-indice')?.value || null;
+  else if (alcance === 'contrato') {
+    alcance_valor = document.getElementById('not-alcance-contrato-id')?.value || null;
+    if (!alcance_valor) { toast('Elegí un contrato de la lista (tiene que quedar tildado en verde debajo del campo)', 'error'); return; }
+  }
+  try {
+    await sbPost('noticias_portal', {
+      texto, fecha_desde: desde, fecha_hasta: hasta, tipo, alcance, alcance_valor, activo: true
+    });
+    document.getElementById('not-texto').value = '';
+    document.getElementById('not-desde').value = '';
+    document.getElementById('not-hasta').value = '';
+    document.getElementById('not-alcance-contrato-buscar').value = '';
+    document.getElementById('not-alcance-contrato-id').value = '';
+    document.getElementById('not-alcance-contrato-confirmado').textContent = '';
+    toast('Noticia publicada ✓');
+    await renderNoticias();
+  } catch(e) { toast('Error al guardar (¿falta crear la tabla noticias_portal?): ' + e.message, 'error'); }
+}
+
+async function toggleActivoNoticia(id, activo) {
+  try {
+    await sbPatch('noticias_portal', id, { activo: !activo });
+    await renderNoticias();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function eliminarNoticia(id) {
+  if (!confirm('¿Eliminar esta noticia?')) return;
+  try {
+    await sbDelete('noticias_portal', id);
+    await renderNoticias();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function renderNoticias() {
+  const cont = document.getElementById('noticias-lista');
+  if (!cont) return;
+  cont.innerHTML = '<p style="color:#aaa;font-size:0.85rem">Cargando…</p>';
+  let noticias = [];
+  try {
+    noticias = await sbGet('noticias_portal', 'order=fecha_desde.desc');
+  } catch(e) {
+    cont.innerHTML = `<p style="color:#c0392b;font-size:0.85rem">No se pudo cargar (¿falta crear la tabla noticias_portal en Supabase?)</p>`;
+    return;
+  }
+  if (!noticias.length) { cont.innerHTML = '<p style="color:#aaa;font-size:0.85rem">Todavía no publicaste ninguna noticia.</p>'; return; }
+  const labelsSrv = { epe:'EPE', agua:'Agua', tgiu:'TGIU', seguro:'Seguro', internet:'Internet', expensas:'Expensas' };
+  const hoy = TODAY.substring(0,10);
+  cont.innerHTML = noticias.map(n => {
+    const vencida = n.fecha_hasta < hoy;
+    const vigente = n.activo && !vencida && n.fecha_desde <= hoy;
+    const alcanceLabel = n.alcance === 'servicio' ? `Servicio: ${labelsSrv[n.alcance_valor]||n.alcance_valor}`
+      : n.alcance === 'indice' ? `Índice: ${n.alcance_valor}`
+      : n.alcance === 'contrato' ? `Contrato: ${(DB.contratos.find(c=>String(c.id)===String(n.alcance_valor))?.titulo)||'(contrato eliminado)'}`
+      : 'Todos los inquilinos';
+    const estadoBadge = vigente ? `<span class="badge badge-green">Vigente</span>`
+      : vencida ? `<span class="badge badge-gray">Vencida</span>`
+      : !n.activo ? `<span class="badge badge-gray">Desactivada</span>`
+      : `<span class="badge badge-yellow">Programada</span>`;
+    return `<div style="background:white;border-radius:10px;box-shadow:var(--shadow);padding:0.9rem 1.2rem;margin-bottom:0.6rem;display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+          ${n.tipo==='importante'?'⚠️':'ℹ️'} ${estadoBadge}
+          <span style="font-size:0.72rem;color:#999">${alcanceLabel}</span>
+        </div>
+        <div style="font-size:0.88rem">${(n.texto||'').replace(/</g,'&lt;')}</div>
+        <div style="font-size:0.72rem;color:#999;margin-top:4px">${n.fecha_desde} → ${n.fecha_hasta}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-secondary" style="font-size:0.75rem" onclick="toggleActivoNoticia(${n.id},${n.activo})">${n.activo?'Desactivar':'Activar'}</button>
+        <button class="btn" style="font-size:0.75rem;background:#f8d7da;color:#721c24" onclick="eliminarNoticia(${n.id})">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
 
 function renderConsorcios() {
   const cont = document.getElementById('consorcios-lista');
