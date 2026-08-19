@@ -2199,6 +2199,29 @@ function verArchivoContrato(contratoId) {
 // el botón 📎 de la fila del extra, y desde el visor de adjuntos agrupado al
 // final de cada mes en la grilla del contrato (junto con las boletas de
 // servicios), no como un ícono aparte por cada extra.
+// Antes, el botón 📎 siempre abría el selector de archivo nuevo, sin
+// importar si ya había uno adjunto — por eso parecía que "no se guardaba":
+// en realidad sí se guardaba, pero no había forma de verlo ni de darse
+// cuenta, porque cada click disparaba una subida nueva de una.
+function manejarClickArchivoExtra(extraId) {
+  const btn = document.getElementById(`gpe-btn-archivo-${extraId}`);
+  const archivoPath = btn?.dataset.archivo;
+  if (!archivoPath) { document.getElementById(`gpe-file-${extraId}`).click(); return; }
+  const archivoNombre = btn?.dataset.nombre || '';
+  const div = document.createElement('div');
+  div.className = 'modal-overlay-archivo-extra';
+  div.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999';
+  div.innerHTML = `<div style="background:white;border-radius:12px;padding:1.25rem;text-align:center;min-width:240px;max-width:90vw">
+    <div style="font-weight:600;margin-bottom:0.25rem">📎 Comprobante adjunto</div>
+    <div style="font-size:0.78rem;color:#888;margin-bottom:1rem;word-break:break-word">${archivoNombre}</div>
+    <button type="button" onclick="window.open('${SB_URL}/storage/v1/object/public/contratos-archivos/${archivoPath}','_blank');document.querySelector('.modal-overlay-archivo-extra')?.remove()" style="display:block;width:100%;padding:8px 16px;margin:6px 0;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:0.9rem;background:white">👁️ Ver comprobante</button>
+    <button type="button" onclick="document.querySelector('.modal-overlay-archivo-extra')?.remove();document.getElementById('gpe-file-${extraId}').click()" style="display:block;width:100%;padding:8px 16px;margin:6px 0;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:0.9rem;background:white">🔄 Reemplazar</button>
+    <button type="button" onclick="document.querySelector('.modal-overlay-archivo-extra')?.remove()" style="margin-top:6px;padding:6px 16px;border:none;background:#eee;border-radius:6px;cursor:pointer">Cancelar</button>
+  </div>`;
+  div.onclick = e => { if (e.target === div) div.remove(); };
+  document.body.appendChild(div);
+}
+
 async function subirArchivoExtra(extraId, inputEl) {
   const file = inputEl.files?.[0];
   if (!file) return;
@@ -2231,7 +2254,7 @@ async function subirArchivoExtra(extraId, inputEl) {
       const ex = lista.find(x => x.id === extraId);
       if (ex) { ex.archivo_path = path; ex.archivo_nombre = file.name; }
     });
-    if (btn) { btn.style.background = 'var(--green)'; btn.style.color = 'white'; btn.title = 'Comprobante adjunto: '+file.name; }
+    if (btn) { btn.style.background = 'var(--green)'; btn.style.color = 'white'; btn.title = 'Comprobante adjunto: '+file.name; btn.dataset.archivo = path; btn.dataset.nombre = file.name; }
     toast('Comprobante adjuntado ✓');
   } catch(e) {
     toast('Error al subir el comprobante: ' + e.message, 'error');
@@ -5050,7 +5073,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
               <option value="credito" ${e.tipo==='credito'?'selected':''}>${e.a_cargo_de==='propietario'?'Acreditar':'Descuento'}</option>
             </select>
             <input type="file" id="gpe-file-${e.id}" accept="image/*,.pdf" style="display:none" onchange="subirArchivoExtra(${e.id},this)">
-            <button type="button" class="grid-btn" id="gpe-btn-archivo-${e.id}" style="background:${e.archivo_path?'var(--green)':'#eee'};color:${e.archivo_path?'white':'#888'}" title="${e.archivo_path?'Comprobante adjunto: '+(e.archivo_nombre||''):'Adjuntar foto o PDF del comprobante'}" onclick="document.getElementById('gpe-file-${e.id}').click()">📎</button>
+            <button type="button" class="grid-btn" id="gpe-btn-archivo-${e.id}" data-archivo="${e.archivo_path||''}" data-nombre="${(e.archivo_nombre||'').replace(/"/g,'&quot;')}" style="background:${e.archivo_path?'var(--green)':'#eee'};color:${e.archivo_path?'white':'#888'}" title="${e.archivo_path?'Comprobante adjunto: '+(e.archivo_nombre||''):'Adjuntar foto o PDF del comprobante'}" onclick="manejarClickArchivoExtra(${e.id})">📎</button>
             <button class="grid-btn grid-btn-red" onclick="eliminarExtraGP(${e.id},'${hoja}',${contratoId},'${mesKey}',${comisionPct})">✕</button>
           </div>
         `).join('')}
@@ -5993,7 +6016,7 @@ async function agregarExtraGP(hoja, contratoId, mesKey, pagoId, comisionPct) {
           <option value="credito">Descuento</option>
         </select>
         <input type="file" id="gpe-file-${extra.id}" accept="image/*,.pdf" style="display:none" onchange="subirArchivoExtra(${extra.id},this)">
-        <button type="button" class="grid-btn" id="gpe-btn-archivo-${extra.id}" style="background:#eee;color:#888" title="Adjuntar foto o PDF del comprobante" onclick="document.getElementById('gpe-file-${extra.id}').click()">📎</button>
+        <button type="button" class="grid-btn" id="gpe-btn-archivo-${extra.id}" data-archivo="" data-nombre="" style="background:#eee;color:#888" title="Adjuntar foto o PDF del comprobante" onclick="manejarClickArchivoExtra(${extra.id})">📎</button>
         <button class="grid-btn grid-btn-red" onclick="eliminarExtraGP(${extra.id},'${hoja}',${contratoId},'${mesKey}',${comisionPct})">✕</button>
       `;
       div.appendChild(el);
