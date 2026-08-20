@@ -2544,6 +2544,12 @@ function renderGrilla(c) {
     const totalExtrasGral = extrasGral.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
     const totalExtrasMes = extrasMes.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
     const totalExtras = totalExtrasGral + totalExtrasMes;
+    // Extras a cargo del PROPIETARIO — puramente informativo para el control
+    // interno del admin, nunca se suma/resta a ningún total de la grilla ni
+    // se muestra en el portal del inquilino.
+    const extrasProp = extras.filter(e => !e.suministro_id && e.a_cargo_de === 'propietario');
+    const totalExtrasProp = extrasProp.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
+    const extrasPropLabel = extrasProp.map(e => `${e.concepto||'Extra'}: ${formatMoney(Math.abs(e.importe||0))}`).join(' · ');
     // saldo calculado en tiempo real (igual que el total mostrado), para evitar mostrar valor desactualizado de BD
     const _totalCalc = calcularTotal(p, extras, window._pagosSuministros?.[p.id]);
     // Si pagado='SI' o saldo=0 en BD, confiar en BD (evita saldos falsos por datos históricos inconsistentes)
@@ -2588,6 +2594,7 @@ function renderGrilla(c) {
         <div class="grid-actions">
           ${(!saldoReal||saldoReal===0)?'':`<button class="grid-btn grid-btn-green" onclick="editarMesConSolapa('${c.hoja}',${c.id},'${p.mes?.substring(0,7)}','s2')">✓ Cobrar</button>`}
           ${(window._pagosPdf?.[+p.id]?.length || (extrasActuales[p.id]||[]).some(e=>e.archivo_path)) ? `<button class="grid-btn" style="background:var(--ink2);color:white" onclick="verAdjuntosPago(${p.id})" title="Ver documentos adjuntos">📄</button>` : ''}
+          ${totalExtrasProp>0 ? `<button class="grid-btn" style="background:#eee;color:#888" title="Extras a cargo del propietario este mes (informativo, no suma al total): ${extrasPropLabel} — Total: ${formatMoney(totalExtrasProp)}">🏷️</button>` : ''}
           <button class="grid-btn grid-btn-red" onclick="eliminarMes(${p.id},'${c.hoja}')" title="Eliminar mes">🗑</button>
         </div>
       </td>
