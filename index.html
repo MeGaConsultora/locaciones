@@ -2547,7 +2547,12 @@ function renderGrilla(c) {
     // Extras a cargo del PROPIETARIO — puramente informativo para el control
     // interno del admin, nunca se suma/resta a ningún total de la grilla ni
     // se muestra en el portal del inquilino.
-    const extrasProp = extras.filter(e => !e.suministro_id && e.a_cargo_de === 'propietario');
+    const extrasProp = extras.filter(e => {
+      if (e.a_cargo_de !== 'propietario') return false;
+      if (!e.suministro_id) return true; // puntual del mes (como "Extras Mes")
+      const sum = DB_SUMINISTROS.find(s => s.id === parseInt(e.suministro_id));
+      return sum?.tipo === 'otro'; // recurrente (como "Extras Gral")
+    });
     const totalExtrasProp = extrasProp.reduce((s,e) => s + (parseFloat(e.importe)||0), 0);
     const extrasPropLabel = extrasProp.map(e => `${e.concepto||'Extra'}: ${formatMoney(Math.abs(e.importe||0))}`).join(' · ');
     // saldo calculado en tiempo real (igual que el total mostrado), para evitar mostrar valor desactualizado de BD
