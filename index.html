@@ -5358,7 +5358,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       <div style="background:#d4edda;border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.75rem;text-align:center;font-size:0.85rem;color:#155724">
         ✓ Este mes está completamente pagado
       </div>` : ''}
-      <div id="gp-cobro-items">${generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEsteMes)}</div>
+      <div id="gp-cobro-items">${generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEsteMes, extrasInqCubiertos)}</div>
       ${c?.interes_punitorio > 0 ? `
       <div style="background:#fff8e1;border:1px solid #ffc107;border-radius:8px;padding:0.75rem 1rem;margin-top:0.75rem">
         <div style="font-size:0.82rem;font-weight:600;color:#856404;margin-bottom:6px">⏱ Interés punitorio (${c.interes_punitorio}% diario s/alquiler)</div>
@@ -5571,7 +5571,7 @@ function obtenerItemsPendientesGP(p, contratoId) {
   return items;
 }
 
-function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEsteMes = 0) {
+function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEsteMes = 0, extrasInqCubiertos = []) {
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
 
   const ps = window._pagosSuministros?.[p?.id] || {};
