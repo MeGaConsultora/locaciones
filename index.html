@@ -1070,23 +1070,64 @@ function sesionExpirada() {
     </div>`;
 }
 
+// Si OTRA pestaña ya renovó el token (localStorage es compartido entre
+// pestañas del mismo sitio), adoptarlo acá también en vez de intentar
+// renovar por cuenta propia — antes, cada pestaña renovaba de forma
+// independiente, y como Supabase invalida el refresh_token anterior apenas
+// se usa uno nuevo, la pestaña que "perdía la carrera" se quedaba con un
+// token ya inválido y caía directo a "Sesión expirada", aunque se estuviera
+// trabajando activamente en ella.
+window.addEventListener('storage', (ev) => {
+  if (ev.key === 'sb_token' && ev.newValue && currentUser) {
+    currentUser.token = ev.newValue;
+    updateAuthHeaders(ev.newValue);
+  }
+});
+
+let _refrescandoTokenPromise = null;
 async function refreshAdminToken() {
-  const refreshTk = localStorage.getItem('sb_refresh_token');
-  if (!refreshTk) return false;
+  // Si ya hay una renovación en curso (de esta misma pestaña), esperar esa
+  // en vez de disparar otra en paralelo.
+  if (_refrescandoTokenPromise) return _refrescandoTokenPromise;
+  _refrescandoTokenPromise = (async () => {
+    const refreshTk = localStorage.getItem('sb_refresh_token');
+    if (!refreshTk) return false;
+    try {
+      const r = await fetch(`${SB_AUTH_URL}/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshTk })
+      });
+      if (!r.ok) {
+        // Antes de dar la sesión por vencida: puede que OTRA pestaña ya
+        // haya renovado el refresh_token entre que lo leímos y que lo
+        // usamos acá (típico con varias pestañas abiertas) — si el que hay
+        // guardado ahora es distinto al que acabamos de probar, no fue
+        // realmente esta sesión la que expiró, sino que perdimos la carrera.
+        // Adoptar el token vigente y avisar éxito en vez de cerrar sesión.
+        const refreshTkAhora = localStorage.getItem('sb_refresh_token');
+        const tokenAhora = localStorage.getItem('sb_token');
+        if (refreshTkAhora && refreshTkAhora !== refreshTk && tokenAhora) {
+          currentUser.token = tokenAhora;
+          updateAuthHeaders(tokenAhora);
+          return true;
+        }
+        sesionExpirada();
+        return false;
+      }
+      const data = await r.json();
+      currentUser.token = data.access_token;
+      localStorage.setItem('sb_token', data.access_token);
+      if (data.refresh_token) localStorage.setItem('sb_refresh_token', data.refresh_token);
+      updateAuthHeaders(data.access_token);
+      return true;
+    } catch(e) { console.error('Token refresh error:', e); return false; }
+  })();
   try {
-    const r = await fetch(`${SB_AUTH_URL}/token?grant_type=refresh_token`, {
-      method: 'POST',
-      headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshTk })
-    });
-    if (!r.ok) { sesionExpirada(); return false; }
-    const data = await r.json();
-    currentUser.token = data.access_token;
-    localStorage.setItem('sb_token', data.access_token);
-    if (data.refresh_token) localStorage.setItem('sb_refresh_token', data.refresh_token);
-    updateAuthHeaders(data.access_token);
-    return true;
-  } catch(e) { console.error('Token refresh error:', e); return false; }
+    return await _refrescandoTokenPromise;
+  } finally {
+    _refrescandoTokenPromise = null;
+  }
 }
 
 // Auto-refresh token every 10 minutes to prevent session expiry
@@ -6145,10 +6186,11 @@ async function eliminarExtraGP(extraId, hoja, contratoId, mesKey, comisionPct) {
 // saldo pendiente, y si sobra, sigue con el subsiguiente, y así hasta agotar
 // el excedente o quedarse sin más meses cargados. Devuelve el detalle de
 // qué meses se vieron afectados y cuánto quedó sin poder acreditarse.
-async function distribuirExcedenteEnCascada(hojaEncoded, mesInicialKey, excedenteInicial) {
+async function distribuirExcedenteEnCascada(hojaEncoded, mesInicialKey, excedenteInicial, contratoId) {
   let restanteGlobal = Math.round(excedenteInicial * 100) / 100;
   let mesCursor = mesInicialKey;
   const mesesAfectados = [];
+  const labelsMap = { alquiler:'Alquiler', epe:'EPE', agua:'Agua', tgiu:'TGIU', seguro:'Seguro', internet:'Internet', expensas:'Expensas' };
 
   while (restanteGlobal > 0.004) {
     const siguientes = await sbGet('pagos', `hoja=eq.${hojaEncoded}&mes=gt.${mesCursor}&order=mes.asc&limit=1`);
@@ -6172,14 +6214,15 @@ async function distribuirExcedenteEnCascada(hojaEncoded, mesInicialKey, excedent
     // Distribuir aAplicar entre los ítems de este mes (alquiler, servicios…)
     let restanteItem = aAplicar;
     const patchSig = {};
+    const itemsMovCascada = []; // detalle para el registro en movimientos_pagos
     const ordenItems = [
-      { campo: 'pagado_alquiler', monto: sp.importe_alquiler||0 },
-      { campo: 'pagado_epe',      monto: sp.monto_epe||0 },
-      { campo: 'pagado_agua',     monto: sp.monto_agua||0 },
-      { campo: 'pagado_tgiu',     monto: sp.monto_tgiu||0 },
-      { campo: 'pagado_seguro',   monto: sp.monto_seguro||0 },
-      { campo: 'pagado_internet', monto: sp.monto_internet||0 },
-      { campo: 'pagado_expensas', monto: sp.monto_expensas||0 },
+      { campo: 'pagado_alquiler', tipo: 'alquiler', monto: sp.importe_alquiler||0 },
+      { campo: 'pagado_epe',      tipo: 'epe',      monto: sp.monto_epe||0 },
+      { campo: 'pagado_agua',     tipo: 'agua',     monto: sp.monto_agua||0 },
+      { campo: 'pagado_tgiu',     tipo: 'tgiu',     monto: sp.monto_tgiu||0 },
+      { campo: 'pagado_seguro',   tipo: 'seguro',   monto: sp.monto_seguro||0 },
+      { campo: 'pagado_internet', tipo: 'internet', monto: sp.monto_internet||0 },
+      { campo: 'pagado_expensas', tipo: 'expensas', monto: sp.monto_expensas||0 },
     ];
     for (const item of ordenItems) {
       if (restanteItem <= 0) break;
@@ -6190,12 +6233,32 @@ async function distribuirExcedenteEnCascada(hojaEncoded, mesInicialKey, excedent
       const imputar = Math.min(restanteItem, pendienteItem);
       patchSig[item.campo] = Math.round((yaItemPagado + imputar) * 100) / 100;
       restanteItem = Math.round((restanteItem - imputar) * 100) / 100;
+      itemsMovCascada.push({ label: labelsMap[item.tipo], monto: Math.round(imputar*100)/100 });
     }
 
     const nuevoPagadoSig = Math.round((yaAbonadoSig + aAplicar) * 100) / 100;
     const nuevoSaldoSig = Math.max(0, Math.round((totalSig - nuevoPagadoSig) * 100) / 100);
     const nuevoPagadoEstadoSig = nuevoSaldoSig <= 0 ? 'SI' : (nuevoPagadoSig > 0 ? 'PARCIAL' : (sp.pagado||'NO'));
     await sbPatch('pagos', sp.id, { ...patchSig, pagado_importe: nuevoPagadoSig, saldo: nuevoSaldoSig, pagado: nuevoPagadoEstadoSig });
+
+    // Dejar registro en movimientos_pagos — antes esto se aplicaba en
+    // silencio (solo se actualizaban los campos de "pagos"), sin ningún
+    // rastro en el Listado de pagos. Por eso un mes futuro podía figurar
+    // como cobrado sin que apareciera ninguna transacción que lo explique.
+    if (contratoId && aAplicar > 0.004) {
+      try {
+        await sbPost('movimientos_pagos', {
+          pago_id: sp.id,
+          contrato_id: contratoId,
+          hoja: decodeURIComponent(hojaEncoded),
+          mes: sp.mes,
+          fecha: new Date().toISOString().substring(0,10),
+          monto: aAplicar,
+          concepto: 'Excedente de mes anterior aplicado automáticamente',
+          items: JSON.stringify(itemsMovCascada)
+        });
+      } catch(e) { console.warn('No se pudo registrar el movimiento de excedente en cascada:', e); }
+    }
 
     mesesAfectados.push({ mes: sp.mes, aplicado: aAplicar });
     restanteGlobal = Math.round((restanteGlobal - aAplicar) * 100) / 100;
@@ -7100,7 +7163,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   // subsiguiente si sigue sobrando, y así sucesivamente)
   let resultadoCascada = null;
   if (excedente > 0) {
-    resultadoCascada = await distribuirExcedenteEnCascada(hojaEncoded, p.mes, excedente);
+    resultadoCascada = await distribuirExcedenteEnCascada(hojaEncoded, p.mes, excedente, contratoId);
     // Ajustar pagado_importe del mes actual: sacarle lo que sí se pudo
     // imputar a otros meses, pero si quedó un resto sin ningún mes donde
     // ponerlo, dejarlo ACÁ (visible como saldo a favor de este mes) — si no,
