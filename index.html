@@ -495,6 +495,7 @@
       <button onclick="selectInforme('recibos-emitir')">🖨️ Recibos Propietarios</button>
       <button onclick="abrirReciboRapido()">🧾 Recibo rápido</button>
       <button onclick="selectInforme('historial-pagos')">📝 Historial de pagos</button>
+      <button onclick="selectInforme('historial-notas')">🗒️ Historial de Notas</button>
     </div>
   </div>
   <button class="tab-btn" onclick="showTab('inmuebles',this)">🏠 Inmuebles</button>
@@ -779,6 +780,26 @@
       </div>
     </div>
     <div id="noticias-lista"></div>
+  </div>
+
+  <!-- HISTORIAL DE NOTAS -->
+  <div id="panel-historial-notas" class="panel" style="display:none">
+    <div class="toolbar" style="margin-bottom:1rem;gap:0.75rem;flex-wrap:wrap">
+      <strong style="font-size:0.95rem">🗒️ Historial de Notas</strong>
+      <input type="text" class="search-input" id="hn-buscar" placeholder="Buscar por contrato o texto..." style="width:260px" oninput="renderHistorialNotas(false)">
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th style="cursor:pointer" onclick="sortHistorialNotas('fecha')">Fecha ↕</th>
+          <th style="cursor:pointer" onclick="sortHistorialNotas('contrato')">Contrato ↕</th>
+          <th>Nota</th>
+          <th>Usuario</th>
+          <th>Acciones</th>
+        </tr></thead>
+        <tbody id="hn-tbody"><tr><td colspan="5" style="text-align:center;padding:2rem;color:#aaa">Cargando…</td></tr></tbody>
+      </table>
+    </div>
   </div>
 
   <!-- NUMERACIÓN DE SERVICIOS -->
@@ -2268,6 +2289,115 @@ async function eliminarNotaContrato(notaId, contratoId) {
   try {
     await sbDelete('contrato_notas', notaId);
     await cargarNotasContrato(contratoId);
+  } catch(e) { toast('Error: '+e.message, 'error'); }
+}
+
+// ============================================================
+// HISTORIAL DE NOTAS — vista de todas las notas de todos los
+// contratos, ordenable, editable y con acceso directo al contrato.
+// ============================================================
+window._historialNotasSort = { campo: 'fecha', dir: 'desc' };
+
+async function renderHistorialNotas(forzarRecarga = true) {
+  const tbody = document.getElementById('hn-tbody');
+  if (!tbody) return;
+  let notas = window._historialNotasCacheRaw;
+  if (forzarRecarga || !notas) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:2rem;color:#aaa">Cargando…</td></tr>';
+    try {
+      notas = await sbGet('contrato_notas', 'order=fecha.desc');
+    } catch(e) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:2rem;color:#c0392b">No se pudo cargar (¿falta crear la tabla contrato_notas?)</td></tr>`;
+      return;
+    }
+    window._historialNotasCacheRaw = notas;
+  }
+  // Enriquecer con el contrato correspondiente (título/hoja) para mostrar y
+  // para poder buscar por contrato además de por texto.
+  notas = notas.map(n => {
+    const c = DB.contratos.find(x => x.id === n.contrato_id);
+    return { ...n, _contratoLabel: c ? (c.titulo || c.hoja) : '(contrato eliminado)', _contratoExiste: !!c };
+  });
+
+  const buscar = (document.getElementById('hn-buscar')?.value || '').trim().toLowerCase();
+  if (buscar) {
+    notas = notas.filter(n => n._contratoLabel.toLowerCase().includes(buscar) || (n.texto||'').toLowerCase().includes(buscar));
+  }
+
+  const { campo, dir } = window._historialNotasSort;
+  notas.sort((a,b) => {
+    let va, vb;
+    if (campo === 'contrato') { va = a._contratoLabel.toLowerCase(); vb = b._contratoLabel.toLowerCase(); }
+    else { va = a.fecha||''; vb = b.fecha||''; }
+    const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+    return dir === 'asc' ? cmp : -cmp;
+  });
+
+  window._historialNotasCache = notas;
+
+  if (!notas.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:2rem;color:#aaa">Sin notas para mostrar.</td></tr>'; return; }
+
+  tbody.innerHTML = notas.map(n => {
+    const fecha = n.fecha ? new Date(n.fecha).toLocaleDateString('es-AR', { day:'2-digit', month:'short', year:'numeric' }) : '';
+    const hora = n.fecha ? new Date(n.fecha).toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' }) : '';
+    const textoAttr = (n.texto||'').replace(/"/g,'&quot;');
+    return `<tr>
+      <td style="font-size:0.78rem;color:#888;white-space:nowrap">${fecha}<br>${hora}</td>
+      <td>
+        ${n._contratoExiste
+          ? `<a href="javascript:void(0)" onclick="openContrato(${n.contrato_id})" style="color:var(--ink2);font-weight:600;text-decoration:underline;cursor:pointer">${n._contratoLabel}</a>`
+          : `<span style="color:#aaa">${n._contratoLabel}</span>`}
+      </td>
+      <td style="max-width:420px">
+        <div id="hn-texto-${n.id}" onclick="activarEdicionNotaHistorial(${n.id})" data-original="${textoAttr}" title="Click para editar" style="font-size:0.85rem;white-space:pre-wrap;word-break:break-word;cursor:text;border-radius:4px;padding:2px 4px;margin:-2px -4px" onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background='transparent'">${(n.texto||'').replace(/</g,'&lt;')}</div>
+      </td>
+      <td style="font-size:0.8rem;color:#888">${n.usuario||'—'}</td>
+      <td><button onclick="eliminarNotaHistorial(${n.id})" title="Eliminar nota" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.85rem;padding:2px 6px">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function sortHistorialNotas(campo) {
+  const actual = window._historialNotasSort;
+  window._historialNotasSort = { campo, dir: (actual.campo === campo && actual.dir === 'desc') ? 'asc' : 'desc' };
+  renderHistorialNotas(false);
+}
+
+function activarEdicionNotaHistorial(notaId) {
+  const div = document.getElementById(`hn-texto-${notaId}`);
+  if (!div || div.dataset.editando) return;
+  const original = div.dataset.original || '';
+  div.dataset.editando = '1';
+  div.innerHTML = `<textarea id="hn-edit-${notaId}" rows="2" style="width:100%;padding:5px 7px;border:1.5px solid var(--accent);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.85rem;resize:vertical">${original}</textarea>`;
+  const ta = document.getElementById(`hn-edit-${notaId}`);
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+  let cancelado = false;
+  ta.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ta.blur(); }
+    if (ev.key === 'Escape') { cancelado = true; ta.blur(); }
+  });
+  ta.addEventListener('blur', () => guardarEdicionNotaHistorial(notaId, cancelado));
+}
+
+async function guardarEdicionNotaHistorial(notaId, cancelado) {
+  const ta = document.getElementById(`hn-edit-${notaId}`);
+  if (!ta) return;
+  const nuevoTexto = ta.value.trim();
+  const div = document.getElementById(`hn-texto-${notaId}`);
+  const original = div?.dataset.original || '';
+  if (cancelado || !nuevoTexto || nuevoTexto === original) { await renderHistorialNotas(false); return; }
+  try {
+    await sbPatch('contrato_notas', notaId, { texto: nuevoTexto });
+    await renderHistorialNotas(true);
+  } catch(e) { toast('Error al guardar la nota: '+e.message, 'error'); }
+}
+
+async function eliminarNotaHistorial(notaId) {
+  if (!confirm('¿Eliminar esta nota?')) return;
+  try {
+    await sbDelete('contrato_notas', notaId);
+    await renderHistorialNotas(true);
   } catch(e) { toast('Error: '+e.message, 'error'); }
 }
 
@@ -9514,7 +9644,7 @@ function selectInforme(tipo) {
   document.getElementById('informes-menu').style.display = 'none';
 
   // First hide ALL main panels (same as showTab)
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -9533,6 +9663,7 @@ function selectInforme(tipo) {
   else if (tipo === 'recibos-emitir') panelId = 'panel-recibos-emitir';
   else if (tipo === 'numeracion-servicios') panelId = 'panel-numeracion-servicios';
   else if (tipo === 'consorcios') panelId = 'panel-consorcios';
+  else if (tipo === 'historial-notas') panelId = 'panel-historial-notas';
   else if (tipo === 'srv-epe' || tipo === 'srv-agua' || tipo === 'srv-tgiu') panelId = 'panel-srv-informe';
   else if (tipo === 'srv-seguro') panelId = 'panel-informe-seguro';
   else if (tipo === 'historial-pagos') panelId = 'panel-historial-pagos';
@@ -9547,6 +9678,7 @@ function selectInforme(tipo) {
   else if (tipo === 'recibos-emitir') { populateRecibosAnios(); renderRecibosEmitir(); }
   else if (tipo === 'numeracion-servicios') renderNumeracionServicios();
   else if (tipo === 'consorcios') renderConsorcios();
+  else if (tipo === 'historial-notas') renderHistorialNotas();
   else if (tipo === 'srv-epe' || tipo === 'srv-agua' || tipo === 'srv-tgiu') {
     window._srvInformeTipo = tipo;
     const labels = { 'srv-epe':'⚡ EPE a abonar', 'srv-agua':'💧 Agua a abonar', 'srv-tgiu':'🏛️ TGIU a abonar' };
@@ -10260,7 +10392,7 @@ function showTab(name, btn) {
   // Close Gestión dropdown
   document.getElementById('informes-menu').style.display = 'none';
   // Hide ALL panels using both class and inline style
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -11395,7 +11527,7 @@ document.addEventListener('visibilitychange', () => {
 // ============================================================
 // Initialize panel visibility
 (function() {
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) el.style.display = id === 'dashboard' ? 'block' : 'none';
