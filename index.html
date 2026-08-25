@@ -5174,25 +5174,19 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
     } catch(e) {}
   }
 
+  // Extras a cargo del inquilino: pendientes de cobrar vs. ya cobrados.
+  // ANTES esto se "adivinaba" mirando si el sobrante numérico de
+  // pagado_importe alcanzaba para cubrirlos — lo que hacía que un extra
+  // agregado DESPUÉS de un pago ya hecho quedara marcado como "cobrado"
+  // en silencio (sin que hubiera entrado ninguna plata nueva por él), y
+  // nunca apareciera para poder cobrarlo de verdad ni quedara registrado en
+  // el Listado de pagos. Ahora se usa directamente el campo real `cobrado`
+  // de cada extra — que solo se marca en true cuando efectivamente se tilda
+  // y se confirma un cobro (ver confirmarCobroInquilino) — igual criterio
+  // que ya usa bien el lado del propietario con rendido_prop_items.
   const extrasInqAll = extrasDelMes.filter(e => e.a_cargo_de !== 'propietario' && !e.cobrado);
-  // Filtrar extras ya cubiertos: usar pagado_xxx por ítem si existe, sino pagado_importe
-  const pagadoItemsRegulares = ['alquiler','epe','agua','tgiu','seguro','internet','expensas']
-    .reduce((s,k) => s + (parseFloat(p?.[k==='alquiler'?'pagado_alquiler':'pagado_'+k])||0), 0);
-  const tieneItemsPagadosXX = ['alquiler','epe','agua','tgiu','seguro','internet','expensas']
-    .some(k => (p?.[k==='alquiler'?'pagado_alquiler':'pagado_'+k]||0) > 0);
-  const pagadoTotalParaExtras = tieneItemsPagadosXX
-    ? Math.max(0, (p?.pagado_importe||0) - pagadoItemsRegulares)
-    : 0;
-  let pagadoRestanteParaExtras = pagadoTotalParaExtras;
-  const extrasInq = extrasInqAll.filter(e => {
-    const imp = (e.tipo === 'credito' ? -1 : 1) * (parseFloat(e.importe)||0);
-    if (imp <= 0) return true; // créditos siempre mostrar
-    if (pagadoRestanteParaExtras >= imp - 0.01) {
-      pagadoRestanteParaExtras -= imp;
-      return false; // ya cubierto
-    }
-    return true; // pendiente
-  });
+  const extrasInq = extrasInqAll;
+  const extrasInqCubiertos = extrasDelMes.filter(e => e.a_cargo_de !== 'propietario' && e.cobrado);
   const extrasProp = extrasDelMes.filter(e => e.a_cargo_de === 'propietario' || e.propietario_persona_id);
 
   // Estado de emisión del recibo propietario para el propietario ACTIVO
@@ -5630,7 +5624,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEst
   // "Alquiler" ni ningún otro ítem lo representaran.
   const excedenteVisible = Math.max(0, Math.round(((p.pagado_importe||0) - (p.total||0)) * 100) / 100);
 
-  const paidSection = paidItems.length > 0 || honorariosPagadoInq > 0 || yaAbonadoGP > 0 || excedenteVisible > 0.004 ? `
+  const paidSection = paidItems.length > 0 || honorariosPagadoInq > 0 || yaAbonadoGP > 0 || excedenteVisible > 0.004 || extrasInqCubiertos.length > 0 ? `
     <div style="margin-bottom:0.5rem;font-size:0.75rem;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Ya cobrado</div>
     ${yaAbonadoGP > 0 ? `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:4px 0;border-bottom:1px solid #f5f0e8;background:#f9f9f9">
@@ -5644,6 +5638,15 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEst
         <button onclick="revertirItem('${p.id}','${it.id}',${it.pagado},${it.monto},'${_gpHoja}',${contratoId},'${mesKey}',${_gpComision||8})" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.75rem">↩</button>
       </div>
     `).join('')}
+    ${extrasInqCubiertos.map(e => {
+      const signo = e.tipo === 'credito' ? -1 : 1;
+      const monto = Math.abs(parseFloat(e.importe)||0);
+      return `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:4px 0;border-bottom:1px solid #f5f0e8;background:#f9f9f9">
+        <span style="font-size:0.85rem;color:var(--green);flex:1">✓ ${e.concepto||'Extra'} — ${formatMoney(monto)}${e.tipo==='credito'?' (descuento)':''}</span>
+        <button onclick="revertirExtraCubierto('${p.id}',${e.id},${signo*monto},'${_gpHoja}',${contratoId},'${mesKey}',${_gpComision||8})" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.75rem">↩</button>
+      </div>`;
+    }).join('')}
     ${honorariosPagadoInq > 0 ? `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:4px 0;border-bottom:1px solid #f5f0e8;background:#f9f9f9">
         <span style="font-size:0.85rem;color:var(--green);flex:1">✓ Honorarios — ${formatMoney(honorariosPagadoInq)}</span>
@@ -6634,6 +6637,49 @@ async function revertirPagoACuenta(pagoId, hoja, contratoId, mesKey, comisionPct
   } catch(e) { toast('Error: '+e.message, 'error'); }
 }
 
+// Revierte un extra que el sistema había considerado "ya cobrado" (cubierto
+// por el sobrante de pagado_importe tras los ítems regulares — ver
+// extrasInqCubiertos). A diferencia de revertirItem, acá no hay un campo
+// pagado_xxx propio del extra: se ajusta directo pagado_importe/saldo por el
+// monto (con signo) de este extra puntual.
+async function revertirExtraCubierto(pagoId, extraId, montoConSigno, hoja, contratoId, mesKey, comisionPct) {
+  if (!confirm(`¿Revertir este extra como cobrado? ($${formatMoney(Math.abs(montoConSigno))})`)) return;
+  try {
+    const existing = await sbGet('pagos', `id=eq.${pagoId}&limit=1`);
+    if (!existing.length) return;
+    const p = existing[0];
+    const nuevoPagado = Math.max(0, Math.round(((p.pagado_importe||0) - montoConSigno) * 100) / 100);
+    const nuevoSaldo = Math.round(Math.max(0, (p.total||0) - nuevoPagado) * 100) / 100;
+    const patch = {
+      pagado_importe: nuevoPagado,
+      saldo: nuevoSaldo,
+      pagado: nuevoSaldo <= 0 ? 'SI' : (nuevoPagado > 0 ? 'PARCIAL' : '0')
+    };
+    await sbPatch('pagos', parseInt(pagoId), patch);
+    // Sacarle la marca de "cobrado" al extra — si no, quedaría excluido de
+    // los pendientes en "Ingresar Pago" a pesar de haberle revertido el pago.
+    try { await sbPatch('pagos_extras', extraId, { cobrado: false }); } catch(e) {}
+    toast('Extra revertido ✓');
+    const c = DB.contratos.find(x => x.id === contratoId);
+    if (c) {
+      await recargarGrilla(c);
+      const meses = [];
+      let [rsy, rsm] = c.vigencia_desde.substring(0,7).split('-').map(Number);
+      const [rey, rem] = (c.vigencia_hasta||c.vigencia_desde).substring(0,7).split('-').map(Number);
+      while (rsy < rey || (rsy === rey && rsm <= rem)) {
+        const key = `${rsy}-${String(rsm).padStart(2,'0')}`;
+        const pago = pagosActuales.find(p => p.mes && p.mes.startsWith(key));
+        meses.push({ key, label: formatDate(key+'-01'), pago });
+        rsm++; if (rsm > 12) { rsm = 1; rsy++; }
+      }
+      setTimeout(async () => {
+        await cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, 's2');
+        await loadAll();
+      }, 150);
+    }
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
 async function revertirItem(pagoId, itemId, montoPagado, montoTotal, hoja, contratoId, mesKey, comisionPct) {
   if (!confirm(`¿Revertir el pago de ${itemId} ($${formatMoney(montoPagado)})?`)) return;
   try {
@@ -7097,9 +7143,16 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   // Distribute payment across items in order
   // Excluir honorarios Y extras del monto a imputar en ítems — los extras son conceptos separados
   // Pero pagado_importe sigue usando totalCobrado completo (incluye extras)
-  const montoExtrasChk = [...document.querySelectorAll('[id^="cobro-chk-extra-"]')]
+  const extrasChkDetalle = [...document.querySelectorAll('[id^="cobro-chk-extra-"]')]
     .filter(chk => chk.checked)
-    .reduce((s, chk) => s + (parseFloat(chk.dataset.signo||'1') * (parseFloat(chk.value)||0)), 0);
+    .map(chk => {
+      const idExtra = parseInt(chk.id.replace('cobro-chk-extra-',''));
+      const signo = parseFloat(chk.dataset.signo||'1');
+      const monto = parseFloat(chk.value)||0;
+      const label = chk.closest('div')?.querySelector('label')?.childNodes?.[1]?.textContent?.trim() || 'Extra';
+      return { id: idExtra, signo, monto, label };
+    });
+  const montoExtrasChk = extrasChkDetalle.reduce((s, e) => s + (e.signo * e.monto), 0);
   // Los intereses también son un concepto separado — no se distribuyen en ítems regulares
   // Si el interés viene del desglose del pago a cuenta, ya está separado en interesDesdeACuenta
   const interesValDistrib = interesDesdeACuenta > 0 ? interesDesdeACuenta : 
@@ -7273,6 +7326,13 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
       const iv = parseFloat(interesChkRef.dataset.interes||0);
       if (iv > 0) itemsMovimiento.push({ label: 'Interés punitorio', monto: iv });
     }
+    // Extras tildados en esta transacción — antes se ignoraban por completo
+    // acá (el historial solo miraba pagadoPorItem, los ítems regulares), así
+    // que un extra nunca quedaba registrado como cobrado ni visible en el
+    // Listado de pagos, aunque se hubiera tildado y cobrado de verdad.
+    extrasChkDetalle.forEach(e => {
+      itemsMovimiento.push({ label: e.label, monto: e.signo * e.monto });
+    });
     if (itemsMovimiento.length > 0) {
       await sbPost('movimientos_pagos', {
         pago_id: p.id,
@@ -7280,10 +7340,16 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
         hoja,
         mes: p.mes,
         fecha: fechaMovimiento,
-        monto: montoRegular,
+        monto: montoRegular + montoExtrasChk,
         concepto: itemsMovimiento.map(i => i.label).join(', '),
         items: JSON.stringify(itemsMovimiento)
       });
+    }
+    // Marcar cada extra tildado como efectivamente cobrado — esto es lo que
+    // hace que, de acá en más, "Ingresar Pago" deje de ofrecerlo como
+    // pendiente y "Ya cobrado" (en la ficha del contrato) lo muestre bien.
+    for (const e of extrasChkDetalle) {
+      try { await sbPatch('pagos_extras', e.id, { cobrado: true }); } catch(err) {}
     }
   } catch(e) { console.warn('movimientos_pagos no guardado:', e); }
 
