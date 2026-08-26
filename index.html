@@ -1126,8 +1126,19 @@ async function refreshAdminToken() {
         // guardado ahora es distinto al que acabamos de probar, no fue
         // realmente esta sesión la que expiró, sino que perdimos la carrera.
         // Adoptar el token vigente y avisar éxito en vez de cerrar sesión.
-        const refreshTkAhora = localStorage.getItem('sb_refresh_token');
-        const tokenAhora = localStorage.getItem('sb_token');
+        let refreshTkAhora = localStorage.getItem('sb_refresh_token');
+        let tokenAhora = localStorage.getItem('sb_token');
+        if (refreshTkAhora && refreshTkAhora !== refreshTk && tokenAhora) {
+          currentUser.token = tokenAhora;
+          updateAuthHeaders(tokenAhora);
+          return true;
+        }
+        // Puede que la pestaña que ganó la carrera todavía esté a mitad de
+        // camino escribiendo su token nuevo en localStorage justo en este
+        // instante — esperar un toque y revisar de nuevo antes de resignarse.
+        await new Promise(res => setTimeout(res, 800));
+        refreshTkAhora = localStorage.getItem('sb_refresh_token');
+        tokenAhora = localStorage.getItem('sb_token');
         if (refreshTkAhora && refreshTkAhora !== refreshTk && tokenAhora) {
           currentUser.token = tokenAhora;
           updateAuthHeaders(tokenAhora);
@@ -1141,6 +1152,7 @@ async function refreshAdminToken() {
       localStorage.setItem('sb_token', data.access_token);
       if (data.refresh_token) localStorage.setItem('sb_refresh_token', data.refresh_token);
       updateAuthHeaders(data.access_token);
+      window._ultimaRenovacionToken = Date.now();
       return true;
     } catch(e) { console.error('Token refresh error:', e); return false; }
   })();
@@ -11589,11 +11601,22 @@ setInterval(async () => {
     }
   } catch(e) {}
 }, 30 * 1000);
-setInterval(refreshAdminToken, 20 * 60 * 1000);
+// (el auto-refresh cada 10 minutos ya está definido más arriba, junto a
+// refreshAdminToken — había un segundo setInterval acá, redundante, que
+// aumentaba sin necesidad el riesgo de que dos renovaciones chocaran entre sí)
 
-// Refresh token when tab becomes visible again (browser may have paused timers)
+// Refresh token when tab becomes visible again (browser may have paused
+// timers en segundo plano) — pero solo si pasó un buen rato desde la última
+// renovación. Antes esto se disparaba en CADA cambio de pestaña, aunque
+// hubieran pasado solo unos segundos y el token siguiera perfectamente
+// vigente — con varias pestañas abiertas, eso multiplicaba las chances de
+// que dos renovaciones chocaran entre sí (Supabase invalida el refresh_token
+// anterior apenas se usa uno nuevo) y tirara la sesión por vencida en
+// pleno uso activo.
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) refreshAdminToken();
+  if (document.hidden) return;
+  const ultima = window._ultimaRenovacionToken || 0;
+  if (Date.now() - ultima > 8 * 60 * 1000) refreshAdminToken();
 });
 
 // ============================================================
