@@ -8529,6 +8529,37 @@ function openNuevoContrato() {
     fecha_rescision: null
   };
   _abrirFormularioContrato(emptyContrato, true);
+  // Si quedó un borrador reciente (ej: se perdió por algún motivo mientras
+  // se completaba el formulario), ofrecer recuperarlo en vez de arrancar de
+  // cero — red de contención por si alguna vez se resetean los campos sin
+  // que la persona llegara a guardar.
+  try {
+    const borrador = JSON.parse(sessionStorage.getItem('borradorNuevoContrato') || 'null');
+    const hayAlgo = borrador && (borrador.titulo || borrador.desde || borrador.hasta);
+    const esReciente = borrador && (Date.now() - (borrador.ts||0) < 2*60*60*1000);
+    if (hayAlgo && esReciente) {
+      const detalle = [borrador.titulo, borrador.desde && borrador.hasta ? `${borrador.desde} → ${borrador.hasta}` : ''].filter(Boolean).join(' — ');
+      if (confirm(`Encontré un borrador sin guardar de un contrato: "${detalle}".\n\n¿Querés recuperarlo?`)) {
+        if (document.getElementById('f-titulo')) document.getElementById('f-titulo').value = borrador.titulo || '';
+        if (document.getElementById('f-desde')) document.getElementById('f-desde').value = borrador.desde || '';
+        if (document.getElementById('f-hasta')) document.getElementById('f-hasta').value = borrador.hasta || '';
+      } else {
+        sessionStorage.removeItem('borradorNuevoContrato');
+      }
+    } else if (borrador) {
+      sessionStorage.removeItem('borradorNuevoContrato'); // viejo, descartarlo
+    }
+  } catch(e) {}
+}
+
+function autoguardarBorradorContrato() {
+  try {
+    const titulo = document.getElementById('f-titulo')?.value || '';
+    const desde = document.getElementById('f-desde')?.value || '';
+    const hasta = document.getElementById('f-hasta')?.value || '';
+    if (!titulo && !desde && !hasta) { sessionStorage.removeItem('borradorNuevoContrato'); return; }
+    sessionStorage.setItem('borradorNuevoContrato', JSON.stringify({ titulo, desde, hasta, ts: Date.now() }));
+  } catch(e) {}
 }
 
 function openEditContrato(id) {
@@ -8588,10 +8619,10 @@ function _abrirFormularioContrato(c, esNuevo) {
     <div class="form-grid">
       <div class="form-group" style="grid-column:1/-1">
         <label>Título / Nombre del contrato</label>
-        <input id="f-titulo" type="text" value="${c.titulo||''}" placeholder="Ej: García-Pérez">
+        <input id="f-titulo" type="text" value="${c.titulo||''}" placeholder="Ej: García-Pérez" oninput="autoguardarBorradorContrato()">
       </div>
-      <div class="form-group"><label>Vigencia desde</label><input id="f-desde" type="date" value="${c.vigencia_desde?.substring(0,10)||''}"></div>
-      <div class="form-group"><label>Vigencia hasta</label><input id="f-hasta" type="date" value="${c.vigencia_hasta?.substring(0,10)||''}"></div>
+      <div class="form-group"><label>Vigencia desde</label><input id="f-desde" type="date" value="${c.vigencia_desde?.substring(0,10)||''}" onchange="autoguardarBorradorContrato()"></div>
+      <div class="form-group"><label>Vigencia hasta</label><input id="f-hasta" type="date" value="${c.vigencia_hasta?.substring(0,10)||''}" onchange="autoguardarBorradorContrato()"></div>
       <div class="form-group" style="grid-column:1/-1;position:relative"><label>Inmueble</label>
     <input type="hidden" id="f-inmueble-id" value="${c.inmueble_id||''}">
     <div style="display:flex;gap:6px;margin-top:4px;align-items:center">
@@ -9160,6 +9191,7 @@ async function guardarContrato() {
       if (!nuevoContrato?.id) { toast('Error: no se recibió el ID del contrato nuevo','error'); return; }
     }
     toast('Contrato guardado ✓');
+    try { sessionStorage.removeItem('borradorNuevoContrato'); } catch(e) {}
 
     // Save contrato_personas relationships
     if (nuevoContrato && (propIds.length > 0 || inqIds.length > 0)) {
@@ -11702,6 +11734,14 @@ checkSession();
 
 // Auto-refresh cada 30 segundos
 setInterval(async () => {
+  // Si hay un formulario de "Nuevo/Editar Contrato" (o de persona) abierto,
+  // no tocar nada — hay campos sin guardar (título, vigencia, etc.) que
+  // este refresco no reconstruye, así que cualquier interferencia en ese
+  // momento podría perderlos. Se retoma solo cuando se cierra el formulario.
+  const tituloModalActivo = document.getElementById('modal-title')?.textContent || '';
+  const hayFormularioAbierto = document.getElementById('modal-overlay')?.classList.contains('open')
+    && /Contrato|persona/i.test(tituloModalActivo);
+  if (hayFormularioAbierto) return;
   try {
     const [contratos, pagos] = await Promise.all([
       sbGet('contratos', 'select=*&order=titulo.asc&limit=1000'),
