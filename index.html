@@ -1075,6 +1075,12 @@ function updateAuthHeaders(token) {
 }
 
 function sesionExpirada(motivo) {
+  // Puede llamarse más de una vez seguida (ej: refreshAdminToken() ya la
+  // llamó con el motivo detallado, y el código que la invocó a ella también
+  // la llama después) — solo el PRIMER llamado debe quedar en pantalla, para
+  // no tapar el motivo específico con uno más genérico.
+  if (window._sesionYaExpirada) { if (motivo) console.error('Sesión expirada — motivo (adicional, no se muestra):', motivo); return; }
+  window._sesionYaExpirada = true;
   if (motivo) console.error('Sesión expirada — motivo:', motivo);
   localStorage.removeItem('sb_token');
   localStorage.removeItem('sb_refresh_token');
