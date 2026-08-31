@@ -11084,7 +11084,7 @@ async function eliminarCuenta(id) {
 
 async function cargarCajaTitularesYCuentas() {
   try {
-    CAJA_TITULARES = await sbGet('caja_titulares', 'order=nombre.asc');
+    CAJA_TITULARES = await sbGet('caja_titulares', 'order=tipo.asc,nombre.asc');
     CAJA_CUENTAS = await sbGet('caja_cuentas', 'order=tipo.asc,nombre.asc');
   } catch(e) { console.warn('No se pudieron cargar titulares/cuentas de caja (¿faltan crear las tablas?):', e); }
 }
