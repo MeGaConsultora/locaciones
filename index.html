@@ -932,6 +932,7 @@
       <strong style="font-size:0.95rem">💰 Caja del negocio</strong>
       <button class="tab-btn caja-subtab active" onclick="showCajaSubtab('movimientos', this)" style="padding:6px 14px;border-radius:8px">Movimientos</button>
       <button class="tab-btn caja-subtab" onclick="showCajaSubtab('cierre', this)" style="padding:6px 14px;border-radius:8px">Cierre mensual</button>
+      <button class="tab-btn caja-subtab" onclick="showCajaSubtab('titulares', this)" style="padding:6px 14px;border-radius:8px">Titulares y cuentas</button>
     </div>
 
     <!-- Subtab: Movimientos -->
@@ -968,11 +969,15 @@
             </select>
           </div>
           <div class="form-group">
-            <label>Cuenta</label>
-            <select id="cm-cuenta">
-              <option value="efectivo">Efectivo</option>
-              <option value="gregorio">Gregorio</option>
-              <option value="hugo">Hugo</option>
+            <label>Titular</label>
+            <select id="cm-titular" onchange="actualizarCuentasDelTitularMovimiento()">
+              <option value="">Seleccioná un titular...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Cuenta <span style="font-weight:400;color:#aaa">(opcional)</span></label>
+            <select id="cm-cuenta-id">
+              <option value="">Sin especificar</option>
             </select>
           </div>
           <div class="form-group">
@@ -1014,6 +1019,18 @@
         <input type="month" class="filter-select" id="caja-mes-cierre" style="width:auto" onchange="renderCierreMensual()">
       </div>
       <div id="caja-cierre-contenido"></div>
+    </div>
+
+    <!-- Subtab: Titulares y cuentas -->
+    <div id="caja-subtab-titulares" style="display:none">
+      <div style="background:white;border-radius:12px;box-shadow:var(--shadow);padding:1.2rem 1.4rem;margin-bottom:1.2rem">
+        <div class="section-title" style="margin-bottom:0.75rem">Nuevo titular</div>
+        <div style="display:flex;gap:0.5rem">
+          <input type="text" id="ct-nombre" placeholder="Ej: MeGa, Gardella, Gregorio Silvio..." style="flex:1;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:0.88rem">
+          <button class="btn btn-primary" onclick="guardarTitular()">＋ Agregar</button>
+        </div>
+      </div>
+      <div id="titulares-lista"></div>
     </div>
   </div>
 
@@ -2133,6 +2150,8 @@ function renderVencimientos() {
 let contratoActual = null;
 let pagosActuales = [];
 let CAJA_MOVIMIENTOS = [];
+let CAJA_TITULARES = [];
+let CAJA_CUENTAS = [];
 let cajaInicializada = false;
 let extrasActuales = {};
 
@@ -10857,6 +10876,146 @@ function renderClientes() {
 
 const CAJA_CUENTA_LABEL = { efectivo: 'Efectivo', gregorio: 'Gregorio', hugo: 'Hugo' };
 
+// ============================================================
+// TITULARES Y CUENTAS — quién mueve la plata (titular) y por dónde
+// (cuenta: efectivo/cheque/banco/billetera), colgando siempre de un
+// titular concreto para no repetir nombres a mano cada vez.
+// ============================================================
+const TIPOS_CUENTA = ['Efectivo', 'Cheque', 'Cuenta bancaria', 'Billetera virtual'];
+
+async function cargarYRenderTitulares() {
+  const cont = document.getElementById('titulares-lista');
+  try {
+    await cargarCajaTitularesYCuentas();
+  } catch(e) {
+    if (cont) cont.innerHTML = `<p style="color:#c0392b;font-size:0.85rem">No se pudo cargar (¿faltan crear las tablas caja_titulares / caja_cuentas?)</p>`;
+    return;
+  }
+  renderTitulares();
+  poblarSelectTitularMovimiento();
+}
+
+function renderTitulares() {
+  const cont = document.getElementById('titulares-lista');
+  if (!cont) return;
+  const activos = CAJA_TITULARES.filter(t => t.activo !== false);
+  if (!activos.length) { cont.innerHTML = '<p style="color:#aaa;font-size:0.85rem">Todavía no cargaste ningún titular.</p>'; return; }
+  cont.innerHTML = activos.map(t => {
+    const cuentas = CAJA_CUENTAS.filter(c => c.titular_id === t.id && c.activo !== false);
+    return `<div style="background:white;border-radius:12px;box-shadow:var(--shadow);padding:1rem 1.4rem;margin-bottom:0.9rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+        <strong style="font-size:0.95rem">${(t.nombre||'').replace(/</g,'&lt;')}</strong>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-secondary" style="font-size:0.75rem" onclick="abrirFormCuentaInline(${t.id})">＋ Cuenta</button>
+          <button class="btn" style="font-size:0.75rem;background:#f8d7da;color:#721c24" onclick="eliminarTitular(${t.id})">✕ Titular</button>
+        </div>
+      </div>
+      <div id="cuentas-form-${t.id}"></div>
+      ${cuentas.length ? cuentas.map(c => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid #f0ece4;font-size:0.85rem">
+          <div>
+            <strong>${c.tipo}</strong>${c.nombre?' — '+c.nombre.replace(/</g,'&lt;'):''}
+            ${c.banco?` · ${c.banco}`:''}${c.numero_cuenta?` · Cta ${c.numero_cuenta}`:''}${c.alias_cbu?` · ${c.alias_cbu}`:''}
+          </div>
+          <button onclick="eliminarCuenta(${c.id})" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.8rem">✕</button>
+        </div>`).join('') : `<p style="color:#aaa;font-size:0.8rem;margin-top:0.3rem">Sin cuentas cargadas todavía.</p>`}
+    </div>`;
+  }).join('');
+}
+
+async function guardarTitular() {
+  const nombre = document.getElementById('ct-nombre')?.value.trim();
+  if (!nombre) { toast('Escribí el nombre del titular', 'error'); return; }
+  try {
+    await sbPost('caja_titulares', { nombre, activo: true });
+    document.getElementById('ct-nombre').value = '';
+    toast('Titular agregado ✓');
+    await cargarYRenderTitulares();
+  } catch(e) { toast('Error al guardar (¿falta crear la tabla caja_titulares?): ' + e.message, 'error'); }
+}
+
+async function eliminarTitular(id) {
+  if (!confirm('¿Eliminar este titular? Si tiene cuentas cargadas, se van a desactivar también (no se borran los movimientos ya registrados).')) return;
+  try {
+    await sbPatch('caja_titulares', id, { activo: false });
+    const cuentasDelTitular = CAJA_CUENTAS.filter(c => c.titular_id === id);
+    for (const c of cuentasDelTitular) { try { await sbPatch('caja_cuentas', c.id, { activo: false }); } catch(e) {} }
+    toast('Titular eliminado ✓');
+    await cargarYRenderTitulares();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function abrirFormCuentaInline(titularId) {
+  const div = document.getElementById(`cuentas-form-${titularId}`);
+  if (!div) return;
+  div.innerHTML = `
+    <div style="background:#f7f7f7;border-radius:8px;padding:0.9rem;margin:0.6rem 0">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Tipo</label>
+          <select id="cc-tipo-${titularId}" onchange="actualizarCamposCuenta(${titularId})">
+            ${TIPOS_CUENTA.map(t=>`<option value="${t}">${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>Nombre / descripción</label><input type="text" id="cc-nombre-${titularId}" placeholder="Ej: Caja chica, Cuenta sueldo..."></div>
+      </div>
+      <div class="form-grid" id="cc-extra-${titularId}" style="display:none"></div>
+      <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
+        <button class="btn btn-primary" style="font-size:0.82rem" onclick="guardarCuenta(${titularId})">Guardar cuenta</button>
+        <button class="btn btn-secondary" style="font-size:0.82rem" onclick="document.getElementById('cuentas-form-${titularId}').innerHTML=''">Cancelar</button>
+      </div>
+    </div>`;
+  actualizarCamposCuenta(titularId);
+}
+
+function actualizarCamposCuenta(titularId) {
+  const tipo = document.getElementById(`cc-tipo-${titularId}`)?.value;
+  const wrap = document.getElementById(`cc-extra-${titularId}`);
+  if (!wrap) return;
+  if (tipo === 'Cuenta bancaria') {
+    wrap.style.display = '';
+    wrap.innerHTML = `
+      <div class="form-group"><label>Banco</label><input type="text" id="cc-banco-${titularId}"></div>
+      <div class="form-group"><label>N° de cuenta</label><input type="text" id="cc-numero-${titularId}"></div>
+      <div class="form-group"><label>Alias / CBU</label><input type="text" id="cc-alias-${titularId}"></div>`;
+  } else if (tipo === 'Billetera virtual') {
+    wrap.style.display = '';
+    wrap.innerHTML = `<div class="form-group"><label>Alias / CVU</label><input type="text" id="cc-alias-${titularId}"></div>`;
+  } else {
+    wrap.style.display = 'none';
+    wrap.innerHTML = '';
+  }
+}
+
+async function guardarCuenta(titularId) {
+  const tipo = document.getElementById(`cc-tipo-${titularId}`)?.value;
+  const nombre = document.getElementById(`cc-nombre-${titularId}`)?.value.trim() || null;
+  const banco = document.getElementById(`cc-banco-${titularId}`)?.value.trim() || null;
+  const numero_cuenta = document.getElementById(`cc-numero-${titularId}`)?.value.trim() || null;
+  const alias_cbu = document.getElementById(`cc-alias-${titularId}`)?.value.trim() || null;
+  try {
+    await sbPost('caja_cuentas', { titular_id: titularId, tipo, nombre, banco, numero_cuenta, alias_cbu, activo: true });
+    toast('Cuenta agregada ✓');
+    await cargarYRenderTitulares();
+  } catch(e) { toast('Error al guardar (¿falta crear la tabla caja_cuentas?): ' + e.message, 'error'); }
+}
+
+async function eliminarCuenta(id) {
+  if (!confirm('¿Eliminar esta cuenta?')) return;
+  try {
+    await sbPatch('caja_cuentas', id, { activo: false });
+    toast('Cuenta eliminada ✓');
+    await cargarYRenderTitulares();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function cargarCajaTitularesYCuentas() {
+  try {
+    CAJA_TITULARES = await sbGet('caja_titulares', 'order=nombre.asc');
+    CAJA_CUENTAS = await sbGet('caja_cuentas', 'order=tipo.asc,nombre.asc');
+  } catch(e) { console.warn('No se pudieron cargar titulares/cuentas de caja (¿faltan crear las tablas?):', e); }
+}
+
 async function initCaja() {
   if (cajaInicializada) { renderCajaMovimientos(); return; }
   cajaInicializada = true;
@@ -10866,7 +11025,39 @@ async function initCaja() {
   document.getElementById('caja-hasta').value = hoy;
   document.getElementById('caja-mes-cierre').value = hoy.substring(0,7);
   await cargarCajaMovimientos();
+  await cargarCajaTitularesYCuentas();
+  poblarSelectTitularMovimiento();
   renderCajaMovimientos();
+}
+
+function poblarSelectTitularMovimiento() {
+  const sel = document.getElementById('cm-titular');
+  const activos = CAJA_TITULARES.filter(t => t.activo !== false);
+  if (sel) sel.innerHTML = '<option value="">Seleccioná un titular...</option>' + activos.map(t => `<option value="${t.id}">${(t.nombre||'').replace(/</g,'&lt;')}</option>`).join('');
+  // También sumar los titulares como opciones del filtro de la tabla, sin
+  // pisar las 3 cuentas legacy que ya estaban ahí.
+  const filtro = document.getElementById('caja-filtro-cuenta');
+  if (filtro) {
+    [...filtro.querySelectorAll('option[data-titular]')].forEach(o => o.remove());
+    activos.forEach(t => {
+      const o = document.createElement('option');
+      o.value = `titular:${t.id}`;
+      o.textContent = t.nombre;
+      o.dataset.titular = '1';
+      filtro.appendChild(o);
+    });
+  }
+}
+
+function actualizarCuentasDelTitularMovimiento() {
+  const titularId = parseInt(document.getElementById('cm-titular')?.value);
+  const selCuenta = document.getElementById('cm-cuenta-id');
+  if (!selCuenta) return;
+  const cuentas = CAJA_CUENTAS.filter(c => c.titular_id === titularId && c.activo !== false);
+  selCuenta.innerHTML = '<option value="">Sin especificar</option>' + cuentas.map(c => {
+    const label = `${c.tipo}${c.nombre ? ' — '+c.nombre : ''}`;
+    return `<option value="${c.id}">${label.replace(/</g,'&lt;')}</option>`;
+  }).join('');
 }
 
 async function cargarCajaMovimientos() {
@@ -10884,7 +11075,9 @@ function showCajaSubtab(nombre, btn) {
   if (btn) btn.classList.add('active');
   document.getElementById('caja-subtab-movimientos').style.display = nombre === 'movimientos' ? 'block' : 'none';
   document.getElementById('caja-subtab-cierre').style.display = nombre === 'cierre' ? 'block' : 'none';
+  document.getElementById('caja-subtab-titulares').style.display = nombre === 'titulares' ? 'block' : 'none';
   if (nombre === 'cierre') renderCierreMensual();
+  if (nombre === 'titulares') cargarYRenderTitulares();
 }
 
 function abrirNuevoMovimientoCaja() {
@@ -10894,22 +11087,27 @@ function abrirNuevoMovimientoCaja() {
   document.getElementById('cm-concepto').value = '';
   document.getElementById('cm-categoria-otro').value = '';
   document.getElementById('cm-categoria-otro').style.display = 'none';
+  poblarSelectTitularMovimiento();
+  document.getElementById('cm-titular').value = '';
+  document.getElementById('cm-cuenta-id').innerHTML = '<option value="">Sin especificar</option>';
 }
 
 async function guardarMovimientoCaja() {
   const fecha = document.getElementById('cm-fecha').value;
   const tipo = document.getElementById('cm-tipo').value;
-  const cuenta = document.getElementById('cm-cuenta').value;
+  const titular_id = parseInt(document.getElementById('cm-titular').value) || null;
+  const cuenta_id = parseInt(document.getElementById('cm-cuenta-id').value) || null;
   const catSelect = document.getElementById('cm-categoria').value;
   const categoria = catSelect === '__otro__' ? (document.getElementById('cm-categoria-otro').value.trim() || 'Otro') : catSelect;
   const monto = parseMonto(document.getElementById('cm-monto').value);
   const concepto = document.getElementById('cm-concepto').value.trim();
 
   if (!fecha) { toast('Elegí una fecha', 'error'); return; }
+  if (!titular_id) { toast('Elegí un titular', 'error'); return; }
   if (!monto || monto <= 0) { toast('Ingresá un monto válido', 'error'); return; }
 
   try {
-    const nuevo = await sbPost('caja_movimientos', { fecha, tipo, cuenta, categoria, concepto, monto });
+    const nuevo = await sbPost('caja_movimientos', { fecha, tipo, titular_id, cuenta_id, categoria, concepto, monto });
     if (nuevo && nuevo[0]) CAJA_MOVIMIENTOS.unshift(nuevo[0]);
     document.getElementById('caja-form-nuevo').style.display = 'none';
     toast('Movimiento guardado ✓');
@@ -10932,6 +11130,22 @@ async function eliminarMovimientoCaja(id) {
   }
 }
 
+// Devuelve la etiqueta a mostrar para un movimiento: si es del esquema nuevo
+// (titular_id), arma "Titular — Tipo de cuenta"; si es viejo (solo el campo
+// legacy "cuenta"), muestra la etiqueta de siempre.
+function etiquetaMovimientoCaja(m) {
+  if (m.titular_id) {
+    const t = CAJA_TITULARES.find(x => x.id === m.titular_id);
+    const nombreTitular = t ? t.nombre : '(titular eliminado)';
+    if (m.cuenta_id) {
+      const c = CAJA_CUENTAS.find(x => x.id === m.cuenta_id);
+      if (c) return `${nombreTitular} — ${c.tipo}${c.nombre ? ' ('+c.nombre+')' : ''}`;
+    }
+    return nombreTitular;
+  }
+  return CAJA_CUENTA_LABEL[m.cuenta] || m.cuenta || '—';
+}
+
 function renderCajaMovimientos() {
   const desde = document.getElementById('caja-desde').value;
   const hasta = document.getElementById('caja-hasta').value;
@@ -10940,14 +11154,18 @@ function renderCajaMovimientos() {
   const filtrados = CAJA_MOVIMIENTOS.filter(m => {
     if (desde && m.fecha < desde) return false;
     if (hasta && m.fecha > hasta) return false;
-    if (filtroCuenta && m.cuenta !== filtroCuenta) return false;
+    if (filtroCuenta) {
+      if (filtroCuenta.startsWith('titular:')) {
+        if (m.titular_id !== parseInt(filtroCuenta.slice(8))) return false;
+      } else if (m.cuenta !== filtroCuenta) return false;
+    }
     return true;
   });
 
   // Resumen por cuenta (dentro del rango filtrado por fecha, sin el filtro de cuenta específico)
   const filtradosPorFecha = CAJA_MOVIMIENTOS.filter(m => (!desde || m.fecha >= desde) && (!hasta || m.fecha <= hasta));
   const resumenCont = document.getElementById('caja-resumen-cuentas');
-  resumenCont.innerHTML = ['efectivo','gregorio','hugo'].map(cta => {
+  const resumenLegacy = ['efectivo','gregorio','hugo'].map(cta => {
     const movs = filtradosPorFecha.filter(m => m.cuenta === cta);
     const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
     const egr = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
@@ -10958,6 +11176,22 @@ function renderCajaMovimientos() {
       <div style="font-size:0.72rem;color:#888;margin-top:4px">Ingresos ${formatMoney(ing)} · Egresos ${formatMoney(egr)}</div>
     </div>`;
   }).join('');
+  // Resumen por titular (esquema nuevo) — se agrega aparte, sin mezclar con
+  // el legacy de arriba, ya que son dos sistemas de clasificación distintos
+  // conviviendo (viejo por cuenta fija, nuevo por titular).
+  const resumenNuevo = CAJA_TITULARES.filter(t => t.activo !== false).map(t => {
+    const movs = filtradosPorFecha.filter(m => m.titular_id === t.id);
+    if (!movs.length) return '';
+    const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
+    const egr = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
+    const neto = ing - egr;
+    return `<div style="background:#f0fff4;border:1px solid #b2dfdb;border-radius:10px;padding:0.85rem 1rem">
+      <div style="font-size:0.75rem;color:#888;text-transform:uppercase;margin-bottom:4px">${(t.nombre||'').replace(/</g,'&lt;')}</div>
+      <div style="font-size:1.15rem;font-weight:700;color:${neto>=0?'var(--green)':'var(--accent)'}">${formatMoney(neto)}</div>
+      <div style="font-size:0.72rem;color:#888;margin-top:4px">Ingresos ${formatMoney(ing)} · Egresos ${formatMoney(egr)}</div>
+    </div>`;
+  }).join('');
+  resumenCont.innerHTML = resumenLegacy + resumenNuevo;
 
   const cont = document.getElementById('caja-tabla-movimientos');
   if (!filtrados.length) {
@@ -10979,7 +11213,7 @@ function renderCajaMovimientos() {
         const [y,mo,d] = m.fecha.split('-');
         return `<tr style="border-bottom:1px solid #eee">
           <td style="padding:7px 10px">${d}/${mo}/${y}</td>
-          <td style="padding:7px 10px">${CAJA_CUENTA_LABEL[m.cuenta]||m.cuenta}</td>
+          <td style="padding:7px 10px">${etiquetaMovimientoCaja(m)}</td>
           <td style="padding:7px 10px">${m.categoria||'—'}</td>
           <td style="padding:7px 10px;color:#666">${m.concepto||'—'}</td>
           <td style="padding:7px 10px;text-align:right;font-weight:600;color:${esIngreso?'var(--green)':'var(--accent)'}">${esIngreso?'+':'-'} ${formatMoney(m.monto)}</td>
