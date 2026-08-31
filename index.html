@@ -947,10 +947,7 @@
           <input type="date" class="filter-select" id="caja-hasta" style="width:auto" onchange="renderCajaMovimientos()">
         </label>
         <select class="filter-select" id="caja-filtro-cuenta" style="width:auto" onchange="renderCajaMovimientos()">
-          <option value="">Todas las cuentas</option>
-          <option value="efectivo">Efectivo</option>
-          <option value="gregorio">Gregorio</option>
-          <option value="hugo">Hugo</option>
+          <option value="">Todos los titulares</option>
         </select>
         <button class="btn btn-primary" onclick="abrirNuevoMovimientoCaja()" style="margin-left:auto">+ Nuevo movimiento</button>
       </div>
@@ -10872,11 +10869,9 @@ function renderClientes() {
 }
 
 // ============================================================
-// CAJA — ingresos y egresos del negocio, por cuenta (efectivo /
-// gregorio / hugo), con cierre y compensación mensual.
+// CAJA — ingresos y egresos del negocio, organizados por titular y
+// cuenta (ver más abajo), con cierre mensual.
 // ============================================================
-
-const CAJA_CUENTA_LABEL = { efectivo: 'Efectivo', gregorio: 'Gregorio', hugo: 'Hugo' };
 
 // ============================================================
 // TITULARES Y CUENTAS — quién mueve la plata (titular) y por dónde
@@ -10906,7 +10901,7 @@ function renderTitulares() {
     const cuentas = CAJA_CUENTAS.filter(c => c.titular_id === t.id && c.activo !== false);
     return `<div style="background:white;border-radius:12px;box-shadow:var(--shadow);padding:1rem 1.4rem;margin-bottom:0.9rem">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
-        <strong style="font-size:0.95rem">${(t.nombre||'').replace(/</g,'&lt;')}</strong>
+        <strong id="titular-nombre-${t.id}" data-original="${(t.nombre||'').replace(/"/g,'&quot;')}" onclick="activarEdicionTitular(${t.id})" title="Click para editar el nombre" style="font-size:0.95rem;cursor:text;border-radius:4px;padding:2px 4px;margin:-2px -4px" onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background='transparent'">${(t.nombre||'').replace(/</g,'&lt;')}</strong>
         <div style="display:flex;gap:6px">
           <button class="btn btn-secondary" style="font-size:0.75rem" onclick="abrirFormCuentaInline(${t.id})">＋ Cuenta</button>
           <button class="btn" style="font-size:0.75rem;background:#f8d7da;color:#721c24" onclick="eliminarTitular(${t.id})">✕ Titular</button>
@@ -10914,15 +10909,49 @@ function renderTitulares() {
       </div>
       <div id="cuentas-form-${t.id}"></div>
       ${cuentas.length ? cuentas.map(c => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid #f0ece4;font-size:0.85rem">
+        <div id="cuenta-fila-${c.id}" style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid #f0ece4;font-size:0.85rem">
           <div>
             <strong>${c.tipo}</strong>${c.nombre?' — '+c.nombre.replace(/</g,'&lt;'):''}
             ${c.banco?` · ${c.banco}`:''}${c.numero_cuenta?` · Cta ${c.numero_cuenta}`:''}${c.alias_cbu?` · ${c.alias_cbu}`:''}
           </div>
-          <button onclick="eliminarCuenta(${c.id})" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.8rem">✕</button>
+          <div style="display:flex;gap:10px;flex-shrink:0">
+            <button onclick="abrirFormCuentaInline(${t.id}, ${c.id})" style="background:none;border:none;color:#888;cursor:pointer;font-size:0.8rem" title="Editar">✏️</button>
+            <button onclick="eliminarCuenta(${c.id})" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.8rem" title="Eliminar">✕</button>
+          </div>
         </div>`).join('') : `<p style="color:#aaa;font-size:0.8rem;margin-top:0.3rem">Sin cuentas cargadas todavía.</p>`}
     </div>`;
   }).join('');
+}
+
+function activarEdicionTitular(id) {
+  const el = document.getElementById(`titular-nombre-${id}`);
+  if (!el || el.dataset.editando) return;
+  const original = el.dataset.original || '';
+  el.dataset.editando = '1';
+  el.innerHTML = `<input id="titular-edit-${id}" type="text" value="${original}" style="font-size:0.95rem;padding:3px 6px;border:1.5px solid var(--accent);border-radius:6px;font-family:'DM Sans',sans-serif">`;
+  const input = document.getElementById(`titular-edit-${id}`);
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  let cancelado = false;
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
+    if (ev.key === 'Escape') { cancelado = true; input.blur(); }
+  });
+  input.addEventListener('blur', () => guardarEdicionTitular(id, cancelado));
+}
+
+async function guardarEdicionTitular(id, cancelado) {
+  const input = document.getElementById(`titular-edit-${id}`);
+  if (!input) return;
+  const nuevoNombre = input.value.trim();
+  const el = document.getElementById(`titular-nombre-${id}`);
+  const original = el?.dataset.original || '';
+  if (cancelado || !nuevoNombre || nuevoNombre === original) { await cargarYRenderTitulares(); return; }
+  try {
+    await sbPatch('caja_titulares', id, { nombre: nuevoNombre });
+    toast('Titular actualizado ✓');
+    await cargarYRenderTitulares();
+  } catch(e) { toast('Error al guardar: ' + e.message, 'error'); }
 }
 
 async function guardarTitular() {
@@ -10947,57 +10976,70 @@ async function eliminarTitular(id) {
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
-function abrirFormCuentaInline(titularId) {
-  const div = document.getElementById(`cuentas-form-${titularId}`);
+function abrirFormCuentaInline(titularId, cuentaId) {
+  const editando = !!cuentaId;
+  const c = editando ? CAJA_CUENTAS.find(x => x.id === cuentaId) : null;
+  // Al crear, el formulario va en el espacio debajo del nombre del titular;
+  // al editar, reemplaza la fila de esa cuenta puntual, para quedar justo
+  // donde se la está editando.
+  const targetId = editando ? `cuenta-fila-${cuentaId}` : `cuentas-form-${titularId}`;
+  const div = document.getElementById(targetId);
   if (!div) return;
+  const uid = editando ? `edit-${cuentaId}` : titularId;
   div.innerHTML = `
-    <div style="background:#f7f7f7;border-radius:8px;padding:0.9rem;margin:0.6rem 0">
+    <div style="background:#f7f7f7;border-radius:8px;padding:0.9rem;margin:0.6rem 0;width:100%">
       <div class="form-grid">
         <div class="form-group">
           <label>Tipo</label>
-          <select id="cc-tipo-${titularId}" onchange="actualizarCamposCuenta(${titularId})">
-            ${TIPOS_CUENTA.map(t=>`<option value="${t}">${t}</option>`).join('')}
+          <select id="cc-tipo-${uid}" onchange="actualizarCamposCuenta('${uid}')">
+            ${TIPOS_CUENTA.map(t=>`<option value="${t}" ${c?.tipo===t?'selected':''}>${t}</option>`).join('')}
           </select>
         </div>
-        <div class="form-group"><label>Nombre / descripción</label><input type="text" id="cc-nombre-${titularId}" placeholder="Ej: Caja chica, Cuenta sueldo..."></div>
+        <div class="form-group"><label>Nombre / descripción</label><input type="text" id="cc-nombre-${uid}" value="${(c?.nombre||'').replace(/"/g,'&quot;')}" placeholder="Ej: Caja chica, Cuenta sueldo..."></div>
       </div>
-      <div class="form-grid" id="cc-extra-${titularId}" style="display:none"></div>
+      <div class="form-grid" id="cc-extra-${uid}" style="display:none"></div>
       <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
-        <button class="btn btn-primary" style="font-size:0.82rem" onclick="guardarCuenta(${titularId})">Guardar cuenta</button>
-        <button class="btn btn-secondary" style="font-size:0.82rem" onclick="document.getElementById('cuentas-form-${titularId}').innerHTML=''">Cancelar</button>
+        <button class="btn btn-primary" style="font-size:0.82rem" onclick="guardarCuenta(${titularId}, ${cuentaId||'null'})">${editando?'Guardar cambios':'Guardar cuenta'}</button>
+        <button class="btn btn-secondary" style="font-size:0.82rem" onclick="${editando ? 'renderTitulares()' : `document.getElementById('cuentas-form-${titularId}').innerHTML=''`}">Cancelar</button>
       </div>
     </div>`;
-  actualizarCamposCuenta(titularId);
+  actualizarCamposCuenta(uid, c);
 }
 
-function actualizarCamposCuenta(titularId) {
-  const tipo = document.getElementById(`cc-tipo-${titularId}`)?.value;
-  const wrap = document.getElementById(`cc-extra-${titularId}`);
+function actualizarCamposCuenta(uid, c) {
+  const tipo = document.getElementById(`cc-tipo-${uid}`)?.value;
+  const wrap = document.getElementById(`cc-extra-${uid}`);
   if (!wrap) return;
   if (tipo === 'Cuenta bancaria') {
     wrap.style.display = '';
     wrap.innerHTML = `
-      <div class="form-group"><label>Banco</label><input type="text" id="cc-banco-${titularId}"></div>
-      <div class="form-group"><label>N° de cuenta</label><input type="text" id="cc-numero-${titularId}"></div>
-      <div class="form-group"><label>Alias / CBU</label><input type="text" id="cc-alias-${titularId}"></div>`;
+      <div class="form-group"><label>Banco</label><input type="text" id="cc-banco-${uid}" value="${(c?.banco||'').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group"><label>N° de cuenta</label><input type="text" id="cc-numero-${uid}" value="${(c?.numero_cuenta||'').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group"><label>Alias / CBU</label><input type="text" id="cc-alias-${uid}" value="${(c?.alias_cbu||'').replace(/"/g,'&quot;')}"></div>`;
   } else if (tipo === 'Billetera virtual') {
     wrap.style.display = '';
-    wrap.innerHTML = `<div class="form-group"><label>Alias / CVU</label><input type="text" id="cc-alias-${titularId}"></div>`;
+    wrap.innerHTML = `<div class="form-group"><label>Alias / CVU</label><input type="text" id="cc-alias-${uid}" value="${(c?.alias_cbu||'').replace(/"/g,'&quot;')}"></div>`;
   } else {
     wrap.style.display = 'none';
     wrap.innerHTML = '';
   }
 }
 
-async function guardarCuenta(titularId) {
-  const tipo = document.getElementById(`cc-tipo-${titularId}`)?.value;
-  const nombre = document.getElementById(`cc-nombre-${titularId}`)?.value.trim() || null;
-  const banco = document.getElementById(`cc-banco-${titularId}`)?.value.trim() || null;
-  const numero_cuenta = document.getElementById(`cc-numero-${titularId}`)?.value.trim() || null;
-  const alias_cbu = document.getElementById(`cc-alias-${titularId}`)?.value.trim() || null;
+async function guardarCuenta(titularId, cuentaId) {
+  const uid = cuentaId ? `edit-${cuentaId}` : titularId;
+  const tipo = document.getElementById(`cc-tipo-${uid}`)?.value;
+  const nombre = document.getElementById(`cc-nombre-${uid}`)?.value.trim() || null;
+  const banco = document.getElementById(`cc-banco-${uid}`)?.value.trim() || null;
+  const numero_cuenta = document.getElementById(`cc-numero-${uid}`)?.value.trim() || null;
+  const alias_cbu = document.getElementById(`cc-alias-${uid}`)?.value.trim() || null;
   try {
-    await sbPost('caja_cuentas', { titular_id: titularId, tipo, nombre, banco, numero_cuenta, alias_cbu, activo: true });
-    toast('Cuenta agregada ✓');
+    if (cuentaId) {
+      await sbPatch('caja_cuentas', cuentaId, { tipo, nombre, banco, numero_cuenta, alias_cbu });
+      toast('Cuenta actualizada ✓');
+    } else {
+      await sbPost('caja_cuentas', { titular_id: titularId, tipo, nombre, banco, numero_cuenta, alias_cbu, activo: true });
+      toast('Cuenta agregada ✓');
+    }
     await cargarYRenderTitulares();
   } catch(e) { toast('Error al guardar (¿falta crear la tabla caja_cuentas?): ' + e.message, 'error'); }
 }
@@ -11132,20 +11174,16 @@ async function eliminarMovimientoCaja(id) {
   }
 }
 
-// Devuelve la etiqueta a mostrar para un movimiento: si es del esquema nuevo
-// (titular_id), arma "Titular — Tipo de cuenta"; si es viejo (solo el campo
-// legacy "cuenta"), muestra la etiqueta de siempre.
+// Devuelve la etiqueta a mostrar para un movimiento: "Titular — Tipo de cuenta".
 function etiquetaMovimientoCaja(m) {
-  if (m.titular_id) {
-    const t = CAJA_TITULARES.find(x => x.id === m.titular_id);
-    const nombreTitular = t ? t.nombre : '(titular eliminado)';
-    if (m.cuenta_id) {
-      const c = CAJA_CUENTAS.find(x => x.id === m.cuenta_id);
-      if (c) return `${nombreTitular} — ${c.tipo}${c.nombre ? ' ('+c.nombre+')' : ''}`;
-    }
-    return nombreTitular;
+  if (!m.titular_id) return '—';
+  const t = CAJA_TITULARES.find(x => x.id === m.titular_id);
+  const nombreTitular = t ? t.nombre : '(titular eliminado)';
+  if (m.cuenta_id) {
+    const c = CAJA_CUENTAS.find(x => x.id === m.cuenta_id);
+    if (c) return `${nombreTitular} — ${c.tipo}${c.nombre ? ' ('+c.nombre+')' : ''}`;
   }
-  return CAJA_CUENTA_LABEL[m.cuenta] || m.cuenta || '—';
+  return nombreTitular;
 }
 
 function renderCajaMovimientos() {
@@ -11156,34 +11194,17 @@ function renderCajaMovimientos() {
   const filtrados = CAJA_MOVIMIENTOS.filter(m => {
     if (desde && m.fecha < desde) return false;
     if (hasta && m.fecha > hasta) return false;
-    if (filtroCuenta) {
-      if (filtroCuenta.startsWith('titular:')) {
-        if (m.titular_id !== parseInt(filtroCuenta.slice(8))) return false;
-      } else if (m.cuenta !== filtroCuenta) return false;
+    if (filtroCuenta && filtroCuenta.startsWith('titular:')) {
+      if (m.titular_id !== parseInt(filtroCuenta.slice(8))) return false;
     }
     return true;
   });
 
-  // Resumen por cuenta (dentro del rango filtrado por fecha, sin el filtro de cuenta específico)
+  // Resumen por titular (dentro del rango filtrado por fecha, sin el filtro de titular específico)
   const filtradosPorFecha = CAJA_MOVIMIENTOS.filter(m => (!desde || m.fecha >= desde) && (!hasta || m.fecha <= hasta));
   const resumenCont = document.getElementById('caja-resumen-cuentas');
-  const resumenLegacy = ['efectivo','gregorio','hugo'].map(cta => {
-    const movs = filtradosPorFecha.filter(m => m.cuenta === cta);
-    const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
-    const egr = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
-    const neto = ing - egr;
-    return `<div style="background:#f7f7f7;border-radius:10px;padding:0.85rem 1rem">
-      <div style="font-size:0.75rem;color:#888;text-transform:uppercase;margin-bottom:4px">${CAJA_CUENTA_LABEL[cta]}</div>
-      <div style="font-size:1.15rem;font-weight:700;color:${neto>=0?'var(--green)':'var(--accent)'}">${formatMoney(neto)}</div>
-      <div style="font-size:0.72rem;color:#888;margin-top:4px">Ingresos ${formatMoney(ing)} · Egresos ${formatMoney(egr)}</div>
-    </div>`;
-  }).join('');
-  // Resumen por titular (esquema nuevo) — se agrega aparte, sin mezclar con
-  // el legacy de arriba, ya que son dos sistemas de clasificación distintos
-  // conviviendo (viejo por cuenta fija, nuevo por titular).
-  const resumenNuevo = CAJA_TITULARES.filter(t => t.activo !== false).map(t => {
+  resumenCont.innerHTML = CAJA_TITULARES.filter(t => t.activo !== false).map(t => {
     const movs = filtradosPorFecha.filter(m => m.titular_id === t.id);
-    if (!movs.length) return '';
     const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
     const egr = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
     const neto = ing - egr;
@@ -11193,7 +11214,6 @@ function renderCajaMovimientos() {
       <div style="font-size:0.72rem;color:#888;margin-top:4px">Ingresos ${formatMoney(ing)} · Egresos ${formatMoney(egr)}</div>
     </div>`;
   }).join('');
-  resumenCont.innerHTML = resumenLegacy + resumenNuevo;
 
   const cont = document.getElementById('caja-tabla-movimientos');
   if (!filtrados.length) {
@@ -11231,50 +11251,39 @@ function renderCierreMensual() {
   if (!mesKey) return;
   const movsDelMes = CAJA_MOVIMIENTOS.filter(m => m.fecha && m.fecha.startsWith(mesKey));
 
-  const resultadoPorCuenta = {};
-  ['efectivo','gregorio','hugo'].forEach(cta => {
-    const movs = movsDelMes.filter(m => m.cuenta === cta);
+  const titularesActivos = CAJA_TITULARES.filter(t => t.activo !== false);
+  const resultadoPorTitular = titularesActivos.map(t => {
+    const movs = movsDelMes.filter(m => m.titular_id === t.id);
     const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
     const egr = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
-    resultadoPorCuenta[cta] = { ing, egr, neto: ing - egr };
+    return { titular: t, ing, egr, neto: ing - egr };
   });
-
-  const resultadoTotal = resultadoPorCuenta.efectivo.neto + resultadoPorCuenta.gregorio.neto + resultadoPorCuenta.hugo.neto;
-  const leCorresponde = resultadoTotal / 2;
-
-  const diffSocio1 = resultadoPorCuenta.gregorio.neto - leCorresponde;
-  const diffSocio2 = resultadoPorCuenta.hugo.neto - leCorresponde;
-
-  let transferencia = '';
-  if (Math.abs(diffSocio1) > 0.01) {
-    if (diffSocio1 > 0) {
-      transferencia = `${CAJA_CUENTA_LABEL.gregorio} le transfiere <strong>${formatMoney(diffSocio1)}</strong> a ${CAJA_CUENTA_LABEL.hugo} para emparejar.`;
-    } else {
-      transferencia = `${CAJA_CUENTA_LABEL.hugo} le transfiere <strong>${formatMoney(Math.abs(diffSocio1))}</strong> a ${CAJA_CUENTA_LABEL.gregorio} para emparejar.`;
-    }
-  } else {
-    transferencia = 'Ya están emparejados — no hace falta ninguna transferencia.';
-  }
+  const resultadoTotal = resultadoPorTitular.reduce((s,r) => s + r.neto, 0);
 
   const cont = document.getElementById('caja-cierre-contenido');
   const fmt = n => `<span style="color:${n>=0?'var(--green)':'var(--accent)'}">${formatMoney(n)}</span>`;
+
+  if (!titularesActivos.length) {
+    cont.innerHTML = `<p style="color:#aaa;font-size:0.85rem">Todavía no cargaste ningún titular — andá a "Titulares y cuentas" para empezar a registrar movimientos.</p>`;
+    return;
+  }
 
   cont.innerHTML = `
     <div class="table-wrap" style="margin-bottom:1.25rem">
       <table style="width:100%;border-collapse:collapse;font-size:0.88rem">
         <thead><tr style="background:var(--ink2);color:white">
-          <th style="padding:8px 10px;text-align:left">Cuenta</th>
+          <th style="padding:8px 10px;text-align:left">Titular</th>
           <th style="padding:8px 10px;text-align:right">Ingresos</th>
           <th style="padding:8px 10px;text-align:right">Egresos</th>
           <th style="padding:8px 10px;text-align:right">Resultado</th>
         </tr></thead>
         <tbody>
-          ${['efectivo','gregorio','hugo'].map(cta => `
+          ${resultadoPorTitular.map(r => `
             <tr style="border-bottom:1px solid #eee">
-              <td style="padding:7px 10px">${CAJA_CUENTA_LABEL[cta]}</td>
-              <td style="padding:7px 10px;text-align:right;color:var(--green)">${formatMoney(resultadoPorCuenta[cta].ing)}</td>
-              <td style="padding:7px 10px;text-align:right;color:var(--accent)">${formatMoney(resultadoPorCuenta[cta].egr)}</td>
-              <td style="padding:7px 10px;text-align:right;font-weight:600">${fmt(resultadoPorCuenta[cta].neto)}</td>
+              <td style="padding:7px 10px">${(r.titular.nombre||'').replace(/</g,'&lt;')}</td>
+              <td style="padding:7px 10px;text-align:right;color:var(--green)">${formatMoney(r.ing)}</td>
+              <td style="padding:7px 10px;text-align:right;color:var(--accent)">${formatMoney(r.egr)}</td>
+              <td style="padding:7px 10px;text-align:right;font-weight:600">${fmt(r.neto)}</td>
             </tr>`).join('')}
           <tr style="font-weight:700;border-top:2px solid var(--ink)">
             <td style="padding:8px 10px">Resultado total del negocio</td>
@@ -11285,38 +11294,8 @@ function renderCierreMensual() {
       </table>
     </div>
 
-    <div style="background:#f7f7f7;border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.25rem">
-      <div style="font-size:0.8rem;color:#888;text-transform:uppercase;margin-bottom:6px">Reparto 50/50</div>
-      <div>A cada socio le corresponde: <strong>${formatMoney(leCorresponde)}</strong></div>
-    </div>
-
-    <div class="table-wrap" style="margin-bottom:1.25rem">
-      <table style="width:100%;border-collapse:collapse;font-size:0.88rem">
-        <thead><tr style="background:var(--ink2);color:white">
-          <th style="padding:8px 10px;text-align:left">Socio</th>
-          <th style="padding:8px 10px;text-align:right">Tiene (según su cuenta)</th>
-          <th style="padding:8px 10px;text-align:right">Le corresponde</th>
-          <th style="padding:8px 10px;text-align:right">Diferencia</th>
-        </tr></thead>
-        <tbody>
-          <tr style="border-bottom:1px solid #eee">
-            <td style="padding:7px 10px">${CAJA_CUENTA_LABEL.gregorio}</td>
-            <td style="padding:7px 10px;text-align:right">${formatMoney(resultadoPorCuenta.gregorio.neto)}</td>
-            <td style="padding:7px 10px;text-align:right">${formatMoney(leCorresponde)}</td>
-            <td style="padding:7px 10px;text-align:right;font-weight:600">${fmt(diffSocio1)}</td>
-          </tr>
-          <tr>
-            <td style="padding:7px 10px">${CAJA_CUENTA_LABEL.hugo}</td>
-            <td style="padding:7px 10px;text-align:right">${formatMoney(resultadoPorCuenta.hugo.neto)}</td>
-            <td style="padding:7px 10px;text-align:right">${formatMoney(leCorresponde)}</td>
-            <td style="padding:7px 10px;text-align:right;font-weight:600">${fmt(diffSocio2)}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div style="background:#e8f5e9;border-radius:10px;padding:1rem 1.25rem;font-size:0.95rem">
-      <strong>Compensación:</strong> ${transferencia}
+    <div style="background:#f7f7f7;border-radius:10px;padding:1rem 1.25rem;font-size:0.85rem;color:#666">
+      El sistema de compensación entre socios (quién le transfiere a quién para emparejar cuentas) todavía no está armado — lo diseñamos juntos una vez que haya algo de uso real acumulado acá, como quedamos.
     </div>
   `;
 }
