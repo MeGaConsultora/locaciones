@@ -10892,6 +10892,11 @@ function renderClientes() {
 // titular concreto para no repetir nombres a mano cada vez.
 // ============================================================
 const TIPOS_CUENTA = ['Efectivo', 'Cheque', 'Cuenta bancaria', 'Billetera virtual'];
+const MONEDAS_CUENTA = [
+  { cod: 'ARS', label: 'ARS — Pesos argentinos' },
+  { cod: 'USD', label: 'USD — Dólares' },
+  { cod: 'EUR', label: 'EUR — Euros' },
+];
 
 async function cargarYRenderTitulares() {
   const cont = document.getElementById('titulares-lista');
@@ -10929,6 +10934,7 @@ function renderTitulares() {
         <div id="cuenta-fila-${c.id}" style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid #f0ece4;font-size:0.85rem">
           <div>
             <strong>${c.tipo}</strong>${c.nombre?' — '+c.nombre.replace(/</g,'&lt;'):''}
+            <span style="font-size:0.7rem;color:#888;border:1px solid var(--border);border-radius:8px;padding:1px 6px;margin-left:4px">${c.moneda||'ARS'}</span>
             ${c.banco?` · ${c.banco}`:''}${c.numero_cuenta?` · Cta ${c.numero_cuenta}`:''}${c.alias_cbu?` · ${c.alias_cbu}`:''}
           </div>
           <div style="display:flex;gap:10px;flex-shrink:0">
@@ -11025,6 +11031,12 @@ function abrirFormCuentaInline(titularId, cuentaId) {
           </select>
         </div>
         <div class="form-group"><label>Nombre / descripción</label><input type="text" id="cc-nombre-${uid}" value="${(c?.nombre||'').replace(/"/g,'&quot;')}" placeholder="Ej: Caja chica, Cuenta sueldo..."></div>
+        <div class="form-group">
+          <label>Moneda</label>
+          <select id="cc-moneda-${uid}">
+            ${MONEDAS_CUENTA.map(m=>`<option value="${m.cod}" ${(c?.moneda||'ARS')===m.cod?'selected':''}>${m.label}</option>`).join('')}
+          </select>
+        </div>
       </div>
       <div class="form-grid" id="cc-extra-${uid}" style="display:none"></div>
       <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
@@ -11058,15 +11070,16 @@ async function guardarCuenta(titularId, cuentaId) {
   const uid = cuentaId ? `edit-${cuentaId}` : titularId;
   const tipo = document.getElementById(`cc-tipo-${uid}`)?.value;
   const nombre = document.getElementById(`cc-nombre-${uid}`)?.value.trim() || null;
+  const moneda = document.getElementById(`cc-moneda-${uid}`)?.value || 'ARS';
   const banco = document.getElementById(`cc-banco-${uid}`)?.value.trim() || null;
   const numero_cuenta = document.getElementById(`cc-numero-${uid}`)?.value.trim() || null;
   const alias_cbu = document.getElementById(`cc-alias-${uid}`)?.value.trim() || null;
   try {
     if (cuentaId) {
-      await sbPatch('caja_cuentas', cuentaId, { tipo, nombre, banco, numero_cuenta, alias_cbu });
+      await sbPatch('caja_cuentas', cuentaId, { tipo, nombre, moneda, banco, numero_cuenta, alias_cbu });
       toast('Cuenta actualizada ✓');
     } else {
-      await sbPost('caja_cuentas', { titular_id: titularId, tipo, nombre, banco, numero_cuenta, alias_cbu, activo: true });
+      await sbPost('caja_cuentas', { titular_id: titularId, tipo, nombre, moneda, banco, numero_cuenta, alias_cbu, activo: true });
       toast('Cuenta agregada ✓');
     }
     await cargarYRenderTitulares();
@@ -11129,7 +11142,7 @@ function actualizarCuentasDelTitularMovimiento() {
   if (!selCuenta) return;
   const cuentas = CAJA_CUENTAS.filter(c => c.titular_id === titularId && c.activo !== false);
   selCuenta.innerHTML = '<option value="">Sin especificar</option>' + cuentas.map(c => {
-    const label = `${c.tipo}${c.nombre ? ' — '+c.nombre : ''}`;
+    const label = `${c.tipo}${c.nombre ? ' — '+c.nombre : ''} (${c.moneda||'ARS'})`;
     return `<option value="${c.id}">${label.replace(/</g,'&lt;')}</option>`;
   }).join('');
 }
@@ -11211,9 +11224,20 @@ function etiquetaMovimientoCaja(m) {
   const nombreTitular = t ? t.nombre : '(titular eliminado)';
   if (m.cuenta_id) {
     const c = CAJA_CUENTAS.find(x => x.id === m.cuenta_id);
-    if (c) return `${nombreTitular} — ${c.tipo}${c.nombre ? ' ('+c.nombre+')' : ''}`;
+    if (c) return `${nombreTitular} — ${c.tipo}${c.nombre ? ' ('+c.nombre+')' : ''} <span style="font-size:0.7rem;color:#999">${c.moneda||'ARS'}</span>`;
   }
   return nombreTitular;
+}
+
+// La moneda de un movimiento es la de la cuenta puntual que se eligió al
+// cargarlo; si no se especificó cuenta, se asume ARS (la moneda por
+// defecto del negocio) — importante para nunca sumar pesos con dólares.
+function monedaDelMovimiento(m) {
+  if (m.cuenta_id) {
+    const c = CAJA_CUENTAS.find(x => x.id === m.cuenta_id);
+    if (c?.moneda) return c.moneda;
+  }
+  return 'ARS';
 }
 
 function renderCajaMovimientos() {
@@ -11230,20 +11254,29 @@ function renderCajaMovimientos() {
     return true;
   });
 
-  // Resumen por titular (dentro del rango filtrado por fecha, sin el filtro de titular específico)
+  // Resumen por titular Y por moneda (dentro del rango filtrado por fecha,
+  // sin el filtro de titular específico) — nunca se suma ARS con USD/EUR.
   const filtradosPorFecha = CAJA_MOVIMIENTOS.filter(m => (!desde || m.fecha >= desde) && (!hasta || m.fecha <= hasta));
   const resumenCont = document.getElementById('caja-resumen-cuentas');
-  resumenCont.innerHTML = CAJA_TITULARES.filter(t => t.activo !== false).map(t => {
-    const movs = filtradosPorFecha.filter(m => m.titular_id === t.id);
-    const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
-    const egr = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
-    const neto = ing - egr;
-    return `<div style="background:#f0fff4;border:1px solid #b2dfdb;border-radius:10px;padding:0.85rem 1rem">
-      <div style="font-size:0.75rem;color:#888;text-transform:uppercase;margin-bottom:4px">${(t.nombre||'').replace(/</g,'&lt;')}</div>
-      <div style="font-size:1.15rem;font-weight:700;color:${neto>=0?'var(--green)':'var(--accent)'}">${formatMoney(neto)}</div>
-      <div style="font-size:0.72rem;color:#888;margin-top:4px">Ingresos ${formatMoney(ing)} · Egresos ${formatMoney(egr)}</div>
-    </div>`;
-  }).join('');
+  const bloques = [];
+  CAJA_TITULARES.filter(t => t.activo !== false).forEach(t => {
+    const movsTitular = filtradosPorFecha.filter(m => m.titular_id === t.id);
+    const monedasConMovimiento = [...new Set(movsTitular.map(monedaDelMovimiento))];
+    if (!monedasConMovimiento.length) monedasConMovimiento.push('ARS'); // igual mostrar el titular en $0
+    monedasConMovimiento.sort();
+    monedasConMovimiento.forEach(moneda => {
+      const movs = movsTitular.filter(m => monedaDelMovimiento(m) === moneda);
+      const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
+      const egr = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
+      const neto = ing - egr;
+      bloques.push(`<div style="background:#f0fff4;border:1px solid #b2dfdb;border-radius:10px;padding:0.85rem 1rem">
+        <div style="font-size:0.75rem;color:#888;text-transform:uppercase;margin-bottom:4px">${(t.nombre||'').replace(/</g,'&lt;')} <span style="border:1px solid #b2dfdb;border-radius:8px;padding:0 5px;font-size:0.68rem">${moneda}</span></div>
+        <div style="font-size:1.15rem;font-weight:700;color:${neto>=0?'var(--green)':'var(--accent)'}">${moneda!=='ARS'?moneda+' ':''}${formatMoney(neto)}</div>
+        <div style="font-size:0.72rem;color:#888;margin-top:4px">Ingresos ${formatMoney(ing)} · Egresos ${formatMoney(egr)}</div>
+      </div>`);
+    });
+  });
+  resumenCont.innerHTML = bloques.join('');
 
   const cont = document.getElementById('caja-tabla-movimientos');
   if (!filtrados.length) {
@@ -11306,14 +11339,26 @@ function renderCierreMensual() {
   const movsDelRango = CAJA_MOVIMIENTOS.filter(m => m.fecha && (!desde || m.fecha >= desde) && (!hasta || m.fecha <= hasta));
 
   const titularesActivos = CAJA_TITULARES.filter(t => t.activo !== false);
-  const resultadoPorTitular = titularesActivos.map(t => {
-    const movs = movsDelRango.filter(m => m.titular_id === t.id);
-    const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
-    const egr = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
-    return { titular: t, ing, egr, neto: ing - egr };
-  });
   const nombreNegocio = (titularesActivos.find(t => t.tipo === 'negocio')?.nombre) || 'el negocio';
-  const resultadoTotal = resultadoPorTitular.reduce((s,r) => s + r.neto, 0);
+
+  // Una fila por cada combinación titular+moneda que tuvo movimiento — nunca
+  // se suma ARS con USD/EUR en un mismo resultado.
+  const filas = [];
+  titularesActivos.forEach(t => {
+    const movsTitular = movsDelRango.filter(m => m.titular_id === t.id);
+    const monedas = [...new Set(movsTitular.map(monedaDelMovimiento))];
+    if (!monedas.length) monedas.push('ARS');
+    monedas.sort().forEach(moneda => {
+      const movs = movsTitular.filter(m => monedaDelMovimiento(m) === moneda);
+      const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
+      const egr = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
+      filas.push({ titular: t, moneda, ing, egr, neto: ing - egr });
+    });
+  });
+
+  // Resultado total del negocio, separado por moneda (nunca un solo número mezclando todo)
+  const totalesPorMoneda = {};
+  filas.forEach(f => { totalesPorMoneda[f.moneda] = (totalesPorMoneda[f.moneda]||0) + f.neto; });
 
   const cont = document.getElementById('caja-cierre-contenido');
   const fmt = n => `<span style="color:${n>=0?'var(--green)':'var(--accent)'}">${formatMoney(n)}</span>`;
@@ -11328,38 +11373,44 @@ function renderCierreMensual() {
       <table style="width:100%;border-collapse:collapse;font-size:0.88rem">
         <thead><tr style="background:var(--ink2);color:white">
           <th style="padding:8px 10px;text-align:left">Titular</th>
+          <th style="padding:8px 10px;text-align:center">Moneda</th>
           <th style="padding:8px 10px;text-align:right">Ingresos</th>
           <th style="padding:8px 10px;text-align:right">Egresos</th>
           <th style="padding:8px 10px;text-align:right">Resultado</th>
           <th style="padding:8px 10px;text-align:left">Situación</th>
         </tr></thead>
         <tbody>
-          ${resultadoPorTitular.map(r => {
+          ${filas.map(r => {
             let situacion;
             if (r.titular.tipo === 'negocio') {
               situacion = '<span style="color:#999">— (es el negocio)</span>';
             } else if (Math.abs(r.neto) < 0.01) {
               situacion = '<span style="color:#999">Está al día</span>';
             } else if (r.neto > 0) {
-              situacion = `<span style="color:var(--accent);font-weight:600">Le debe a ${nombreNegocio}: ${formatMoney(r.neto)}</span>`;
+              situacion = `<span style="color:var(--accent);font-weight:600">Le debe a ${nombreNegocio}: ${r.moneda!=='ARS'?r.moneda+' ':''}${formatMoney(r.neto)}</span>`;
             } else {
-              situacion = `<span style="color:var(--green);font-weight:600">${nombreNegocio} le debe: ${formatMoney(Math.abs(r.neto))}</span>`;
+              situacion = `<span style="color:var(--green);font-weight:600">${nombreNegocio} le debe: ${r.moneda!=='ARS'?r.moneda+' ':''}${formatMoney(Math.abs(r.neto))}</span>`;
             }
             return `<tr style="border-bottom:1px solid #eee">
               <td style="padding:7px 10px">${(r.titular.nombre||'').replace(/</g,'&lt;')}</td>
+              <td style="padding:7px 10px;text-align:center"><span style="border:1px solid var(--border);border-radius:8px;padding:1px 7px;font-size:0.72rem">${r.moneda}</span></td>
               <td style="padding:7px 10px;text-align:right;color:var(--green)">${formatMoney(r.ing)}</td>
               <td style="padding:7px 10px;text-align:right;color:var(--accent)">${formatMoney(r.egr)}</td>
               <td style="padding:7px 10px;text-align:right;font-weight:600">${fmt(r.neto)}</td>
               <td style="padding:7px 10px;font-size:0.82rem">${situacion}</td>
             </tr>`;
           }).join('')}
-          <tr style="font-weight:700;border-top:2px solid var(--ink)">
-            <td style="padding:8px 10px">Resultado total del negocio</td>
-            <td colspan="2"></td>
-            <td style="padding:8px 10px;text-align:right">${fmt(resultadoTotal)}</td>
-            <td></td>
-          </tr>
         </tbody>
+        <tfoot>
+          ${Object.keys(totalesPorMoneda).sort().map(moneda => `
+            <tr style="font-weight:700;border-top:2px solid var(--ink)">
+              <td style="padding:8px 10px">Resultado total del negocio</td>
+              <td style="padding:8px 10px;text-align:center"><span style="border:1px solid var(--ink);border-radius:8px;padding:1px 7px;font-size:0.72rem">${moneda}</span></td>
+              <td colspan="2"></td>
+              <td style="padding:8px 10px;text-align:right">${fmt(totalesPorMoneda[moneda])}</td>
+              <td></td>
+            </tr>`).join('')}
+        </tfoot>
       </table>
     </div>
 
