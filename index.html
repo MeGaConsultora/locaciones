@@ -10935,7 +10935,7 @@ function renderTitulares() {
           <div>
             <strong>${c.tipo}</strong>${c.nombre?' — '+c.nombre.replace(/</g,'&lt;'):''}
             <span style="font-size:0.7rem;color:#888;border:1px solid var(--border);border-radius:8px;padding:1px 6px;margin-left:4px">${c.moneda||'ARS'}</span>
-            ${c.banco?` · ${c.banco}`:''}${c.numero_cuenta?` · Cta ${c.numero_cuenta}`:''}${c.alias_cbu?` · ${c.alias_cbu}`:''}
+            ${c.banco?` · ${c.banco}`:''}${c.numero_cuenta?` · Cta ${c.numero_cuenta}`:''}${c.alias_cbu?` · ${c.tipo==='Billetera virtual'?'CVU':'CBU'} ${c.alias_cbu}`:''}${c.alias?` · Alias: ${c.alias.replace(/</g,'&lt;')}`:''}
           </div>
           <div style="display:flex;gap:10px;flex-shrink:0">
             <button onclick="abrirFormCuentaInline(${t.id}, ${c.id})" style="background:none;border:none;color:#888;cursor:pointer;font-size:0.8rem" title="Editar">✏️</button>
@@ -11056,10 +11056,13 @@ function actualizarCamposCuenta(uid, c) {
     wrap.innerHTML = `
       <div class="form-group"><label>Banco</label><input type="text" id="cc-banco-${uid}" value="${(c?.banco||'').replace(/"/g,'&quot;')}"></div>
       <div class="form-group"><label>N° de cuenta</label><input type="text" id="cc-numero-${uid}" value="${(c?.numero_cuenta||'').replace(/"/g,'&quot;')}"></div>
-      <div class="form-group"><label>Alias / CBU</label><input type="text" id="cc-alias-${uid}" value="${(c?.alias_cbu||'').replace(/"/g,'&quot;')}"></div>`;
+      <div class="form-group"><label>CBU</label><input type="text" id="cc-cbucvu-${uid}" value="${(c?.alias_cbu||'').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group"><label>Alias</label><input type="text" id="cc-alias-${uid}" value="${(c?.alias||'').replace(/"/g,'&quot;')}"></div>`;
   } else if (tipo === 'Billetera virtual') {
     wrap.style.display = '';
-    wrap.innerHTML = `<div class="form-group"><label>Alias / CVU</label><input type="text" id="cc-alias-${uid}" value="${(c?.alias_cbu||'').replace(/"/g,'&quot;')}"></div>`;
+    wrap.innerHTML = `
+      <div class="form-group"><label>Alias</label><input type="text" id="cc-alias-${uid}" value="${(c?.alias||'').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group"><label>CVU</label><input type="text" id="cc-cbucvu-${uid}" value="${(c?.alias_cbu||'').replace(/"/g,'&quot;')}"></div>`;
   } else {
     wrap.style.display = 'none';
     wrap.innerHTML = '';
@@ -11073,13 +11076,14 @@ async function guardarCuenta(titularId, cuentaId) {
   const moneda = document.getElementById(`cc-moneda-${uid}`)?.value || 'ARS';
   const banco = document.getElementById(`cc-banco-${uid}`)?.value.trim() || null;
   const numero_cuenta = document.getElementById(`cc-numero-${uid}`)?.value.trim() || null;
-  const alias_cbu = document.getElementById(`cc-alias-${uid}`)?.value.trim() || null;
+  const alias_cbu = document.getElementById(`cc-cbucvu-${uid}`)?.value.trim() || null;
+  const alias = document.getElementById(`cc-alias-${uid}`)?.value.trim() || null;
   try {
     if (cuentaId) {
-      await sbPatch('caja_cuentas', cuentaId, { tipo, nombre, moneda, banco, numero_cuenta, alias_cbu });
+      await sbPatch('caja_cuentas', cuentaId, { tipo, nombre, moneda, banco, numero_cuenta, alias_cbu, alias });
       toast('Cuenta actualizada ✓');
     } else {
-      await sbPost('caja_cuentas', { titular_id: titularId, tipo, nombre, moneda, banco, numero_cuenta, alias_cbu, activo: true });
+      await sbPost('caja_cuentas', { titular_id: titularId, tipo, nombre, moneda, banco, numero_cuenta, alias_cbu, alias, activo: true });
       toast('Cuenta agregada ✓');
     }
     await cargarYRenderTitulares();
