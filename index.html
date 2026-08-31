@@ -930,9 +930,11 @@
   <div id="panel-caja" class="panel" style="display:none">
     <div class="toolbar" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.75rem">
       <strong style="font-size:0.95rem">💰 Caja del negocio</strong>
-      <button class="tab-btn caja-subtab active" onclick="showCajaSubtab('movimientos', this)" style="padding:6px 14px;border-radius:8px">Movimientos</button>
-      <button class="tab-btn caja-subtab" onclick="showCajaSubtab('cierre', this)" style="padding:6px 14px;border-radius:8px">Cierre mensual</button>
-      <button class="tab-btn caja-subtab" onclick="showCajaSubtab('titulares', this)" style="padding:6px 14px;border-radius:8px">Titulares y cuentas</button>
+      <div style="background:var(--ink2);border-radius:10px;padding:4px;display:inline-flex;gap:2px">
+        <button class="tab-btn caja-subtab active" onclick="showCajaSubtab('movimientos', this)" style="padding:6px 14px;border-radius:8px">Movimientos</button>
+        <button class="tab-btn caja-subtab" onclick="showCajaSubtab('cierre', this)" style="padding:6px 14px;border-radius:8px">Cierre mensual</button>
+        <button class="tab-btn caja-subtab" onclick="showCajaSubtab('titulares', this)" style="padding:6px 14px;border-radius:8px">Titulares y cuentas</button>
+      </div>
     </div>
 
     <!-- Subtab: Movimientos -->
