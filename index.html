@@ -1014,8 +1014,16 @@
 
     <!-- Subtab: Cierre mensual -->
     <div id="caja-subtab-cierre" style="display:none">
-      <div class="toolbar" style="margin-bottom:1rem">
-        <input type="month" class="filter-select" id="caja-mes-cierre" style="width:auto" onchange="renderCierreMensual()">
+      <div class="toolbar" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+        <label style="font-size:0.78rem;color:#666">Desde
+          <input type="date" class="filter-select" id="caja-cierre-desde" style="width:auto" onchange="renderCierreMensual()">
+        </label>
+        <label style="font-size:0.78rem;color:#666">Hasta
+          <input type="date" class="filter-select" id="caja-cierre-hasta" style="width:auto" onchange="renderCierreMensual()">
+        </label>
+        <button class="btn btn-secondary" style="font-size:0.8rem" onclick="setRangoCierre('mes-actual')">Mes actual</button>
+        <button class="btn btn-secondary" style="font-size:0.8rem" onclick="setRangoCierre('mes-anterior')">Mes anterior</button>
+        <button class="btn btn-secondary" style="font-size:0.8rem" onclick="setRangoCierre('todo')">Todo el historial</button>
       </div>
       <div id="caja-cierre-contenido"></div>
     </div>
@@ -1026,8 +1034,13 @@
         <div class="section-title" style="margin-bottom:0.75rem">Nuevo titular</div>
         <div style="display:flex;gap:0.5rem">
           <input type="text" id="ct-nombre" placeholder="Ej: MeGa, Gardella, Gregorio Silvio..." style="flex:1;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:0.88rem">
+          <select id="ct-tipo" style="padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:0.88rem">
+            <option value="negocio">Es el negocio</option>
+            <option value="socio">Es un socio</option>
+          </select>
           <button class="btn btn-primary" onclick="guardarTitular()">＋ Agregar</button>
         </div>
+        <p style="font-size:0.75rem;color:#999;margin-top:0.5rem">"El negocio" (ej: MeGa) es la cuenta madre — lo que retiene un socio se interpreta como deuda hacia el negocio, y lo que paga de su bolsillo, como crédito a su favor.</p>
       </div>
       <div id="titulares-lista"></div>
     </div>
@@ -10899,9 +10912,13 @@ function renderTitulares() {
   if (!activos.length) { cont.innerHTML = '<p style="color:#aaa;font-size:0.85rem">Todavía no cargaste ningún titular.</p>'; return; }
   cont.innerHTML = activos.map(t => {
     const cuentas = CAJA_CUENTAS.filter(c => c.titular_id === t.id && c.activo !== false);
+    const esNegocio = t.tipo === 'negocio';
     return `<div style="background:white;border-radius:12px;box-shadow:var(--shadow);padding:1rem 1.4rem;margin-bottom:0.9rem">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
-        <strong id="titular-nombre-${t.id}" data-original="${(t.nombre||'').replace(/"/g,'&quot;')}" onclick="activarEdicionTitular(${t.id})" title="Click para editar el nombre" style="font-size:0.95rem;cursor:text;border-radius:4px;padding:2px 4px;margin:-2px -4px" onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background='transparent'">${(t.nombre||'').replace(/</g,'&lt;')}</strong>
+        <div style="display:flex;align-items:center;gap:8px">
+          <strong id="titular-nombre-${t.id}" data-original="${(t.nombre||'').replace(/"/g,'&quot;')}" onclick="activarEdicionTitular(${t.id})" title="Click para editar el nombre" style="font-size:0.95rem;cursor:text;border-radius:4px;padding:2px 4px;margin:-2px -4px" onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background='transparent'">${(t.nombre||'').replace(/</g,'&lt;')}</strong>
+          <span onclick="alternarTipoTitular(${t.id})" title="Click para cambiar" style="cursor:pointer;font-size:0.7rem;padding:2px 8px;border-radius:10px;background:${esNegocio?'#e3f2fd':'#fff3cd'};color:${esNegocio?'#1565c0':'#856404'}">${esNegocio?'🏢 Negocio':'🤝 Socio'}</span>
+        </div>
         <div style="display:flex;gap:6px">
           <button class="btn btn-secondary" style="font-size:0.75rem" onclick="abrirFormCuentaInline(${t.id})">＋ Cuenta</button>
           <button class="btn" style="font-size:0.75rem;background:#f8d7da;color:#721c24" onclick="eliminarTitular(${t.id})">✕ Titular</button>
@@ -10954,11 +10971,23 @@ async function guardarEdicionTitular(id, cancelado) {
   } catch(e) { toast('Error al guardar: ' + e.message, 'error'); }
 }
 
+async function alternarTipoTitular(id) {
+  const t = CAJA_TITULARES.find(x => x.id === id);
+  if (!t) return;
+  const nuevoTipo = t.tipo === 'negocio' ? 'socio' : 'negocio';
+  try {
+    await sbPatch('caja_titulares', id, { tipo: nuevoTipo });
+    toast(`Ahora es "${nuevoTipo === 'negocio' ? 'el negocio' : 'un socio'}" ✓`);
+    await cargarYRenderTitulares();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
 async function guardarTitular() {
   const nombre = document.getElementById('ct-nombre')?.value.trim();
+  const tipo = document.getElementById('ct-tipo')?.value || 'socio';
   if (!nombre) { toast('Escribí el nombre del titular', 'error'); return; }
   try {
-    await sbPost('caja_titulares', { nombre, activo: true });
+    await sbPost('caja_titulares', { nombre, tipo, activo: true });
     document.getElementById('ct-nombre').value = '';
     toast('Titular agregado ✓');
     await cargarYRenderTitulares();
@@ -11067,7 +11096,8 @@ async function initCaja() {
   const primerDiaMes = hoy.substring(0,7) + '-01';
   document.getElementById('caja-desde').value = primerDiaMes;
   document.getElementById('caja-hasta').value = hoy;
-  document.getElementById('caja-mes-cierre').value = hoy.substring(0,7);
+  document.getElementById('caja-cierre-desde').value = primerDiaMes;
+  document.getElementById('caja-cierre-hasta').value = hoy;
   await cargarCajaMovimientos();
   await cargarCajaTitularesYCuentas();
   poblarSelectTitularMovimiento();
@@ -11246,18 +11276,43 @@ function renderCajaMovimientos() {
   </table></div>`;
 }
 
+function setRangoCierre(atajo) {
+  const hoy = TODAY;
+  let desde, hasta;
+  if (atajo === 'mes-actual') {
+    desde = hoy.substring(0,7) + '-01';
+    hasta = hoy;
+  } else if (atajo === 'mes-anterior') {
+    const [y,m] = hoy.substring(0,7).split('-').map(Number);
+    const mAnt = m === 1 ? 12 : m - 1;
+    const yAnt = m === 1 ? y - 1 : y;
+    const mesStr = String(mAnt).padStart(2,'0');
+    desde = `${yAnt}-${mesStr}-01`;
+    // último día de ese mes
+    const ultimoDia = new Date(yAnt, mAnt, 0).getDate();
+    hasta = `${yAnt}-${mesStr}-${String(ultimoDia).padStart(2,'0')}`;
+  } else { // 'todo'
+    desde = '';
+    hasta = hoy;
+  }
+  document.getElementById('caja-cierre-desde').value = desde;
+  document.getElementById('caja-cierre-hasta').value = hasta;
+  renderCierreMensual();
+}
+
 function renderCierreMensual() {
-  const mesKey = document.getElementById('caja-mes-cierre').value; // "YYYY-MM"
-  if (!mesKey) return;
-  const movsDelMes = CAJA_MOVIMIENTOS.filter(m => m.fecha && m.fecha.startsWith(mesKey));
+  const desde = document.getElementById('caja-cierre-desde').value;
+  const hasta = document.getElementById('caja-cierre-hasta').value;
+  const movsDelRango = CAJA_MOVIMIENTOS.filter(m => m.fecha && (!desde || m.fecha >= desde) && (!hasta || m.fecha <= hasta));
 
   const titularesActivos = CAJA_TITULARES.filter(t => t.activo !== false);
   const resultadoPorTitular = titularesActivos.map(t => {
-    const movs = movsDelMes.filter(m => m.titular_id === t.id);
+    const movs = movsDelRango.filter(m => m.titular_id === t.id);
     const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
     const egr = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
     return { titular: t, ing, egr, neto: ing - egr };
   });
+  const nombreNegocio = (titularesActivos.find(t => t.tipo === 'negocio')?.nombre) || 'el negocio';
   const resultadoTotal = resultadoPorTitular.reduce((s,r) => s + r.neto, 0);
 
   const cont = document.getElementById('caja-cierre-contenido');
@@ -11276,26 +11331,41 @@ function renderCierreMensual() {
           <th style="padding:8px 10px;text-align:right">Ingresos</th>
           <th style="padding:8px 10px;text-align:right">Egresos</th>
           <th style="padding:8px 10px;text-align:right">Resultado</th>
+          <th style="padding:8px 10px;text-align:left">Situación</th>
         </tr></thead>
         <tbody>
-          ${resultadoPorTitular.map(r => `
-            <tr style="border-bottom:1px solid #eee">
+          ${resultadoPorTitular.map(r => {
+            let situacion;
+            if (r.titular.tipo === 'negocio') {
+              situacion = '<span style="color:#999">— (es el negocio)</span>';
+            } else if (Math.abs(r.neto) < 0.01) {
+              situacion = '<span style="color:#999">Está al día</span>';
+            } else if (r.neto > 0) {
+              situacion = `<span style="color:var(--accent);font-weight:600">Le debe a ${nombreNegocio}: ${formatMoney(r.neto)}</span>`;
+            } else {
+              situacion = `<span style="color:var(--green);font-weight:600">${nombreNegocio} le debe: ${formatMoney(Math.abs(r.neto))}</span>`;
+            }
+            return `<tr style="border-bottom:1px solid #eee">
               <td style="padding:7px 10px">${(r.titular.nombre||'').replace(/</g,'&lt;')}</td>
               <td style="padding:7px 10px;text-align:right;color:var(--green)">${formatMoney(r.ing)}</td>
               <td style="padding:7px 10px;text-align:right;color:var(--accent)">${formatMoney(r.egr)}</td>
               <td style="padding:7px 10px;text-align:right;font-weight:600">${fmt(r.neto)}</td>
-            </tr>`).join('')}
+              <td style="padding:7px 10px;font-size:0.82rem">${situacion}</td>
+            </tr>`;
+          }).join('')}
           <tr style="font-weight:700;border-top:2px solid var(--ink)">
             <td style="padding:8px 10px">Resultado total del negocio</td>
             <td colspan="2"></td>
             <td style="padding:8px 10px;text-align:right">${fmt(resultadoTotal)}</td>
+            <td></td>
           </tr>
         </tbody>
       </table>
     </div>
 
     <div style="background:#f7f7f7;border-radius:10px;padding:1rem 1.25rem;font-size:0.85rem;color:#666">
-      El sistema de compensación entre socios (quién le transfiere a quién para emparejar cuentas) todavía no está armado — lo diseñamos juntos una vez que haya algo de uso real acumulado acá, como quedamos.
+      Este totalizado suma todos los movimientos del rango elegido (${desde||'el inicio'} → ${hasta||'hoy'}), sin importar si ya hiciste un cierre antes o no — podés usarlo para un mes completo, un tramo cualquiera, o todo el historial acumulado.
+      El reparto final entre socios (quién le transfiere a quién, o si conviene resolverlo con un solo retiro) todavía no está armado — lo diseñamos juntos con casos reales, como quedamos.
     </div>
   `;
 }
