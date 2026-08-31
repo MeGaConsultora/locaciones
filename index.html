@@ -11004,6 +11004,7 @@ function renderTitulares() {
         <div style="display:flex;align-items:center;gap:8px">
           <strong id="titular-nombre-${t.id}" data-original="${(t.nombre||'').replace(/"/g,'&quot;')}" onclick="activarEdicionTitular(${t.id})" title="Click para editar el nombre" style="font-size:0.95rem;cursor:text;border-radius:4px;padding:2px 4px;margin:-2px -4px" onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background='transparent'">${(t.nombre||'').replace(/</g,'&lt;')}</strong>
           <span onclick="alternarTipoTitular(${t.id})" title="Click para cambiar" style="cursor:pointer;font-size:0.7rem;padding:2px 8px;border-radius:10px;background:${esNegocio?'#e3f2fd':'#fff3cd'};color:${esNegocio?'#1565c0':'#856404'}">${esNegocio?'🏢 Negocio':'🤝 Socio'}</span>
+          ${!esNegocio ? `<span id="titular-pct-${t.id}" data-original="${t.porcentaje!=null?t.porcentaje:''}" onclick="activarEdicionPorcentaje(${t.id})" title="Click para editar el % de participación" style="cursor:text;font-size:0.72rem;color:#888;border:1px dashed var(--border);border-radius:8px;padding:1px 7px">${t.porcentaje!=null?t.porcentaje+'% part.':'% part. sin definir'}</span>` : ''}
         </div>
         <div style="display:flex;gap:6px">
           <button class="btn btn-secondary" style="font-size:0.75rem" onclick="abrirFormCuentaInline(${t.id})">＋ Cuenta</button>
@@ -11067,6 +11068,36 @@ async function alternarTipoTitular(id) {
     toast(`Ahora es "${nuevoTipo === 'negocio' ? 'el negocio' : 'un socio'}" ✓`);
     await cargarYRenderTitulares();
   } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function activarEdicionPorcentaje(id) {
+  const el = document.getElementById(`titular-pct-${id}`);
+  if (!el || el.dataset.editando) return;
+  const original = el.dataset.original || '';
+  el.dataset.editando = '1';
+  el.outerHTML = `<input id="titular-pct-${id}" type="number" min="0" max="100" step="0.01" value="${original}" placeholder="%" style="width:70px;font-size:0.8rem;padding:2px 6px;border:1.5px solid var(--accent);border-radius:6px;font-family:'DM Sans',sans-serif">`;
+  const input = document.getElementById(`titular-pct-${id}`);
+  input.focus();
+  input.select();
+  let cancelado = false;
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
+    if (ev.key === 'Escape') { cancelado = true; input.blur(); }
+  });
+  input.addEventListener('blur', () => guardarEdicionPorcentaje(id, cancelado));
+}
+
+async function guardarEdicionPorcentaje(id, cancelado) {
+  const input = document.getElementById(`titular-pct-${id}`);
+  if (!input) return;
+  if (cancelado) { await cargarYRenderTitulares(); return; }
+  const valor = input.value.trim();
+  const porcentaje = valor === '' ? null : Math.max(0, Math.min(100, parseFloat(valor)));
+  try {
+    await sbPatch('caja_titulares', id, { porcentaje });
+    toast('% de participación actualizado ✓');
+    await cargarYRenderTitulares();
+  } catch(e) { toast('Error al guardar: ' + e.message, 'error'); }
 }
 
 async function guardarTitular() {
@@ -11506,6 +11537,40 @@ function setRangoCierre(atajo) {
   renderCierreMensual();
 }
 
+// Reparte el total adeudado/a favor entre los socios según su % de
+// participación (o partes iguales si todavía no se cargó ningún %), y arma
+// las transferencias DIRECTAS entre socios necesarias para que cada uno
+// termine en su parte justa — sin necesidad de pasar por el negocio, y sin
+// cambiar el total que en algún momento haya que saldar con él.
+function calcularCompensacion(filasSocios, nombreNegocio) {
+  if (!filasSocios.length) return { transferencias: [], objetivos: [], pesosFaltantes: false };
+  const totalNeto = filasSocios.reduce((s,f) => s + f.neto, 0);
+  const todosConPorcentaje = filasSocios.every(f => f.titular.porcentaje != null);
+  let pesos;
+  if (todosConPorcentaje) {
+    const sumaPct = filasSocios.reduce((s,f) => s + f.titular.porcentaje, 0) || 1;
+    pesos = filasSocios.map(f => f.titular.porcentaje / sumaPct);
+  } else {
+    pesos = filasSocios.map(() => 1 / filasSocios.length); // partes iguales por defecto
+  }
+  const objetivos = filasSocios.map((f, i) => ({ nombre: f.titular.nombre, objetivo: Math.round(totalNeto * pesos[i] * 100) / 100 }));
+  const desvios = filasSocios.map((f, i) => ({ nombre: f.titular.nombre, monto: Math.round((f.neto - objetivos[i].objetivo) * 100) / 100 }));
+
+  const deudores = desvios.filter(d => d.monto > 0.01).map(d => ({...d})).sort((a,b) => b.monto - a.monto);
+  const acreedores = desvios.filter(d => d.monto < -0.01).map(d => ({ nombre: d.nombre, monto: -d.monto })).sort((a,b) => b.monto - a.monto);
+  const transferencias = [];
+  while (deudores.length && acreedores.length) {
+    const d = deudores[0], a = acreedores[0];
+    const monto = Math.min(d.monto, a.monto);
+    transferencias.push({ de: d.nombre, para: a.nombre, monto });
+    d.monto = Math.round((d.monto - monto) * 100) / 100;
+    a.monto = Math.round((a.monto - monto) * 100) / 100;
+    if (d.monto <= 0.01) deudores.shift();
+    if (a.monto <= 0.01) acreedores.shift();
+  }
+  return { transferencias, objetivos, pesosFaltantes: !todosConPorcentaje };
+}
+
 function renderCierreMensual() {
   const desde = document.getElementById('caja-cierre-desde').value;
   const hasta = document.getElementById('caja-cierre-hasta').value;
@@ -11587,10 +11652,34 @@ function renderCierreMensual() {
       </table>
     </div>
 
-    <div style="background:#f7f7f7;border-radius:10px;padding:1rem 1.25rem;font-size:0.85rem;color:#666">
+    <div style="background:#f7f7f7;border-radius:10px;padding:1rem 1.25rem;font-size:0.85rem;color:#666;margin-bottom:1.25rem">
       Este totalizado suma todos los movimientos del rango elegido (${desde||'el inicio'} → ${hasta||'hoy'}), sin importar si ya hiciste un cierre antes o no — podés usarlo para un mes completo, un tramo cualquiera, o todo el historial acumulado.
-      El reparto final entre socios (quién le transfiere a quién, o si conviene resolverlo con un solo retiro) todavía no está armado — lo diseñamos juntos con casos reales, como quedamos.
     </div>
+
+    ${(() => {
+      const bloques = Object.keys(totalesPorMoneda).sort().map(moneda => {
+        const filasSocios = filas.filter(f => f.moneda === moneda && f.titular.tipo === 'socio');
+        if (filasSocios.length < 2) return '';
+        const { transferencias, objetivos, pesosFaltantes } = calcularCompensacion(filasSocios, nombreNegocio);
+        if (!transferencias.length) return '';
+        return `
+        <div style="background:#e8f5e9;border-radius:10px;padding:1rem 1.25rem;margin-bottom:1rem">
+          <div style="font-weight:700;margin-bottom:0.5rem">💸 Compensación sugerida entre socios ${moneda!=='ARS'?'('+moneda+')':''}</div>
+          <div style="font-size:0.78rem;color:#666;margin-bottom:0.6rem">
+            Reparte lo que hoy está desparejo entre socios, para que cada uno termine debiendo (o teniendo a favor) su parte justa${pesosFaltantes?' — repartido en partes iguales porque todavía no cargaste el % de participación de cada socio (click sobre "% part. sin definir" en Titulares)':' según el % de participación de cada uno'}. Esto no salda nada con ${nombreNegocio.replace(/</g,'&lt;')} — solo empareja entre los socios.
+          </div>
+          ${transferencias.map((t,i) => `
+            <div style="padding:5px 0;${i>0?'border-top:1px solid #cde8ce;':''}font-size:0.9rem">
+              <strong>${t.de.replace(/</g,'&lt;')}</strong> le transfiere <strong>${moneda!=='ARS'?moneda+' ':''}${formatMoney(t.monto)}</strong> a <strong>${t.para.replace(/</g,'&lt;')}</strong>
+            </div>`).join('')}
+          <div style="font-size:0.75rem;color:#888;margin-top:0.6rem;border-top:1px solid #cde8ce;padding-top:0.5rem">Después de esto, cada socio le quedaría debiendo a ${nombreNegocio.replace(/</g,'&lt;')}: ${objetivos.map(o=>`${o.nombre} ${moneda!=='ARS'?moneda+' ':''}${formatMoney(o.objetivo)}`).join(' · ')}</div>
+        </div>`;
+      }).filter(Boolean);
+      if (!bloques.length) {
+        return `<div style="background:#e8f5e9;border-radius:10px;padding:1rem 1.25rem;font-size:0.9rem">✓ Los socios ya están parejos entre sí — ninguna transferencia necesaria.</div>`;
+      }
+      return bloques.join('');
+    })()}
   `;
 }
 
