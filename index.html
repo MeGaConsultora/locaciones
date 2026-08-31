@@ -310,6 +310,7 @@
        angostos y Cuenta más ancho (para no cortar el nombre de la cuenta),
        pero en celular se apila todo parejo como el resto de los formularios. */
     #caja-form-nuevo-grid { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
+    .caja-transferencia-row { grid-template-columns:1fr !important; }
 
     /* Tablas: scroll horizontal en vez de desbordar la pantalla */
     .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; max-width:100%; }
@@ -955,12 +956,13 @@
           <option value="">Todos los titulares</option>
         </select>
         <button class="btn btn-primary" onclick="abrirNuevoMovimientoCaja()" style="margin-left:auto">+ Nuevo movimiento</button>
+        <button class="btn btn-secondary" onclick="abrirTransferenciaCaja()">⇄ Transferencia entre titulares</button>
       </div>
 
       <div id="caja-resumen-cuentas" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;margin-bottom:1rem"></div>
 
       <div id="caja-form-nuevo" style="display:none;background:#f7f7f7;border-radius:10px;padding:1rem;margin-bottom:1rem">
-        <div id="caja-form-nuevo-grid" style="display:grid;grid-template-columns:150px 100px 1fr 1.5fr 0.8fr 110px;gap:0.75rem;margin-bottom:0.75rem">
+        <div id="caja-form-nuevo-grid" style="display:grid;grid-template-columns:150px 100px 1fr 1.5fr 80px 0.8fr 110px;gap:0.75rem;margin-bottom:0.75rem">
           <div class="form-group">
             <label>Fecha</label>
             <input type="date" id="cm-fecha">
@@ -980,8 +982,16 @@
           </div>
           <div class="form-group">
             <label>Cuenta <span style="font-weight:400;color:#aaa">(opcional)</span></label>
-            <select id="cm-cuenta-id">
+            <select id="cm-cuenta-id" onchange="autocompletarMonedaDeCuenta('cm-cuenta-id','cm-moneda')">
               <option value="">Sin especificar</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Moneda</label>
+            <select id="cm-moneda">
+              <option value="ARS">ARS</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
             </select>
           </div>
           <div class="form-group">
@@ -995,6 +1005,7 @@
               <option value="Impuestos">Impuestos</option>
               <option value="Retiro socio">Retiro socio</option>
               <option value="Aporte socio">Aporte socio</option>
+              <option value="Transferencia entre titulares">Transferencia entre titulares</option>
               <option value="__otro__">Otro (especificar)</option>
             </select>
             <input type="text" id="cm-categoria-otro" placeholder="Especificar categoría..." style="display:none;margin-top:6px">
@@ -1011,6 +1022,71 @@
         <div style="display:flex;gap:0.5rem">
           <button class="btn btn-primary" onclick="guardarMovimientoCaja()">Guardar</button>
           <button class="btn btn-secondary" onclick="document.getElementById('caja-form-nuevo').style.display='none'">Cancelar</button>
+        </div>
+      </div>
+
+      <!-- Transferencia entre titulares: genera dos movimientos a la vez
+           (egreso en origen + ingreso en destino), para que los asientos
+           queden siempre completos de los dos lados. -->
+      <div id="caja-form-transferencia" style="display:none;background:#f7f7f7;border-radius:10px;padding:1rem;margin-bottom:1rem">
+        <div class="section-title" style="margin-bottom:0.75rem">⇄ Transferencia entre titulares</div>
+        <div class="caja-transferencia-row" style="display:grid;grid-template-columns:130px 1fr 1.3fr;gap:0.75rem;margin-bottom:0.75rem">
+          <div class="form-group"><label>Fecha</label><input type="date" id="tr-fecha"></div>
+          <div class="form-group">
+            <label>Origen (sale de acá)</label>
+            <select id="tr-titular-origen" onchange="actualizarCuentasTransferencia('origen')">
+              <option value="">Seleccioná un titular...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Cuenta origen <span style="font-weight:400;color:#aaa">(opcional)</span></label>
+            <select id="tr-cuenta-origen" onchange="autocompletarMonedaDeCuenta('tr-cuenta-origen','tr-moneda')">
+              <option value="">Sin especificar</option>
+            </select>
+          </div>
+        </div>
+        <div class="caja-transferencia-row" style="display:grid;grid-template-columns:130px 1fr 1.3fr;gap:0.75rem;margin-bottom:0.75rem">
+          <div class="form-group"></div>
+          <div class="form-group">
+            <label>Destino (entra acá)</label>
+            <select id="tr-titular-destino" onchange="actualizarCuentasTransferencia('destino')">
+              <option value="">Seleccioná un titular...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Cuenta destino <span style="font-weight:400;color:#aaa">(opcional)</span></label>
+            <select id="tr-cuenta-destino" onchange="autocompletarMonedaDeCuenta('tr-cuenta-destino','tr-moneda')">
+              <option value="">Sin especificar</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;margin-bottom:0.75rem">
+          <div class="form-group">
+            <label>Tipo</label>
+            <select id="tr-tipo">
+              <option value="Efectivo">Efectivo</option>
+              <option value="Transferencia bancaria">Transferencia bancaria</option>
+              <option value="Cheque">Cheque</option>
+              <option value="Billetera virtual">Billetera virtual</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Moneda</label>
+            <select id="tr-moneda">
+              <option value="ARS">ARS</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Monto</label><input type="number" id="tr-monto" placeholder="0"></div>
+        </div>
+        <div class="form-group" style="margin-bottom:0.75rem">
+          <label>Concepto / descripción</label>
+          <input type="text" id="tr-concepto" placeholder="Ej: Retiro de Hugo de la caja de MeGa">
+        </div>
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn btn-primary" onclick="guardarTransferenciaCaja()">Guardar transferencia</button>
+          <button class="btn btn-secondary" onclick="document.getElementById('caja-form-transferencia').style.display='none'">Cancelar</button>
         </div>
       </div>
 
@@ -11183,9 +11259,21 @@ function abrirNuevoMovimientoCaja() {
   document.getElementById('cm-concepto').value = '';
   document.getElementById('cm-categoria-otro').value = '';
   document.getElementById('cm-categoria-otro').style.display = 'none';
+  document.getElementById('cm-moneda').value = 'ARS';
   poblarSelectTitularMovimiento();
   document.getElementById('cm-titular').value = '';
   document.getElementById('cm-cuenta-id').innerHTML = '<option value="">Sin especificar</option>';
+}
+
+// Al elegir una cuenta puntual, autocompletar el select de moneda con la
+// moneda de esa cuenta — igual sigue siendo editable después, por si hace
+// falta un ajuste manual.
+function autocompletarMonedaDeCuenta(selCuentaId, selMonedaId) {
+  const cuentaId = parseInt(document.getElementById(selCuentaId)?.value);
+  const selMoneda = document.getElementById(selMonedaId);
+  if (!cuentaId || !selMoneda) return;
+  const c = CAJA_CUENTAS.find(x => x.id === cuentaId);
+  if (c?.moneda) selMoneda.value = c.moneda;
 }
 
 async function guardarMovimientoCaja() {
@@ -11193,6 +11281,7 @@ async function guardarMovimientoCaja() {
   const tipo = document.getElementById('cm-tipo').value;
   const titular_id = parseInt(document.getElementById('cm-titular').value) || null;
   const cuenta_id = parseInt(document.getElementById('cm-cuenta-id').value) || null;
+  const moneda = document.getElementById('cm-moneda').value || 'ARS';
   const catSelect = document.getElementById('cm-categoria').value;
   const categoria = catSelect === '__otro__' ? (document.getElementById('cm-categoria-otro').value.trim() || 'Otro') : catSelect;
   const monto = parseMonto(document.getElementById('cm-monto').value);
@@ -11203,13 +11292,87 @@ async function guardarMovimientoCaja() {
   if (!monto || monto <= 0) { toast('Ingresá un monto válido', 'error'); return; }
 
   try {
-    const nuevo = await sbPost('caja_movimientos', { fecha, tipo, titular_id, cuenta_id, categoria, concepto, monto });
+    const nuevo = await sbPost('caja_movimientos', { fecha, tipo, titular_id, cuenta_id, moneda, categoria, concepto, monto });
     if (nuevo && nuevo[0]) CAJA_MOVIMIENTOS.unshift(nuevo[0]);
     document.getElementById('caja-form-nuevo').style.display = 'none';
     toast('Movimiento guardado ✓');
     renderCajaMovimientos();
   } catch(e) {
     console.error('Error guardando movimiento de caja:', e);
+    toast('Error al guardar: ' + e.message, 'error');
+  }
+}
+
+// ============================================================
+// TRANSFERENCIA ENTRE TITULARES — genera los DOS movimientos que
+// corresponden a un mismo hecho económico (ej: Hugo retira efectivo de la
+// caja de MeGa): un egreso del lado de origen y un ingreso del lado de
+// destino, siempre por el mismo importe/moneda, para que los asientos
+// queden completos de los dos lados sin depender de acordarse de cargar
+// la segunda mitad a mano.
+// ============================================================
+function abrirTransferenciaCaja() {
+  document.getElementById('caja-form-transferencia').style.display = 'block';
+  document.getElementById('tr-fecha').value = TODAY;
+  document.getElementById('tr-monto').value = '';
+  document.getElementById('tr-concepto').value = '';
+  document.getElementById('tr-moneda').value = 'ARS';
+  document.getElementById('tr-tipo').value = 'Efectivo';
+  const activos = CAJA_TITULARES.filter(t => t.activo !== false);
+  const opts = '<option value="">Seleccioná un titular...</option>' + activos.map(t => `<option value="${t.id}">${(t.nombre||'').replace(/</g,'&lt;')}</option>`).join('');
+  document.getElementById('tr-titular-origen').innerHTML = opts;
+  document.getElementById('tr-titular-destino').innerHTML = opts;
+  document.getElementById('tr-cuenta-origen').innerHTML = '<option value="">Sin especificar</option>';
+  document.getElementById('tr-cuenta-destino').innerHTML = '<option value="">Sin especificar</option>';
+}
+
+function actualizarCuentasTransferencia(lado) {
+  const titularId = parseInt(document.getElementById(`tr-titular-${lado}`)?.value);
+  const selCuenta = document.getElementById(`tr-cuenta-${lado}`);
+  if (!selCuenta) return;
+  const cuentas = CAJA_CUENTAS.filter(c => c.titular_id === titularId && c.activo !== false);
+  selCuenta.innerHTML = '<option value="">Sin especificar</option>' + cuentas.map(c => {
+    const label = `${c.tipo}${c.nombre ? ' — '+c.nombre : ''} (${c.moneda||'ARS'})`;
+    return `<option value="${c.id}">${label.replace(/</g,'&lt;')}</option>`;
+  }).join('');
+}
+
+async function guardarTransferenciaCaja() {
+  const fecha = document.getElementById('tr-fecha').value;
+  const origenTitular = parseInt(document.getElementById('tr-titular-origen').value) || null;
+  const destinoTitular = parseInt(document.getElementById('tr-titular-destino').value) || null;
+  const origenCuenta = parseInt(document.getElementById('tr-cuenta-origen').value) || null;
+  const destinoCuenta = parseInt(document.getElementById('tr-cuenta-destino').value) || null;
+  const tipoMov = document.getElementById('tr-tipo').value;
+  const moneda = document.getElementById('tr-moneda').value || 'ARS';
+  const monto = parseMonto(document.getElementById('tr-monto').value);
+  const conceptoBase = document.getElementById('tr-concepto').value.trim();
+
+  if (!fecha) { toast('Elegí una fecha', 'error'); return; }
+  if (!origenTitular || !destinoTitular) { toast('Elegí origen y destino', 'error'); return; }
+  if (origenTitular === destinoTitular && origenCuenta === destinoCuenta) { toast('Origen y destino no pueden ser la misma cuenta', 'error'); return; }
+  if (!monto || monto <= 0) { toast('Ingresá un monto válido', 'error'); return; }
+
+  const nombreOrigen = CAJA_TITULARES.find(t => t.id === origenTitular)?.nombre || '';
+  const nombreDestino = CAJA_TITULARES.find(t => t.id === destinoTitular)?.nombre || '';
+  const concepto = conceptoBase || `Transferencia ${tipoMov.toLowerCase()}: ${nombreOrigen} → ${nombreDestino}`;
+
+  try {
+    const egreso = await sbPost('caja_movimientos', {
+      fecha, tipo: 'egreso', titular_id: origenTitular, cuenta_id: origenCuenta, moneda,
+      categoria: 'Transferencia entre titulares', concepto: `${concepto} (${tipoMov})`, monto
+    });
+    const ingreso = await sbPost('caja_movimientos', {
+      fecha, tipo: 'ingreso', titular_id: destinoTitular, cuenta_id: destinoCuenta, moneda,
+      categoria: 'Transferencia entre titulares', concepto: `${concepto} (${tipoMov})`, monto
+    });
+    if (egreso?.[0]) CAJA_MOVIMIENTOS.unshift(egreso[0]);
+    if (ingreso?.[0]) CAJA_MOVIMIENTOS.unshift(ingreso[0]);
+    document.getElementById('caja-form-transferencia').style.display = 'none';
+    toast('Transferencia registrada ✓ (2 movimientos)');
+    renderCajaMovimientos();
+  } catch(e) {
+    console.error('Error guardando transferencia de caja:', e);
     toast('Error al guardar: ' + e.message, 'error');
   }
 }
@@ -11242,6 +11405,7 @@ function etiquetaMovimientoCaja(m) {
 // cargarlo; si no se especificó cuenta, se asume ARS (la moneda por
 // defecto del negocio) — importante para nunca sumar pesos con dólares.
 function monedaDelMovimiento(m) {
+  if (m.moneda) return m.moneda;
   if (m.cuenta_id) {
     const c = CAJA_CUENTAS.find(x => x.id === m.cuenta_id);
     if (c?.moneda) return c.moneda;
