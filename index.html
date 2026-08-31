@@ -1430,26 +1430,33 @@ let vencFiltro = '30';
 // LOAD DATA
 // ============================================================
 async function loadAll() {
-  // Verify user is still approved on every loadAll
+  // Verify user is still approved on every loadAll.
+  // IMPORTANTE: este chequeo es secundario/informativo — nunca debe tener
+  // el poder de disparar sesionExpirada() ni de tocar el refresh_token. Por
+  // eso usa un fetch aislado (no sbFetch: eso encadenaría el chequeo con
+  // toda la maquinaria de renovación/cierre de sesión, y como loadAll() se
+  // llama muy seguido, alcanzaba con UN 401 pasajero acá para terminar
+  // cerrando la sesión entera). Solo actúa si la consulta salió
+  // REALMENTE bien (200 OK) y confirma que la cuenta no está aprobada —
+  // cualquier otro resultado (token vencido, sin conexión, lo que sea) se
+  // ignora en silencio, sin tocar nada de la sesión.
   if (currentUser?.email && currentUsuario) {
     try {
-      // Antes esto usaba un fetch directo, sin pasar por sbFetch — si el
-      // token estaba por vencer justo en ese instante, la consulta fallaba
-      // (401) y el código lo malinterpretaba como "la cuenta ya no existe o
-      // no está aprobada", cerrando la sesión de golpe con un mensaje
-      // equivocado. Ahora usa sbFetch (que ya renueva el token si hace
-      // falta) y solo trata como "dada de baja" una respuesta realmente
-      // exitosa que lo confirme — cualquier otro error técnico simplemente
-      // se ignora acá (sbFetch ya se encarga de la sesión si corresponde).
-      const r = await sbFetch(`${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(currentUser.email)}&select=aprobado`);
-      const us = await r.json();
-      if (Array.isArray(us) && (!us.length || !us[0].aprobado)) {
-        localStorage.removeItem('sb_token'); localStorage.removeItem('sb_uid'); localStorage.removeItem('sb_email'); localStorage.removeItem('sb_refresh_token');
-        showLoginMsg('login', 'Tu cuenta ha sido dada de baja.', 'error');
-        showLoginScreen(); return;
+      const r = await fetch(`${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(currentUser.email)}&select=aprobado`, {
+        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${currentUser.token}` }
+      });
+      if (r.ok) {
+        const us = await r.json();
+        if (Array.isArray(us) && (!us.length || !us[0].aprobado)) {
+          localStorage.removeItem('sb_token'); localStorage.removeItem('sb_uid'); localStorage.removeItem('sb_email'); localStorage.removeItem('sb_refresh_token');
+          showLoginMsg('login', 'Tu cuenta ha sido dada de baja.', 'error');
+          showLoginScreen(); return;
+        }
       }
+      // r.ok === false (401, 500, etc.) → no se puede confiar en la
+      // respuesta para decidir nada, así que no se hace absolutamente nada.
     } catch(e) {
-      console.warn('No se pudo verificar la aprobación de la cuenta (se sigue con los datos actuales):', e);
+      // Sin conexión u otro error de red — tampoco se hace nada acá.
     }
   }
   document.getElementById('sync-status').textContent = 'Actualizando...';
