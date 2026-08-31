@@ -1254,7 +1254,7 @@ async function refreshAdminToken() {
   if (_refrescandoTokenPromise) return _refrescandoTokenPromise;
   _refrescandoTokenPromise = (async () => {
     const refreshTk = localStorage.getItem('sb_refresh_token');
-    if (!refreshTk) return false;
+    if (!refreshTk) { sesionExpirada('refreshAdminToken: no había ningún refresh_token guardado en localStorage'); return false; }
 
     const intentarUnaVez = async () => {
       const r = await fetch(`${SB_AUTH_URL}/token?grant_type=refresh_token`, {
