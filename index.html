@@ -1486,6 +1486,11 @@ async function loadAll() {
     try {
       DB_SUMINISTROS = await sbGet('contrato_suministros', 'select=*&order=contrato_id.asc,orden.asc');
     } catch(e) { console.error('Error loading suministros:', e); DB_SUMINISTROS = []; }
+    // Titulares/cuentas de Caja — se cargan siempre acá (no solo al entrar a
+    // la pestaña Caja) para que estén disponibles también en "Ingresar
+    // Pago", donde se puede elegir un titular/cuenta para registrar el
+    // cobro automáticamente en Caja.
+    try { await cargarCajaTitularesYCuentas(); } catch(e) { console.error('Error loading titulares/cuentas de caja:', e); }
     document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR', {timeZone:'America/Argentina/Buenos_Aires'})}`;
     populateFiltros();
     await loadPersonas();
@@ -5586,6 +5591,24 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
           <div id="gp-acuenta-desglose" style="display:none;margin-top:6px;font-size:0.78rem;color:#856404;background:#fffbea;border:1px solid #f0d060;border-radius:6px;padding:6px 10px;line-height:1.6"></div>
         </div>
       </div>
+      <div style="margin-top:0.75rem;padding:0.75rem;background:#f0f7f4;border:1px solid #cde8ce;border-radius:8px">
+        <div style="font-size:0.82rem;font-weight:600;color:#2d6a4f;margin-bottom:6px">💰 Registrar en Caja</div>
+        <div style="display:grid;grid-template-columns:1fr 1.3fr;gap:0.5rem">
+          <div class="form-group" style="margin-bottom:0">
+            <label style="font-size:0.72rem">Titular</label>
+            <select id="gp-caja-titular" onchange="actualizarCuentasCajaGP()">
+              <option value="">Seleccioná un titular...</option>
+              ${CAJA_TITULARES.filter(t => t.activo !== false).map(t => `<option value="${t.id}">${(t.nombre||'').replace(/</g,'&lt;')}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label style="font-size:0.72rem">Cuenta <span style="font-weight:400;color:#aaa">(opcional)</span></label>
+            <select id="gp-caja-cuenta-id">
+              <option value="">Sin especificar</option>
+            </select>
+          </div>
+        </div>
+      </div>
       <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem;font-size:1rem">
         <span>Total a cobrar:</span>
         <span id="gp-total-cobro" style="color:var(--green)">—</span>
@@ -7359,6 +7382,13 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
       return { id: idExtra, signo, monto, label };
     });
   const montoExtrasChk = extrasChkDetalle.reduce((s, e) => s + (e.signo * e.monto), 0);
+  // Titular/cuenta de Caja elegido (opcional) — si se especificó, se
+  // registran automáticamente los movimientos de Caja correspondientes al
+  // confirmar el cobro, sin tener que cargarlos de nuevo a mano ahí.
+  const cajaTitularId = parseInt(document.getElementById('gp-caja-titular')?.value) || null;
+  const cajaCuentaId = parseInt(document.getElementById('gp-caja-cuenta-id')?.value) || null;
+  const cajaMoneda = cajaCuentaId ? (CAJA_CUENTAS.find(c => c.id === cajaCuentaId)?.moneda || 'ARS') : 'ARS';
+  if (!cajaTitularId) { _ventanaRecibo?.close(); toast('Elegí un titular en "Registrar en Caja" para poder confirmar el cobro','error'); return; }
   // Los intereses también son un concepto separado — no se distribuyen en ítems regulares
   // Si el interés viene del desglose del pago a cuenta, ya está separado en interesDesdeACuenta
   const interesValDistrib = interesDesdeACuenta > 0 ? interesDesdeACuenta : 
@@ -7558,6 +7588,15 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
         concepto: itemsMovimiento.map(i => i.label).join(', '),
         items: JSON.stringify(itemsMovimiento)
       });
+      // Registro automático en Caja (opcional) — solo si se eligió un titular.
+      if (cajaTitularId && montoEsteMovimiento > 0.004) {
+        try {
+          await sbPost('caja_movimientos', {
+            fecha: fechaMovimiento, tipo: 'ingreso', titular_id: cajaTitularId, cuenta_id: cajaCuentaId, moneda: cajaMoneda,
+            categoria: 'Cobro alquiler', concepto: `${itemsMovimiento.map(i=>i.label).join(', ')} — ${c?.titulo||hoja}`, monto: montoEsteMovimiento
+          });
+        } catch(e) { console.warn('No se pudo registrar el cobro en Caja:', e); }
+      }
     }
     // Marcar cada extra tildado como efectivamente cobrado — esto es lo que
     // hace que, de acá en más, "Ingresar Pago" deje de ofrecerlo como
@@ -7615,6 +7654,14 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
           concepto: 'Honorarios',
           items: JSON.stringify([{ label: 'Honorarios', monto: honMonto, cuotas: cuotasAfectadas }])
         });
+        if (cajaTitularId) {
+          try {
+            await sbPost('caja_movimientos', {
+              fecha: fechaMovimiento, tipo: 'ingreso', titular_id: cajaTitularId, cuenta_id: cajaCuentaId, moneda: cajaMoneda,
+              categoria: 'Honorarios', concepto: `Honorarios — ${c?.titulo||hoja}`, monto: honMonto
+            });
+          } catch(e) { console.warn('No se pudo registrar honorarios en Caja:', e); }
+        }
       } catch(e) { console.warn('movimientos_pagos honorarios:', e); }
     }
   }
@@ -11278,6 +11325,17 @@ function actualizarCuentasDelTitularMovimiento() {
   }).join('');
 }
 
+function actualizarCuentasCajaGP() {
+  const titularId = parseInt(document.getElementById('gp-caja-titular')?.value);
+  const selCuenta = document.getElementById('gp-caja-cuenta-id');
+  if (!selCuenta) return;
+  const cuentas = CAJA_CUENTAS.filter(c => c.titular_id === titularId && c.activo !== false);
+  selCuenta.innerHTML = '<option value="">Sin especificar</option>' + cuentas.map(c => {
+    const label = `${c.tipo}${c.nombre ? ' — '+c.nombre : ''} (${c.moneda||'ARS'})`;
+    return `<option value="${c.id}">${label.replace(/</g,'&lt;')}</option>`;
+  }).join('');
+}
+
 async function cargarCajaMovimientos() {
   try {
     CAJA_MOVIMIENTOS = await sbGetAll('caja_movimientos', 'select=*&order=fecha.desc,id.desc');
@@ -11520,7 +11578,7 @@ function renderCajaMovimientos() {
           <td style="padding:7px 10px">${etiquetaMovimientoCaja(m)}</td>
           <td style="padding:7px 10px">${m.categoria||'—'}</td>
           <td style="padding:7px 10px;color:#666">${m.concepto||'—'}</td>
-          <td style="padding:7px 10px;text-align:right;font-weight:600;color:${esIngreso?'var(--green)':'var(--accent)'}">${esIngreso?'+':'-'} ${formatMoney(m.monto)}</td>
+          <td style="padding:7px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${esIngreso?'var(--green)':'var(--accent)'}">${esIngreso?'+':'-'} ${formatMoney(m.monto)}</td>
           <td style="padding:7px 10px;text-align:center"><button onclick="eliminarMovimientoCaja(${m.id})" style="background:none;border:none;color:#c8483a;cursor:pointer;font-size:0.85rem" title="Eliminar">🗑️</button></td>
         </tr>`;
       }).join('')}
