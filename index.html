@@ -11839,12 +11839,29 @@ async function verificarAprobacion() {
     HEADERS['Authorization'] = `Bearer ${currentUser.token}`;
 
     // Check if user exists in usuarios table
-    const r = await fetch(`${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(currentUser.email)}&select=*`, {
+    let r = await fetch(`${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(currentUser.email)}&select=*`, {
       headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${currentUser.token}` }
     });
+    if (r.status === 401 || r.status === 403) {
+      // El token guardado puede haber quedado viejo — esto pasa sobre todo
+      // cuando el navegador "descarta" una pestaña de fondo (para ahorrar
+      // memoria) y al volver a ella la recarga desde cero: en ese momento
+      // corre este chequeo con el token guardado tal cual estaba, sin haber
+      // tenido chance de renovarse antes. Antes esto se interpretaba
+      // directamente como "la cuenta no existe/no está aprobada" y mandaba
+      // a la pantalla de login — ahora primero intenta renovar el token
+      // (con reintentos) antes de sacar esa conclusión.
+      const ok = await refreshAdminToken();
+      if (!ok) return; // refreshAdminToken ya mostró el cartel que corresponda
+      HEADERS['Authorization'] = `Bearer ${currentUser.token}`;
+      r = await fetch(`${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(currentUser.email)}&select=*`, {
+        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${currentUser.token}` }
+      });
+    }
+    if (!r.ok) { showLoginScreen(); return; }
     const usuarios = await r.json();
 
-    if (!usuarios || usuarios.length === 0) {
+    if (!Array.isArray(usuarios) || usuarios.length === 0) {
       showLoginMsg('login', 'Tu cuenta está pendiente de aprobación.', 'warn');
       showLoginScreen();
       return;
