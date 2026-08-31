@@ -1340,13 +1340,13 @@ async function refreshAdminToken() {
   }
 }
 
-// Auto-refresh token every 10 minutes to prevent session expiry
-setInterval(async () => {
-  if (currentUser?.token && localStorage.getItem('sb_refresh_token')) {
-    const ok = await refreshAdminToken();
-    if (ok) console.log('Token renovado automáticamente');
-  }
-}, 10 * 60 * 1000);
+// La renovación proactiva (cada 10 min, o al volver a una pestaña) se sacó
+// del todo — cada disparador "por las dudas" que fuimos agregando terminó
+// siendo una nueva oportunidad para que algo saliera mal (choques entre
+// pestañas, pestañas descartadas por el navegador reapareciendo con datos
+// viejos, etc.). Ahora la renovación ocurre SOLO quando una consulta real
+// falla por sesión vencida (ver sbFetch) — el patrón más simple y menos
+// propenso a errores.
 
 function esErrorJWT(status, texto) {
   return status === 401 || status === 403
@@ -12335,19 +12335,9 @@ setInterval(async () => {
 // refreshAdminToken — había un segundo setInterval acá, redundante, que
 // aumentaba sin necesidad el riesgo de que dos renovaciones chocaran entre sí)
 
-// Refresh token when tab becomes visible again (browser may have paused
-// timers en segundo plano) — pero solo si pasó un buen rato desde la última
-// renovación. Antes esto se disparaba en CADA cambio de pestaña, aunque
-// hubieran pasado solo unos segundos y el token siguiera perfectamente
-// vigente — con varias pestañas abiertas, eso multiplicaba las chances de
-// que dos renovaciones chocaran entre sí (Supabase invalida el refresh_token
-// anterior apenas se usa uno nuevo) y tirara la sesión por vencida en
-// pleno uso activo.
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) return;
-  const ultima = window._ultimaRenovacionToken || 0;
-  if (Date.now() - ultima > 8 * 60 * 1000) refreshAdminToken();
-});
+// El disparador de visibilitychange se sacó del todo (ver nota más arriba,
+// junto al setInterval) — la renovación queda a cargo únicamente de
+// sbFetch, en reacción a una falla real de una consulta concreta.
 
 // ============================================================
 // START
