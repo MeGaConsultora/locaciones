@@ -306,6 +306,11 @@
     .toolbar input, .toolbar select { width:100%; min-width:0; box-sizing:border-box; }
     .toolbar .results-count { flex:0 0 100%; text-align:center; }
 
+    /* Formulario de nuevo movimiento de Caja: en desktop Fecha/Tipo van
+       angostos y Cuenta más ancho (para no cortar el nombre de la cuenta),
+       pero en celular se apila todo parejo como el resto de los formularios. */
+    #caja-form-nuevo-grid { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
+
     /* Tablas: scroll horizontal en vez de desbordar la pantalla */
     .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; max-width:100%; }
     .table-wrap table { min-width:560px; }
@@ -955,7 +960,7 @@
       <div id="caja-resumen-cuentas" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;margin-bottom:1rem"></div>
 
       <div id="caja-form-nuevo" style="display:none;background:#f7f7f7;border-radius:10px;padding:1rem;margin-bottom:1rem">
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.75rem;margin-bottom:0.75rem">
+        <div id="caja-form-nuevo-grid" style="display:grid;grid-template-columns:120px 100px 1fr 1.5fr 1fr 110px;gap:0.75rem;margin-bottom:0.75rem">
           <div class="form-group">
             <label>Fecha</label>
             <input type="date" id="cm-fecha">
