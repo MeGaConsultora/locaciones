@@ -13895,16 +13895,27 @@ async function renderRecibosEmitir() {
   } catch(e) {}
   const pagosBase = DB.pagos.filter(p => {
     if (!p.mes || !p.mes.startsWith(mesKey)) return false;
-    if (!(p.importe_alquiler || 0) > 0) return false;
-    // Sumar creditos del inquilino (descuentos) del mes
     const extrasP = extrasActuales[p.id]||[];
+    // Sumar creditos del inquilino (descuentos) del mes
     const creditosInq = extrasP.reduce((s,e) => {
       if (e.a_cargo_de === 'propietario') return s;
       const importe = parseFloat(e.importe)||0;
       return (e.tipo === 'descuento' || e.tipo === 'credito') ? s + importe : s;
     }, 0);
     // El alquiler se considera cubierto si lo pagado + creditos >= importe_alquiler
-    return (p.pagado_importe || 0) + creditosInq >= (p.importe_alquiler || 0) - 0.01;
+    // (si no hay alquiler cargado este mes —ej: contrato rescindido donde se
+    // reemplazó por una indemnización— no hay nada que "cubrir" por ese lado,
+    // así que no corresponde excluirlo por acá)
+    const alquilerCubierto = !((p.importe_alquiler||0) > 0) || ((p.pagado_importe || 0) + creditosInq >= (p.importe_alquiler || 0) - 0.01);
+    if (!alquilerCubierto) return false;
+    // Si este mes no tiene alquiler cargado, solo tiene sentido mostrarlo acá
+    // si hay algo a cargo del propietario para rendir (ej: un extra
+    // acreditado, como la indemnización) — si no, no hay nada que emitir.
+    if (!((p.importe_alquiler||0) > 0)) {
+      const tieneExtraProp = extrasP.some(e => (e.a_cargo_de === 'propietario' || e.propietario_persona_id) && Math.abs(parseFloat(e.importe)||0) > 0.004);
+      if (!tieneExtraProp) return false;
+    }
+    return true;
   });
 
   // Filtro de emisión: para contratos de un solo propietario, el campo de
