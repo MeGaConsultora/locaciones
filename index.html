@@ -11347,7 +11347,7 @@ function actualizarCuentasDelTitularMovimiento() {
 function filaMedioPagoCajaGP(idx) {
   const opcionesTitular = CAJA_TITULARES.filter(t => t.activo !== false).map(t => `<option value="${t.id}">${(t.nombre||'').replace(/</g,'&lt;')}</option>`).join('');
   return `
-    <div id="gp-caja-fila-${idx}" style="display:grid;grid-template-columns:1fr 1.3fr 100px 26px;gap:0.5rem;margin-bottom:0.5rem;align-items:end">
+    <div id="gp-caja-fila-${idx}" style="display:grid;grid-template-columns:1fr 1fr 140px 26px;gap:0.5rem;margin-bottom:0.5rem;align-items:end">
       <div class="form-group" style="margin-bottom:0">
         <label style="font-size:0.72rem">Titular</label>
         <select id="gp-caja-titular-${idx}" onchange="actualizarCuentasCajaGP(${idx})">
@@ -11356,14 +11356,14 @@ function filaMedioPagoCajaGP(idx) {
         </select>
       </div>
       <div class="form-group" style="margin-bottom:0">
-        <label style="font-size:0.72rem">Cuenta <span style="font-weight:400;color:#aaa">(opcional)</span></label>
+        <label style="font-size:0.72rem">Cuenta <span style="font-weight:400;color:#aaa">(opc.)</span></label>
         <select id="gp-caja-cuenta-${idx}">
           <option value="">Sin especificar</option>
         </select>
       </div>
       <div class="form-group" style="margin-bottom:0">
         <label style="font-size:0.72rem">Monto</label>
-        <input type="number" id="gp-caja-monto-${idx}" placeholder="0" oninput="actualizarTotalCheckCajaGP()">
+        <input type="number" id="gp-caja-monto-${idx}" placeholder="0" data-auto="1" oninput="this.dataset.auto=''; actualizarTotalCheckCajaGP()">
       </div>
       <button type="button" onclick="eliminarMedioPagoCajaGP(${idx})" title="Quitar" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:1rem;padding-bottom:8px">✕</button>
     </div>`;
@@ -11374,6 +11374,14 @@ function agregarMedioPagoCajaGP() {
   window._gpCajaMedioCount = idx + 1;
   const cont = document.getElementById('gp-caja-medios');
   if (!cont) return;
+  // Si ya había una fila con el total autocompletado (caso de 1 sola fila),
+  // vaciarla al agregar una segunda — ya no corresponde poner el total
+  // completo en una sola, hay que repartir entre las que queden.
+  if (idx > 0) {
+    document.querySelectorAll('[id^="gp-caja-monto-"]').forEach(inp => {
+      if (inp.dataset.auto) inp.value = '';
+    });
+  }
   cont.insertAdjacentHTML('beforeend', filaMedioPagoCajaGP(idx));
   actualizarTotalCheckCajaGP();
 }
@@ -11413,12 +11421,22 @@ function leerMediosPagoCajaGP() {
 function actualizarTotalCheckCajaGP() {
   const el = document.getElementById('gp-caja-total-check');
   if (!el) return;
-  const filas = leerMediosPagoCajaGP();
-  const totalMedios = filas.reduce((s,f) => s + f.monto, 0);
   const totalCobroEl = document.getElementById('gp-total-cobro');
   // El total a cobrar se muestra como texto formateado ($ 1.234,56) — parsear de nuevo para comparar
   const totalCobroTexto = totalCobroEl?.textContent || '';
   const totalCobro = parseFloat(totalCobroTexto.replace(/[^\d,.-]/g,'').replace(/\./g,'').replace(',','.')) || 0;
+
+  // Si hay una sola fila y todavía no se tocó a mano, autocompletarla con el
+  // total a cobrar (el caso más habitual) — se puede editar libremente después.
+  const filasEl = document.querySelectorAll('[id^="gp-caja-fila-"]');
+  if (filasEl.length === 1) {
+    const idx = filasEl[0].id.replace('gp-caja-fila-', '');
+    const montoInput = document.getElementById(`gp-caja-monto-${idx}`);
+    if (montoInput?.dataset.auto) montoInput.value = totalCobro > 0 ? totalCobro : '';
+  }
+
+  const filas = leerMediosPagoCajaGP();
+  const totalMedios = filas.reduce((s,f) => s + f.monto, 0);
   const diff = Math.round((totalCobro - totalMedios) * 100) / 100;
   if (Math.abs(diff) < 0.01) {
     el.style.color = 'var(--green)';
