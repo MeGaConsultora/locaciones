@@ -11402,6 +11402,7 @@ function actualizarCuentasCajaGP(idx) {
     const label = `${c.tipo}${c.nombre ? ' — '+c.nombre : ''} (${c.moneda||'ARS'})`;
     return `<option value="${c.id}">${label.replace(/</g,'&lt;')}</option>`;
   }).join('');
+  actualizarTotalCheckCajaGP();
 }
 
 // Devuelve las filas cargadas (con titular elegido), leyendo todos los
