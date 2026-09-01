@@ -5605,7 +5605,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       <div class="form-actions" style="justify-content:space-between">
         ${((p.total||0) > (p.saldo||0) || (p.pagado && p.pagado !== '0')) ? `<button class="btn btn-secondary" style="color:var(--accent);border-color:var(--accent)" onclick="revertirCobro('${hoja}',${contratoId},'${mesKey}',${comisionPct})">↩ Revertir cobro</button>` : '<div></div>'}
         <button class="btn btn-secondary" onclick="verDetalleDeuda('${hoja}',${contratoId},'${mesKey}',document.getElementById('gp-interes-chk')?.checked||false,document.getElementById('gp-fecha-pago')?.value,obtenerChecksCobroGP())" style="margin-right:0.5rem">📋 Detalle de deuda</button>
-        <button class="btn btn-green" style="white-space:normal;text-align:center" onclick="confirmarCobroInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct})">✓ Confirmar cobro + Imprimir recibo</button>
+        <button class="btn btn-green" style="white-space:normal;text-align:center" onclick="this.disabled=true; this.textContent='Procesando...'; confirmarCobroInquilino('${hoja}',${contratoId},'${mesKey}',${comisionPct}).finally(()=>{this.disabled=false; this.textContent='✓ Confirmar cobro + Imprimir recibo';})">✓ Confirmar cobro + Imprimir recibo</button>
       </div>`}
     </div>
 
@@ -7301,6 +7301,20 @@ async function previsualizarReciboInquilino(hoja, contratoId, mesKey, comisionPc
 }
 
 async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
+  // Envoltorio con manejo de errores: si algo falla en cualquier punto de
+  // la función (algo que no habíamos contemplado), que se vea un aviso claro
+  // y se cierre la ventana del recibo en blanco, en vez de quedar así sin
+  // ninguna explicación — esto pasó una vez y costó bastante diagnosticar.
+  try {
+    await _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPct);
+  } catch(e) {
+    console.error('Error en confirmarCobroInquilino:', e);
+    try { window._gpVentanaReciboActual?.close(); } catch(e2) {}
+    toast('Ocurrió un error al confirmar el cobro: ' + (e.message||e), 'error');
+  }
+}
+
+async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPct) {
   // Abrir la ventana del recibo YA, de forma sincrónica, antes de cualquier
   // espera de red. Si se abre recién al final (después de varios awaits para
   // guardar el pago), el navegador puede dejar de reconocer esto como parte
@@ -7308,6 +7322,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   // blanco (about:blank). Esto pasa sobre todo con conexión lenta/inestable
   // (ej: corte de luz). Se cierra más abajo si no llega a usarse.
   const _ventanaRecibo = window.open('', '_blank');
+  window._gpVentanaReciboActual = _ventanaRecibo;
 
   const mes = mesKey+'-01';
   const hojaEncoded = encodeURIComponent(hoja);
@@ -9816,7 +9831,18 @@ function imprimirRecibo(data, ventanaPreabierta) {
   `;
 
 
-  const ventana = ventanaPreabierta || window.open('', 'Recibo Nº '+String(data.nroMes).padStart(4,'0'));
+  // Si la ventana se pre-abrió al principio (antes de guardar el pago, para
+  // esquivar el bloqueo de pop-ups) pero para cuando llegamos acá ya se
+  // cerró o quedó inválida (conexión lenta, el usuario la cerró sin querer,
+  // etc.), abrir una nueva en vez de fallar silenciosamente dejándola en
+  // blanco — mejor un popup nuevo (que el navegador puede bloquear, pero al
+  // menos avisa) que ninguno.
+  let ventana = ventanaPreabierta;
+  if (ventana) {
+    try { if (ventana.closed) ventana = null; } catch(e) { ventana = null; }
+  }
+  if (!ventana) ventana = window.open('', 'Recibo Nº '+String(data.nroMes).padStart(4,'0'));
+  if (!ventana) { toast('No se pudo abrir la ventana del recibo (¿el navegador bloqueó el pop-up?)', 'error'); return; }
   if (!ventana) { toast('El navegador bloqueó la ventana del recibo. Habilitá pop-ups para este sitio e intentá de nuevo.', 'error'); return; }
   ventana.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8">
