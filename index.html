@@ -1012,7 +1012,7 @@
           </div>
           <div class="form-group">
             <label>Monto</label>
-            <input type="number" id="cm-monto" placeholder="0">
+            <input type="text" inputmode="decimal" id="cm-monto" placeholder="0">
           </div>
         </div>
         <div class="form-group" style="margin-bottom:0.75rem">
@@ -1078,7 +1078,7 @@
               <option value="EUR">EUR</option>
             </select>
           </div>
-          <div class="form-group"><label>Monto</label><input type="number" id="tr-monto" placeholder="0"></div>
+          <div class="form-group"><label>Monto</label><input type="text" inputmode="decimal" id="tr-monto" placeholder="0"></div>
         </div>
         <div class="form-group" style="margin-bottom:0.75rem">
           <label>Concepto / descripción</label>
@@ -11395,7 +11395,7 @@ function filaMedioPagoCajaGP(idx) {
       </div>
       <div class="form-group" style="margin-bottom:0">
         <label style="font-size:0.72rem">Monto</label>
-        <input type="number" id="gp-caja-monto-${idx}" placeholder="0" data-auto="1" oninput="this.dataset.auto=''; actualizarTotalCheckCajaGP()">
+        <input type="text" inputmode="decimal" id="gp-caja-monto-${idx}" placeholder="0" data-auto="1" oninput="this.dataset.auto=''; actualizarTotalCheckCajaGP()">
       </div>
       <button type="button" onclick="eliminarMedioPagoCajaGP(${idx})" title="Quitar" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:1rem;padding-bottom:8px">✕</button>
     </div>`;
