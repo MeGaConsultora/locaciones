@@ -7560,6 +7560,7 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
   });
 
   // Guardar movimiento en historial de transacciones
+  let montoEsteMovimiento = 0;
   try {
     const labelsMap = {alquiler:'Alquiler',epe:'EPE',agua:'Agua',tgiu:'TGIU',seguro:'Seguro',internet:'Internet',expensas:'Expensas'};
     const itemsMovimiento = [];
@@ -7594,7 +7595,7 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
     });
     // El monto total del movimiento tampoco debe incluir lo que se va en
     // cascada al mes siguiente — mismo motivo que arriba.
-    const montoEsteMovimiento = redondear2(Math.max(0, (montoRegular + montoExtrasChk) - excedente));
+    montoEsteMovimiento = redondear2(Math.max(0, (montoRegular + montoExtrasChk) - excedente));
     if (itemsMovimiento.length > 0) {
       await sbPost('movimientos_pagos', {
         pago_id: p.id,
