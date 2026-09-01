@@ -3172,6 +3172,7 @@ async function eliminarMes(pagoId, hoja) {
     // Also delete related extras and movimientos
     try { await sbDeleteWhere('pagos_extras', `pago_id=eq.${pagoId}`); } catch(e) {}
     try { await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${pagoId}`); } catch(e) {}
+    try { await sbDeleteWhere('caja_movimientos', `pago_id=eq.${pagoId}`); } catch(e) {}
     await sbDelete('pagos', pagoId);
     pagosActuales = pagosActuales.filter(p => p.id !== pagoId);
     const c = DB.contratos.find(x => x.hoja === hoja);
@@ -6922,6 +6923,7 @@ async function revertirItem(pagoId, itemId, montoPagado, montoTotal, hoja, contr
     patch.pagado = nuevoSaldo >= (p.total||0) ? '0' : 'PARCIAL';
     await sbPatch('pagos', parseInt(pagoId), patch);
     try { await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${pagoId}`); } catch(e) {}
+    try { await sbDeleteWhere('caja_movimientos', `pago_id=eq.${pagoId}`); } catch(e) {}
     toast(`${itemId} revertido ✓`);
     const c = DB.contratos.find(x => x.id === contratoId);
     if (c) {
@@ -7007,6 +7009,7 @@ async function revertirHonorarios(contratoId, hoja, mesKey, comisionPct) {
       await sbPatch('gastos_inicio_cuotas', cuota.id, { pagado_inquilino: 0 });
       cuota.pagado_inquilino = 0;
       await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${pagoId}&concepto=eq.Honorarios`);
+      try { await sbDeleteWhere('caja_movimientos', `pago_id=eq.${pagoId}&categoria=eq.Honorarios`); } catch(e) {}
       toast('Honorarios de este mes revertidos ✓');
       await editarMesConSolapa(hoja, contratoId, mesKey, 's2');
     } catch(e) { toast('Error: ' + e.message, 'error'); }
@@ -7025,6 +7028,7 @@ async function revertirHonorarios(contratoId, hoja, mesKey, comisionPct) {
       gc.pagado_inquilino = nuevoPagado;
     }
     await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${pagoId}&concepto=eq.Honorarios`);
+      try { await sbDeleteWhere('caja_movimientos', `pago_id=eq.${pagoId}&categoria=eq.Honorarios`); } catch(e) {}
     toast('Honorarios de este mes revertidos ✓');
     await editarMesConSolapa(hoja, contratoId, mesKey, 's2');
   } catch(e) { toast('Error: ' + e.message, 'error'); }
@@ -7066,6 +7070,7 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
       pagado_expensas: 0
     });
     try { await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${p.id}`); } catch(e) {}
+    try { await sbDeleteWhere('caja_movimientos', `pago_id=eq.${p.id}`); } catch(e) {}
 
     // Revertir honorarios: descontar exactamente lo que ESTA transacción aportó
     // a cada cuota (puede haber tocado cuotas de meses anteriores si había
@@ -7664,7 +7669,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
         try {
           await sbPost('caja_movimientos', {
             fecha: fechaMovimiento, tipo: 'ingreso', titular_id: medio.titularId, cuenta_id: medio.cuentaId, moneda: monedaMedio,
-            categoria: 'Cobro alquiler', concepto: `${cajaConceptoAlquiler||'Cobro'} — ${c?.titulo||hoja}`, monto: montoAlquilerMedio
+            categoria: 'Cobro alquiler', concepto: `${cajaConceptoAlquiler||'Cobro'} — ${c?.titulo||hoja}`, monto: montoAlquilerMedio, pago_id: p.id
           });
         } catch(e) { console.warn('No se pudo registrar el cobro en Caja:', e); }
       }
@@ -7672,7 +7677,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
         try {
           await sbPost('caja_movimientos', {
             fecha: fechaMovimiento, tipo: 'ingreso', titular_id: medio.titularId, cuenta_id: medio.cuentaId, moneda: monedaMedio,
-            categoria: 'Honorarios', concepto: `Honorarios — ${c?.titulo||hoja}`, monto: montoHonorariosMedio
+            categoria: 'Honorarios', concepto: `Honorarios — ${c?.titulo||hoja}`, monto: montoHonorariosMedio, pago_id: p.id
           });
         } catch(e) { console.warn('No se pudo registrar honorarios en Caja:', e); }
       }
