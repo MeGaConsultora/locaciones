@@ -5593,21 +5593,9 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       </div>
       <div style="margin-top:0.75rem;padding:0.75rem;background:#f0f7f4;border:1px solid #cde8ce;border-radius:8px">
         <div style="font-size:0.82rem;font-weight:600;color:#2d6a4f;margin-bottom:6px">💰 Registrar en Caja</div>
-        <div style="display:grid;grid-template-columns:1fr 1.3fr;gap:0.5rem">
-          <div class="form-group" style="margin-bottom:0">
-            <label style="font-size:0.72rem">Titular</label>
-            <select id="gp-caja-titular" onchange="actualizarCuentasCajaGP()">
-              <option value="">Seleccioná un titular...</option>
-              ${CAJA_TITULARES.filter(t => t.activo !== false).map(t => `<option value="${t.id}">${(t.nombre||'').replace(/</g,'&lt;')}</option>`).join('')}
-            </select>
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label style="font-size:0.72rem">Cuenta <span style="font-weight:400;color:#aaa">(opcional)</span></label>
-            <select id="gp-caja-cuenta-id">
-              <option value="">Sin especificar</option>
-            </select>
-          </div>
-        </div>
+        <div id="gp-caja-medios"></div>
+        <button type="button" class="btn btn-secondary" style="font-size:0.78rem;margin-top:6px" onclick="agregarMedioPagoCajaGP()">+ Agregar otro medio de pago</button>
+        <div id="gp-caja-total-check" style="font-size:0.75rem;margin-top:6px;color:#888"></div>
       </div>
       <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem;font-size:1rem">
         <span>Total a cobrar:</span>
@@ -5629,6 +5617,11 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
   recalcGP(comisionPct);
   recalcCobro();
   recalcProp();
+  // Reiniciar las filas de "Registrar en Caja" — una por defecto, cada vez
+  // que se (re)carga esta pantalla (cambio de mes, etc.)
+  window._gpCajaMedioCount = 0;
+  document.getElementById('gp-caja-medios').innerHTML = '';
+  agregarMedioPagoCajaGP();
   // Auto-calculate interest
   setTimeout(recalcIntereses, 50);
   // Activate requested tab
@@ -6428,6 +6421,7 @@ function recalcCobro() {
   total += acuenta + (interesYaEnACuenta ? 0 : interesEfectivo);
   const el = document.getElementById('gp-total-cobro');
   if (el) el.textContent = formatMoney(total);
+  actualizarTotalCheckCajaGP();
 }
 
 function recalcProp() {
@@ -7382,13 +7376,17 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
       return { id: idExtra, signo, monto, label };
     });
   const montoExtrasChk = extrasChkDetalle.reduce((s, e) => s + (e.signo * e.monto), 0);
-  // Titular/cuenta de Caja elegido (opcional) — si se especificó, se
-  // registran automáticamente los movimientos de Caja correspondientes al
-  // confirmar el cobro, sin tener que cargarlos de nuevo a mano ahí.
-  const cajaTitularId = parseInt(document.getElementById('gp-caja-titular')?.value) || null;
-  const cajaCuentaId = parseInt(document.getElementById('gp-caja-cuenta-id')?.value) || null;
-  const cajaMoneda = cajaCuentaId ? (CAJA_CUENTAS.find(c => c.id === cajaCuentaId)?.moneda || 'ARS') : 'ARS';
-  if (!cajaTitularId) { _ventanaRecibo?.close(); toast('Elegí un titular en "Registrar en Caja" para poder confirmar el cobro','error'); return; }
+  // Medios de pago para Caja (uno o varios — un mismo cobro puede repartirse
+  // entre distintos titulares/cuentas, ej: parte efectivo, parte transferencia).
+  const mediosPagoCaja = leerMediosPagoCajaGP();
+  const totalMediosPagoCaja = redondear2(mediosPagoCaja.reduce((s,f) => s + f.monto, 0));
+  if (!mediosPagoCaja.length) { _ventanaRecibo?.close(); toast('Completá al menos un medio de pago en "Registrar en Caja" para poder confirmar el cobro','error'); return; }
+  if (Math.abs(totalMediosPagoCaja - totalCobrado) > 0.01) {
+    _ventanaRecibo?.close();
+    toast(`Lo asignado en "Registrar en Caja" (${formatMoney(totalMediosPagoCaja)}) no coincide con el total a cobrar (${formatMoney(totalCobrado)})`, 'error');
+    return;
+  }
+  let cajaConceptoAlquiler = ''; // se completa más abajo, al armar itemsMovimiento
   // Los intereses también son un concepto separado — no se distribuyen en ítems regulares
   // Si el interés viene del desglose del pago a cuenta, ya está separado en interesDesdeACuenta
   const interesValDistrib = interesDesdeACuenta > 0 ? interesDesdeACuenta : 
@@ -7588,15 +7586,7 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
         concepto: itemsMovimiento.map(i => i.label).join(', '),
         items: JSON.stringify(itemsMovimiento)
       });
-      // Registro automático en Caja (opcional) — solo si se eligió un titular.
-      if (cajaTitularId && montoEsteMovimiento > 0.004) {
-        try {
-          await sbPost('caja_movimientos', {
-            fecha: fechaMovimiento, tipo: 'ingreso', titular_id: cajaTitularId, cuenta_id: cajaCuentaId, moneda: cajaMoneda,
-            categoria: 'Cobro alquiler', concepto: `${itemsMovimiento.map(i=>i.label).join(', ')} — ${c?.titulo||hoja}`, monto: montoEsteMovimiento
-          });
-        } catch(e) { console.warn('No se pudo registrar el cobro en Caja:', e); }
-      }
+      cajaConceptoAlquiler = itemsMovimiento.map(i => i.label).join(', ');
     }
     // Marcar cada extra tildado como efectivamente cobrado — esto es lo que
     // hace que, de acá en más, "Ingresar Pago" deje de ofrecerlo como
@@ -7623,10 +7613,12 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   }
 
   // Save honorarios pagado if ticked
+  let honMontoFinal = 0;
   const honChk = document.getElementById('cobro-chk-honorarios');
   if (honChk?.checked) {
     const honMonto = parseFloat(document.getElementById('val-honorarios')?.value || honChk.value) || 0;
     if (honMonto > 0) {
+      honMontoFinal = honMonto;
       const cuotasH = DB_GASTOS_CUOTAS.filter(g => parseInt(g.contrato_id) === contratoId).sort((a,b) => a.mes > b.mes ? 1 : -1);
       let restante = honMonto;
       const cuotasAfectadas = []; // registro exacto de qué cuota(s) recibieron plata en ESTA transacción, para poder revertir con precisión después
@@ -7654,15 +7646,36 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
           concepto: 'Honorarios',
           items: JSON.stringify([{ label: 'Honorarios', monto: honMonto, cuotas: cuotasAfectadas }])
         });
-        if (cajaTitularId) {
-          try {
-            await sbPost('caja_movimientos', {
-              fecha: fechaMovimiento, tipo: 'ingreso', titular_id: cajaTitularId, cuenta_id: cajaCuentaId, moneda: cajaMoneda,
-              categoria: 'Honorarios', concepto: `Honorarios — ${c?.titulo||hoja}`, monto: honMonto
-            });
-          } catch(e) { console.warn('No se pudo registrar honorarios en Caja:', e); }
-        }
       } catch(e) { console.warn('movimientos_pagos honorarios:', e); }
+    }
+  }
+
+  // Registro en Caja — reparte cada medio de pago proporcionalmente entre
+  // "Cobro alquiler" y "Honorarios" según cuánto pesa cada uno en el total,
+  // para no perder esa distinción cuando el cobro llegó por varios medios.
+  {
+    const totalParaCaja = montoEsteMovimiento + honMontoFinal;
+    for (const medio of mediosPagoCaja) {
+      const proporcion = totalParaCaja > 0 ? medio.monto / totalParaCaja : 0;
+      const montoAlquilerMedio = redondear2(montoEsteMovimiento * proporcion);
+      const montoHonorariosMedio = redondear2(honMontoFinal * proporcion);
+      const monedaMedio = medio.cuentaId ? (CAJA_CUENTAS.find(c => c.id === medio.cuentaId)?.moneda || 'ARS') : 'ARS';
+      if (montoAlquilerMedio > 0.004) {
+        try {
+          await sbPost('caja_movimientos', {
+            fecha: fechaMovimiento, tipo: 'ingreso', titular_id: medio.titularId, cuenta_id: medio.cuentaId, moneda: monedaMedio,
+            categoria: 'Cobro alquiler', concepto: `${cajaConceptoAlquiler||'Cobro'} — ${c?.titulo||hoja}`, monto: montoAlquilerMedio
+          });
+        } catch(e) { console.warn('No se pudo registrar el cobro en Caja:', e); }
+      }
+      if (montoHonorariosMedio > 0.004) {
+        try {
+          await sbPost('caja_movimientos', {
+            fecha: fechaMovimiento, tipo: 'ingreso', titular_id: medio.titularId, cuenta_id: medio.cuentaId, moneda: monedaMedio,
+            categoria: 'Honorarios', concepto: `Honorarios — ${c?.titulo||hoja}`, monto: montoHonorariosMedio
+          });
+        } catch(e) { console.warn('No se pudo registrar honorarios en Caja:', e); }
+      }
     }
   }
 
@@ -11325,9 +11338,56 @@ function actualizarCuentasDelTitularMovimiento() {
   }).join('');
 }
 
-function actualizarCuentasCajaGP() {
-  const titularId = parseInt(document.getElementById('gp-caja-titular')?.value);
-  const selCuenta = document.getElementById('gp-caja-cuenta-id');
+// ============================================================
+// "Registrar en Caja" dentro de Ingresar Pago — soporta VARIAS filas
+// (medios de pago), ya que un mismo cobro puede llegar repartido entre
+// distintos titulares/cuentas (ej: parte en efectivo a Gregorio, parte por
+// transferencia a la cuenta de Hugo).
+// ============================================================
+function filaMedioPagoCajaGP(idx) {
+  const opcionesTitular = CAJA_TITULARES.filter(t => t.activo !== false).map(t => `<option value="${t.id}">${(t.nombre||'').replace(/</g,'&lt;')}</option>`).join('');
+  return `
+    <div id="gp-caja-fila-${idx}" style="display:grid;grid-template-columns:1fr 1.3fr 100px 26px;gap:0.5rem;margin-bottom:0.5rem;align-items:end">
+      <div class="form-group" style="margin-bottom:0">
+        <label style="font-size:0.72rem">Titular</label>
+        <select id="gp-caja-titular-${idx}" onchange="actualizarCuentasCajaGP(${idx})">
+          <option value="">Seleccioná un titular...</option>
+          ${opcionesTitular}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label style="font-size:0.72rem">Cuenta <span style="font-weight:400;color:#aaa">(opcional)</span></label>
+        <select id="gp-caja-cuenta-${idx}">
+          <option value="">Sin especificar</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label style="font-size:0.72rem">Monto</label>
+        <input type="number" id="gp-caja-monto-${idx}" placeholder="0" oninput="actualizarTotalCheckCajaGP()">
+      </div>
+      <button type="button" onclick="eliminarMedioPagoCajaGP(${idx})" title="Quitar" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:1rem;padding-bottom:8px">✕</button>
+    </div>`;
+}
+
+function agregarMedioPagoCajaGP() {
+  const idx = window._gpCajaMedioCount || 0;
+  window._gpCajaMedioCount = idx + 1;
+  const cont = document.getElementById('gp-caja-medios');
+  if (!cont) return;
+  cont.insertAdjacentHTML('beforeend', filaMedioPagoCajaGP(idx));
+  actualizarTotalCheckCajaGP();
+}
+
+function eliminarMedioPagoCajaGP(idx) {
+  document.getElementById(`gp-caja-fila-${idx}`)?.remove();
+  // Siempre dejar al menos una fila — si se borró la última, agregar una nueva vacía.
+  if (!document.getElementById('gp-caja-medios')?.children.length) agregarMedioPagoCajaGP();
+  actualizarTotalCheckCajaGP();
+}
+
+function actualizarCuentasCajaGP(idx) {
+  const titularId = parseInt(document.getElementById(`gp-caja-titular-${idx}`)?.value);
+  const selCuenta = document.getElementById(`gp-caja-cuenta-${idx}`);
   if (!selCuenta) return;
   const cuentas = CAJA_CUENTAS.filter(c => c.titular_id === titularId && c.activo !== false);
   selCuenta.innerHTML = '<option value="">Sin especificar</option>' + cuentas.map(c => {
@@ -11335,6 +11395,43 @@ function actualizarCuentasCajaGP() {
     return `<option value="${c.id}">${label.replace(/</g,'&lt;')}</option>`;
   }).join('');
 }
+
+// Devuelve las filas cargadas (con titular elegido), leyendo todos los
+// índices que existan actualmente en el DOM.
+function leerMediosPagoCajaGP() {
+  const filas = [];
+  document.querySelectorAll('[id^="gp-caja-fila-"]').forEach(div => {
+    const idx = div.id.replace('gp-caja-fila-', '');
+    const titularId = parseInt(document.getElementById(`gp-caja-titular-${idx}`)?.value) || null;
+    const cuentaId = parseInt(document.getElementById(`gp-caja-cuenta-${idx}`)?.value) || null;
+    const monto = parseMonto(document.getElementById(`gp-caja-monto-${idx}`)?.value);
+    if (titularId && monto > 0) filas.push({ titularId, cuentaId, monto });
+  });
+  return filas;
+}
+
+function actualizarTotalCheckCajaGP() {
+  const el = document.getElementById('gp-caja-total-check');
+  if (!el) return;
+  const filas = leerMediosPagoCajaGP();
+  const totalMedios = filas.reduce((s,f) => s + f.monto, 0);
+  const totalCobroEl = document.getElementById('gp-total-cobro');
+  // El total a cobrar se muestra como texto formateado ($ 1.234,56) — parsear de nuevo para comparar
+  const totalCobroTexto = totalCobroEl?.textContent || '';
+  const totalCobro = parseFloat(totalCobroTexto.replace(/[^\d,.-]/g,'').replace(/\./g,'').replace(',','.')) || 0;
+  const diff = Math.round((totalCobro - totalMedios) * 100) / 100;
+  if (Math.abs(diff) < 0.01) {
+    el.style.color = 'var(--green)';
+    el.textContent = `✓ ${formatMoney(totalMedios)} asignados — coincide con el total a cobrar`;
+  } else if (diff > 0) {
+    el.style.color = '#c0392b';
+    el.textContent = `Faltan asignar ${formatMoney(diff)} (asignado: ${formatMoney(totalMedios)} de ${formatMoney(totalCobro)})`;
+  } else {
+    el.style.color = '#c0392b';
+    el.textContent = `Asignaste ${formatMoney(Math.abs(diff))} de más (asignado: ${formatMoney(totalMedios)} de ${formatMoney(totalCobro)})`;
+  }
+}
+
 
 async function cargarCajaMovimientos() {
   try {
