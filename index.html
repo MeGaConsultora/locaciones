@@ -12470,12 +12470,12 @@ async function reenviarAcceso(email, nombre, tempPass) {
   })();
   const mensaje = `Hola, ${nombreMostrar}!
 
-Tus datos de acceso al portal de inquilino en MeGa Consultora:
+Ya podés acceder a tu portal de inquilino en MeGa Consultora.
 
 🌐 https://megaconsultora.github.io/inquilinos
 📧 Email: ${email}
 
-Te enviamos la contraseña en el siguiente mensaje. Si querés cambiarla en el futuro, usá la opción *"¿Olvidaste / querés cambiar tu contraseña?"* en el portal.
+Te enviamos la contraseña temporal en el siguiente mensaje. Por seguridad, al ingresar por primera vez el sistema te va a pedir que la cambies.
 
 Ante cualquier duda, comunicate con nosotros.`;
   const msgEncoded = encodeURIComponent(mensaje);
