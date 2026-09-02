@@ -12120,6 +12120,13 @@ async function doLogin() {
     localStorage.setItem('sb_token', data.access_token);
     localStorage.setItem('sb_uid', data.user.id);
     localStorage.setItem('sb_email', data.user.email);
+    // BUG encontrado: acá nunca se guardaba el refresh_token que Supabase
+    // devuelve junto con el access_token. Sin esto, refreshAdminToken()
+    // no tiene nada con qué renovar apenas el access_token vence, y cae
+    // directo a "Sesión expirada" — esta es la causa raíz real de la
+    // seguidilla de sesiones caídas, no un tema de rate limit ni de otro
+    // admin logueado.
+    if (data.refresh_token) localStorage.setItem('sb_refresh_token', data.refresh_token);
     await verificarAprobacion();
   } catch(e) {
     showLoginMsg('login', 'Email o contraseña incorrectos', 'error');
