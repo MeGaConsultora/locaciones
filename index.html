@@ -8079,18 +8079,18 @@ async function renderInforme() {
             </tr>
           `).join('')}
         </tbody>
-        <tfoot><tr style="background:#1877F2;color:white;font-weight:700">
-          <td style="padding:5px 6px">TOTALES</td>
-          <td class="r" style="padding:5px 4px">${formatMoney(totTotal)}</td>
-          <td class="r" style="padding:5px 4px">${formatMoney(totAbonado)}</td>
-          <td class="r" style="padding:5px 4px">${formatMoney(totSaldo)}</td>
-          <td class="r" style="padding:5px 4px">${formatMoney(rows.reduce((s,r)=>s+(r.alquiler||0),0))}</td>
-          <td class="r" style="padding:5px 4px">${formatMoney(totComision)}</td>
-          <td class="r" style="padding:5px 4px">${formatMoney(totEpe)}</td>
-          <td class="r" style="padding:5px 4px">${formatMoney(totAgua)}</td>
-          <td class="r" style="padding:5px 4px">${formatMoney(totTgiu)}</td>
-          <td class="r" style="padding:5px 4px">${formatMoney(totSeguro)}</td>
-          <td class="r" style="padding:5px 4px">${formatMoney(totExtras)}</td>
+        <tfoot><tr style="background:#1877F2;color:white;font-weight:700;font-size:0.72rem">
+          <td style="padding:5px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">TOTALES</td>
+          <td class="r" style="padding:5px 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${formatMoney(totTotal)}">${formatMoney(totTotal)}</td>
+          <td class="r" style="padding:5px 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${formatMoney(totAbonado)}">${formatMoney(totAbonado)}</td>
+          <td class="r" style="padding:5px 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${formatMoney(totSaldo)}">${formatMoney(totSaldo)}</td>
+          <td class="r" style="padding:5px 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${formatMoney(rows.reduce((s,r)=>s+(r.alquiler||0),0))}">${formatMoney(rows.reduce((s,r)=>s+(r.alquiler||0),0))}</td>
+          <td class="r" style="padding:5px 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${formatMoney(totComision)}">${formatMoney(totComision)}</td>
+          <td class="r" style="padding:5px 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${formatMoney(totEpe)}">${formatMoney(totEpe)}</td>
+          <td class="r" style="padding:5px 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${formatMoney(totAgua)}">${formatMoney(totAgua)}</td>
+          <td class="r" style="padding:5px 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${formatMoney(totTgiu)}">${formatMoney(totTgiu)}</td>
+          <td class="r" style="padding:5px 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${formatMoney(totSeguro)}">${formatMoney(totSeguro)}</td>
+          <td class="r" style="padding:5px 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${formatMoney(totExtras)}">${formatMoney(totExtras)}</td>
         </tfoot>
       </table>
     </div>
