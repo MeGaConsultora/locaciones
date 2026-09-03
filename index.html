@@ -10795,6 +10795,7 @@ async function reimprimirReciboMovimiento(movId) {
 function showTab(name, btn) {
   // Close Gestión dropdown
   document.getElementById('informes-menu').style.display = 'none';
+  if (name !== 'caja') detenerPollingCaja();
   // Hide ALL panels using both class and inline style
   const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
@@ -11326,7 +11327,7 @@ async function cargarCajaTitularesYCuentas() {
 }
 
 async function initCaja() {
-  if (cajaInicializada) { renderCajaMovimientos(); return; }
+  if (cajaInicializada) { renderCajaMovimientos(); iniciarPollingCaja(); return; }
   cajaInicializada = true;
   const hoy = TODAY;
   const primerDiaMes = hoy.substring(0,7) + '-01';
@@ -11338,6 +11339,7 @@ async function initCaja() {
   await cargarCajaTitularesYCuentas();
   poblarSelectTitularMovimiento();
   renderCajaMovimientos();
+  iniciarPollingCaja();
 }
 
 function poblarSelectTitularMovimiento() {
@@ -11492,6 +11494,33 @@ async function cargarCajaMovimientos() {
     toast('Error cargando movimientos de caja', 'error');
     CAJA_MOVIMIENTOS = [];
   }
+}
+
+// ============================================================
+// AUTO-REFRESH DE CAJA — como varios admins comparten la misma
+// oficina/IP y pueden estar cobrando/cargando movimientos al mismo
+// tiempo, refrescamos la lista sola cada 15s mientras se está viendo
+// Caja > Movimientos, sin necesidad de tocar "Actualizar" ni salir del
+// informe. No usa Supabase Realtime (acá todo es REST puro) — es un
+// polling simple que se pausa solo si: cambiás de pestaña de la app,
+// el navegador queda en 2do plano, o hay un modal abierto (para no
+// pisarte mientras estás completando otro formulario).
+let cajaPollInterval = null;
+function iniciarPollingCaja() {
+  if (cajaPollInterval) return;
+  cajaPollInterval = setInterval(async () => {
+    const panelCaja = document.getElementById('panel-caja');
+    const subtabMov = document.getElementById('caja-subtab-movimientos');
+    const modalAbierto = document.getElementById('modal-overlay')?.classList.contains('open');
+    const formNuevoAbierto = document.getElementById('caja-form-nuevo')?.style.display === 'block';
+    if (document.hidden || !panelCaja || panelCaja.style.display === 'none' ||
+        !subtabMov || subtabMov.style.display === 'none' || modalAbierto || formNuevoAbierto) return;
+    await cargarCajaMovimientos();
+    renderCajaMovimientos();
+  }, 15000);
+}
+function detenerPollingCaja() {
+  if (cajaPollInterval) { clearInterval(cajaPollInterval); cajaPollInterval = null; }
 }
 
 function showCajaSubtab(nombre, btn) {
@@ -12154,6 +12183,7 @@ async function doRegistro() {
 }
 
 function doLogout() {
+  detenerPollingCaja();
   localStorage.removeItem('sb_token');
   localStorage.removeItem('sb_uid');
   localStorage.removeItem('sb_email');
