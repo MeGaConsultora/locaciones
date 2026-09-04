@@ -940,6 +940,7 @@
         <button class="tab-btn caja-subtab active" onclick="showCajaSubtab('movimientos', this)" style="padding:6px 14px;border-radius:8px">Movimientos</button>
         <button class="tab-btn caja-subtab" onclick="showCajaSubtab('cierre', this)" style="padding:6px 14px;border-radius:8px">Cierre mensual</button>
         <button class="tab-btn caja-subtab" onclick="showCajaSubtab('titulares', this)" style="padding:6px 14px;border-radius:8px">Titulares y cuentas</button>
+        <button class="tab-btn caja-subtab" onclick="showCajaSubtab('comisiones', this)" style="padding:6px 14px;border-radius:8px" id="btn-caja-comisiones">Comisiones pendientes</button>
       </div>
     </div>
 
@@ -1124,6 +1125,14 @@
         <p style="font-size:0.75rem;color:#999;margin-top:0.5rem">"El negocio" (ej: MeGa) es la cuenta madre — lo que retiene un socio se interpreta como deuda hacia el negocio, y lo que paga de su bolsillo, como crédito a su favor.</p>
       </div>
       <div id="titulares-lista"></div>
+    </div>
+
+    <!-- Subtab: Comisiones pendientes (alquileres cobrados directo por el propietario) -->
+    <div id="caja-subtab-comisiones" style="display:none">
+      <p style="font-size:0.82rem;color:#666;margin-bottom:1rem">
+        Cuando el inquilino le paga el alquiler directo al propietario (opción "🏠 Le pagó directo al propietario" al confirmar un cobro), esa plata nunca entra a Caja — pero el negocio igual tiene derecho a su comisión sobre ese alquiler. Acá queda el registro de esas comisiones hasta que el propietario las pague y las marques como cobradas.
+      </p>
+      <div id="comisiones-pendientes-lista"></div>
     </div>
   </div>
 
@@ -7758,12 +7767,28 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
           for (const [itemKey, monto] of Object.entries(rendidoDirectoPorItem)) {
             const montoPrevio = _rendidoMonto(nuevoRendido[itemKey]);
             nuevoRendido[itemKey] = { monto: redondear2(montoPrevio + monto), fecha: nowIso };
+            // El alquiler es lo único sobre lo que el negocio cobra comisión
+            // (mismo criterio que usa el cartel "Ya rendido este mes" para
+            // calcularla). Como el propietario se quedó con TODA la plata
+            // (no pasó por el negocio), esa comisión queda pendiente de
+            // cobro real — se guarda acá para no perderla de vista, y
+            // aparece en Caja > Comisiones pendientes hasta que se marque
+            // cobrada.
+            if (itemKey === 'alquiler' && comisionPct > 0) {
+              const comisionNueva = redondear2(monto * (comisionPct/100));
+              const comisionPrevPendiente = parseFloat(nuevoRendido[itemKey].comisionPendiente) || 0;
+              nuevoRendido[itemKey].comisionPendiente = redondear2(comisionPrevPendiente + comisionNueva);
+              nuevoRendido[itemKey].comisionCobrada = false;
+            }
           }
           await sbPatch('pagos', p.id, { rendido_prop_items: nuevoRendido });
           p.rendido_prop_items = nuevoRendido;
           const pLocalDirecto = DB.pagos.find(x => x.id === p.id);
           if (pLocalDirecto) pLocalDirecto.rendido_prop_items = nuevoRendido;
-          toast('Se marcó como ya rendido al propietario lo que cobró directo, para que no se le vuelva a ofrecer en el Recibo Propietario', 'success');
+          const comisionAvisoPendiente = redondear2(rendidoDirectoPorItem['alquiler'] ? rendidoDirectoPorItem['alquiler'] * (comisionPct/100) : 0);
+          toast(comisionAvisoPendiente > 0.004
+            ? `Marcado como rendido. Comisión pendiente de cobrarle al propietario: ${formatMoney(comisionAvisoPendiente)} — queda en Caja > Comisiones pendientes`
+            : 'Se marcó como ya rendido al propietario lo que cobró directo, para que no se le vuelva a ofrecer en el Recibo Propietario', 'success');
         }
       } catch(e) { console.warn('No se pudo marcar como rendido directo al propietario:', e); }
     }
@@ -11397,7 +11422,7 @@ async function cargarCajaTitularesYCuentas() {
 }
 
 async function initCaja() {
-  if (cajaInicializada) { renderCajaMovimientos(); iniciarPollingCaja(); return; }
+  if (cajaInicializada) { renderCajaMovimientos(); iniciarPollingCaja(); actualizarBadgeComisionesPendientes(); return; }
   cajaInicializada = true;
   const hoy = TODAY;
   const primerDiaMes = hoy.substring(0,7) + '-01';
@@ -11410,6 +11435,7 @@ async function initCaja() {
   poblarSelectTitularMovimiento();
   renderCajaMovimientos();
   iniciarPollingCaja();
+  actualizarBadgeComisionesPendientes();
 }
 
 function poblarSelectTitularMovimiento() {
@@ -11604,14 +11630,164 @@ function detenerPollingCaja() {
   if (cajaPollInterval) { clearInterval(cajaPollInterval); cajaPollInterval = null; }
 }
 
+// ============================================================
+// COMISIONES PENDIENTES — cuando el inquilino le paga el alquiler
+// directo al propietario (ver "directo_propietario" en confirmarCobroInquilino),
+// el negocio igual tiene derecho a su comisión sobre ese alquiler, pero como
+// esa plata nunca entró a Caja, no hay ningún movimiento real que la
+// registre. Se guarda el pendiente dentro de pagos.rendido_prop_items
+// (clave 'alquiler' → comisionPendiente/comisionCobrada) y se lista acá
+// hasta que el propietario la pague de verdad y se marque cobrada.
+function obtenerComisionesPendientes() {
+  const out = [];
+  (DB.pagos||[]).forEach(p => {
+    const entry = p.rendido_prop_items?.alquiler;
+    if (!entry || typeof entry !== 'object') return;
+    const pendiente = parseFloat(entry.comisionPendiente) || 0;
+    if (pendiente > 0.004 && !entry.comisionCobrada) {
+      const c = DB.contratos.find(x => x.hoja === p.hoja);
+      out.push({ pagoId: p.id, hoja: p.hoja, contratoId: c?.id||null, titulo: c?.titulo||p.hoja, mes: p.mes, monto: pendiente, fecha: entry.fecha });
+    }
+  });
+  return out.sort((a,b) => (a.fecha||'') < (b.fecha||'') ? 1 : -1);
+}
+
+function actualizarBadgeComisionesPendientes() {
+  const badge = document.getElementById('btn-caja-comisiones');
+  if (!badge) return;
+  const n = obtenerComisionesPendientes().length;
+  badge.textContent = n ? `Comisiones pendientes (${n})` : 'Comisiones pendientes';
+}
+
+function renderComisionesPendientes() {
+  const pendientes = obtenerComisionesPendientes();
+  const badge = document.getElementById('btn-caja-comisiones');
+  if (badge) badge.textContent = pendientes.length ? `Comisiones pendientes (${pendientes.length})` : 'Comisiones pendientes';
+  const cont = document.getElementById('comisiones-pendientes-lista');
+  if (!cont) return;
+  if (!pendientes.length) {
+    cont.innerHTML = `<p style="color:#999;font-size:0.85rem;text-align:center;padding:2rem 0">No hay comisiones pendientes de cobro directo 🎉</p>`;
+    return;
+  }
+  const totalPendiente = pendientes.reduce((s,x) => s+x.monto, 0);
+  cont.innerHTML = `
+    <div style="background:white;border-radius:12px;box-shadow:var(--shadow);overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:var(--ink2);color:white;font-size:0.78rem">
+          <th style="padding:8px 12px;text-align:left">Contrato</th>
+          <th style="padding:8px 12px;text-align:left">Mes</th>
+          <th style="padding:8px 12px;text-align:left">Rendido directo el</th>
+          <th style="padding:8px 12px;text-align:right">Comisión pendiente</th>
+          <th style="padding:8px 12px"></th>
+        </tr></thead>
+        <tbody>
+          ${pendientes.map(x => `
+            <tr style="border-top:1px solid var(--border);font-size:0.85rem">
+              <td style="padding:8px 12px"><a href="#" onclick="openContrato(${x.contratoId});return false" style="color:var(--blue);font-weight:600">${(x.titulo||'').replace(/</g,'&lt;')}</a></td>
+              <td style="padding:8px 12px">${x.mes ? x.mes.substring(0,7) : ''}</td>
+              <td style="padding:8px 12px">${x.fecha ? new Date(x.fecha).toLocaleDateString('es-AR') : '—'}</td>
+              <td style="padding:8px 12px;text-align:right;font-weight:600;color:#c0392b">${formatMoney(x.monto)}</td>
+              <td style="padding:8px 12px;text-align:right"><button class="btn btn-green" style="padding:5px 12px;font-size:0.78rem" onclick="abrirCobrarComisionPendiente(${x.pagoId})">✓ Marcar cobrada</button></td>
+            </tr>`).join('')}
+        </tbody>
+        <tfoot><tr style="background:#f5f5f5;font-weight:700;font-size:0.85rem">
+          <td colspan="3" style="padding:8px 12px">Total pendiente</td>
+          <td style="padding:8px 12px;text-align:right;color:#c0392b">${formatMoney(totalPendiente)}</td>
+          <td></td>
+        </tr></tfoot>
+      </table>
+    </div>`;
+}
+
+function abrirCobrarComisionPendiente(pagoId) {
+  const p = DB.pagos.find(x => x.id === pagoId);
+  const entry = p?.rendido_prop_items?.alquiler;
+  const pendiente = parseFloat(entry?.comisionPendiente) || 0;
+  const c = DB.contratos.find(x => x.hoja === p?.hoja);
+  const opcionesTitular = CAJA_TITULARES.filter(t => t.activo !== false).map(t => `<option value="${t.id}">${(t.nombre||'').replace(/</g,'&lt;')}</option>`).join('');
+  document.getElementById('modal-title').textContent = 'Cobrar comisión pendiente';
+  document.getElementById('modal-subtitle').textContent = `${c?.titulo||p?.hoja||''} — ${formatMoney(pendiente)}`;
+  document.getElementById('modal-body').innerHTML = `
+    <p style="font-size:0.85rem;color:#666;margin-bottom:1rem">Registrá acá dónde entró la plata cuando el propietario efectivamente te pagó esta comisión.</p>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Titular</label>
+        <select id="ccp-titular" onchange="actualizarCuentasComisionPendiente()" style="margin-top:4px">
+          <option value="">Seleccioná un titular...</option>
+          ${opcionesTitular}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Cuenta <span style="font-weight:400;color:#aaa">(opc.)</span></label>
+        <select id="ccp-cuenta" style="margin-top:4px"><option value="">Sin especificar</option></select>
+      </div>
+      <div class="form-group">
+        <label>Fecha</label>
+        <input type="date" id="ccp-fecha" value="${TODAY}" style="margin-top:4px">
+      </div>
+      <div class="form-group">
+        <label>Monto</label>
+        <input type="text" id="ccp-monto" value="${pendiente}" style="margin-top:4px">
+      </div>
+    </div>
+    <div class="form-actions" style="margin-top:1rem">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-green" onclick="confirmarCobroComisionPendiente(${pagoId})">✓ Registrar cobro</button>
+    </div>`;
+  document.getElementById('modal-overlay').dataset.contratoId = '';
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function actualizarCuentasComisionPendiente() {
+  const titularId = parseInt(document.getElementById('ccp-titular')?.value);
+  const selCuenta = document.getElementById('ccp-cuenta');
+  if (!selCuenta) return;
+  const cuentas = CAJA_CUENTAS.filter(c => c.titular_id === titularId && c.activo !== false);
+  selCuenta.innerHTML = '<option value="">Sin especificar</option>' + cuentas.map(c => {
+    const label = `${c.tipo}${c.nombre ? ' — '+c.nombre : ''} (${c.moneda||'ARS'})`;
+    return `<option value="${c.id}">${label.replace(/</g,'&lt;')}</option>`;
+  }).join('');
+}
+
+async function confirmarCobroComisionPendiente(pagoId) {
+  const titularId = parseInt(document.getElementById('ccp-titular')?.value) || null;
+  const cuentaId = parseInt(document.getElementById('ccp-cuenta')?.value) || null;
+  const fecha = document.getElementById('ccp-fecha')?.value || TODAY;
+  const monto = parseMonto(document.getElementById('ccp-monto')?.value);
+  if (!titularId) { toast('Elegí un titular', 'error'); return; }
+  if (!monto || monto <= 0) { toast('Ingresá un monto válido', 'error'); return; }
+
+  const p = DB.pagos.find(x => x.id === pagoId);
+  if (!p) { toast('No se encontró el pago', 'error'); return; }
+  const c = DB.contratos.find(x => x.hoja === p.hoja);
+  const moneda = cuentaId ? (CAJA_CUENTAS.find(cc => cc.id === cuentaId)?.moneda || 'ARS') : 'ARS';
+
+  try {
+    await sbPost('caja_movimientos', {
+      fecha, tipo: 'ingreso', titular_id: titularId, cuenta_id: cuentaId, moneda,
+      categoria: 'Honorarios', concepto: `Comisión (cobro directo) — ${c?.titulo||p.hoja}`, monto, pago_id: p.id
+    });
+    const rendidoPrevio = p.rendido_prop_items || {};
+    const nuevoRendido = { ...rendidoPrevio, alquiler: { ...rendidoPrevio.alquiler, comisionCobrada: true, comisionFechaCobro: fecha } };
+    await sbPatch('pagos', p.id, { rendido_prop_items: nuevoRendido });
+    p.rendido_prop_items = nuevoRendido;
+    closeModal();
+    toast('Comisión registrada ✓');
+    renderComisionesPendientes();
+    if (document.getElementById('caja-subtab-movimientos')?.style.display !== 'none') { await cargarCajaMovimientos(); renderCajaMovimientos(); }
+  } catch(e) { toast('Error al registrar: ' + e.message, 'error'); }
+}
+
 function showCajaSubtab(nombre, btn) {
   document.querySelectorAll('.caja-subtab').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   document.getElementById('caja-subtab-movimientos').style.display = nombre === 'movimientos' ? 'block' : 'none';
   document.getElementById('caja-subtab-cierre').style.display = nombre === 'cierre' ? 'block' : 'none';
   document.getElementById('caja-subtab-titulares').style.display = nombre === 'titulares' ? 'block' : 'none';
+  document.getElementById('caja-subtab-comisiones').style.display = nombre === 'comisiones' ? 'block' : 'none';
   if (nombre === 'cierre') renderCierreMensual();
   if (nombre === 'titulares') cargarYRenderTitulares();
+  if (nombre === 'comisiones') renderComisionesPendientes();
 }
 
 function abrirNuevoMovimientoCaja() {
