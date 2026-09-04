@@ -6913,6 +6913,70 @@ async function revertirExtraCubierto(pagoId, extraId, montoConSigno, hoja, contr
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
+// Deshace, con precisión, lo que _confirmarCobroInquilinoImpl marcó como
+// "rendido directo al propietario" para ESTE pago (ver movimientos_pagos
+// concepto 'RendidoDirectoPropietario'). Hay que llamarla ANTES de borrar
+// movimientos_pagos (revertirItem/revertirCobro ya lo hacen para ese pago_id
+// completo), porque de ahí sale el desglose exacto a descontar.
+// soloItem: si se pasa (ej. 'alquiler'), solo deshace ese ítem puntual — se
+// usa desde el revert de un ítem individual. Si se omite, deshace todo lo
+// que haya quedado registrado para ese pago (revert completo del cobro).
+async function revertirRendidoDirectoPropietario(pagoId, soloItem = null) {
+  let movs = [];
+  try {
+    movs = await sbGet('movimientos_pagos', `pago_id=eq.${pagoId}&concepto=eq.RendidoDirectoPropietario&select=*`);
+  } catch(e) { return; }
+  if (!movs.length) return;
+
+  const porItemTotal = {};
+  let comisionTotal = 0;
+  movs.forEach(m => {
+    try {
+      const data = JSON.parse(m.items || '{}');
+      Object.entries(data.porItem || {}).forEach(([k,v]) => { porItemTotal[k] = redondear2((porItemTotal[k]||0) + (parseFloat(v)||0)); });
+      comisionTotal = redondear2(comisionTotal + (parseFloat(data.comisionAgregada) || 0));
+    } catch(e) {}
+  });
+  if (soloItem) {
+    Object.keys(porItemTotal).forEach(k => { if (k !== soloItem) delete porItemTotal[k]; });
+    if (soloItem !== 'alquiler') comisionTotal = 0;
+  }
+  if (!Object.keys(porItemTotal).length && comisionTotal <= 0.004) return;
+
+  const p = DB.pagos.find(x => x.id === pagoId) || (await sbGet('pagos', `id=eq.${pagoId}&limit=1`))[0];
+  if (!p) return;
+  const rendidoActual = p.rendido_prop_items || {};
+  const nuevoRendido = { ...rendidoActual };
+  let comisionYaCobradaAviso = false;
+
+  for (const [itemKey, monto] of Object.entries(porItemTotal)) {
+    if (!nuevoRendido[itemKey]) continue;
+    const montoPrevio = _rendidoMonto(nuevoRendido[itemKey]);
+    const montoNuevo = redondear2(Math.max(0, montoPrevio - monto));
+    if (montoNuevo <= 0.004) { delete nuevoRendido[itemKey]; continue; }
+    nuevoRendido[itemKey] = { ...nuevoRendido[itemKey], monto: montoNuevo };
+  }
+  if (comisionTotal > 0.004 && nuevoRendido.alquiler) {
+    if (nuevoRendido.alquiler.comisionCobrada) {
+      // Ya se había marcado esa comisión como efectivamente cobrada (con su
+      // propio movimiento real en Caja) — no la tocamos solos, mejor avisar
+      // para que se revise a mano si corresponde también deshacer ese cobro.
+      comisionYaCobradaAviso = true;
+    } else {
+      const pendPrevia = parseFloat(nuevoRendido.alquiler.comisionPendiente) || 0;
+      nuevoRendido.alquiler.comisionPendiente = redondear2(Math.max(0, pendPrevia - comisionTotal));
+    }
+  }
+
+  try {
+    await sbPatch('pagos', pagoId, { rendido_prop_items: nuevoRendido });
+    p.rendido_prop_items = nuevoRendido;
+    if (comisionYaCobradaAviso) {
+      toast('Ojo: la comisión de este alquiler ya estaba marcada como cobrada (con su propio movimiento en Caja) — revisá a mano si también hay que revertir ese cobro', 'error');
+    }
+  } catch(e) { console.warn('No se pudo deshacer el rendido directo al propietario:', e); }
+}
+
 async function revertirItem(pagoId, itemId, montoPagado, montoTotal, hoja, contratoId, mesKey, comisionPct) {
   if (!confirm(`¿Revertir el pago de ${itemId} ($${formatMoney(montoPagado)})?`)) return;
   try {
@@ -6931,6 +6995,13 @@ async function revertirItem(pagoId, itemId, montoPagado, montoTotal, hoja, contr
     patch.saldo = nuevoSaldo;
     patch.pagado = nuevoSaldo >= (p.total||0) ? '0' : 'PARCIAL';
     await sbPatch('pagos', parseInt(pagoId), patch);
+    // Si esta plata había quedado marcada como "rendido directo al
+    // propietario" (el inquilino le pagó a él y no a Caja), hay que
+    // descontarlo de rendido_prop_items ANTES de borrar el historial de
+    // abajo — si no, queda pisado y la próxima vez que se cobre este ítem
+    // se vuelve a sumar sobre lo viejo (eso duplicó el alquiler rendido de
+    // Bertolino-Rodríguez).
+    await revertirRendidoDirectoPropietario(parseInt(pagoId), itemId);
     try { await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${pagoId}`); } catch(e) {}
     try { await sbDeleteWhere('caja_movimientos', `pago_id=eq.${pagoId}`); } catch(e) {}
     toast(`${itemId} revertido ✓`);
@@ -7078,6 +7149,10 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
       pagado_internet: 0,
       pagado_expensas: 0
     });
+    // Mismo motivo que en revertirItem: si parte de este cobro había quedado
+    // marcado como "rendido directo al propietario", hay que descontarlo de
+    // rendido_prop_items antes de perder el historial que lo sustenta.
+    await revertirRendidoDirectoPropietario(p.id);
     try { await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${p.id}`); } catch(e) {}
     try { await sbDeleteWhere('caja_movimientos', `pago_id=eq.${p.id}`); } catch(e) {}
 
@@ -7786,6 +7861,20 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
           const pLocalDirecto = DB.pagos.find(x => x.id === p.id);
           if (pLocalDirecto) pLocalDirecto.rendido_prop_items = nuevoRendido;
           const comisionAvisoPendiente = redondear2(rendidoDirectoPorItem['alquiler'] ? rendidoDirectoPorItem['alquiler'] * (comisionPct/100) : 0);
+          // Guardar CUÁNTO aportó ESTA transacción puntual al rendido directo
+          // (por ítem, más la comisión que generó) — así, si más adelante se
+          // revierte este cobro, se puede descontar exactamente esto en vez
+          // de dejar el acumulado viejo pisado (eso fue lo que duplicó el
+          // alquiler rendido de Bertolino-Rodríguez: se revirtió el cobro,
+          // pero nadie le avisó a rendido_prop_items, y al volver a cobrar se
+          // sumó sobre lo que ya había).
+          try {
+            await sbPost('movimientos_pagos', {
+              pago_id: p.id, contrato_id: contratoId, hoja, mes: p.mes, fecha: fechaMovimiento,
+              monto: medioDirectoTotal, concepto: 'RendidoDirectoPropietario',
+              items: JSON.stringify({ porItem: rendidoDirectoPorItem, comisionAgregada: comisionAvisoPendiente })
+            });
+          } catch(e) { console.warn('No se pudo guardar el historial de rendido directo (la reversión de este cobro no podría deshacerlo con precisión):', e); }
           toast(comisionAvisoPendiente > 0.004
             ? `Marcado como rendido. Comisión pendiente de cobrarle al propietario: ${formatMoney(comisionAvisoPendiente)} — queda en Caja > Comisiones pendientes`
             : 'Se marcó como ya rendido al propietario lo que cobró directo, para que no se le vuelva a ofrecer en el Recibo Propietario', 'success');
