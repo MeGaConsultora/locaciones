@@ -7674,9 +7674,16 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
   // Registro en Caja — reparte cada medio de pago proporcionalmente entre
   // "Cobro alquiler" y "Honorarios" según cuánto pesa cada uno en el total,
   // para no perder esa distinción cuando el cobro llegó por varios medios.
+  // Las filas "directo_propietario" (el inquilino le pagó directo al
+  // propietario) quedan afuera de este reparto: esa plata nunca entró a
+  // ninguna cuenta del negocio ni de un socio, así que no genera ningún
+  // movimiento de Caja. Se saca su monto del total antes de repartir, para
+  // que las filas reales sigan quedando bien proporcionadas entre sí.
+  const medioDirectoTotal = redondear2(mediosPagoCaja.filter(m => m.titularId === 'directo_propietario').reduce((s,f) => s+f.monto, 0));
   {
-    const totalParaCaja = montoEsteMovimiento + honMontoFinal;
+    const totalParaCaja = Math.max((montoEsteMovimiento + honMontoFinal) - medioDirectoTotal, 0);
     for (const medio of mediosPagoCaja) {
+      if (medio.titularId === 'directo_propietario') continue;
       const proporcion = totalParaCaja > 0 ? medio.monto / totalParaCaja : 0;
       const montoAlquilerMedio = redondear2(montoEsteMovimiento * proporcion);
       const montoHonorariosMedio = redondear2(honMontoFinal * proporcion);
@@ -7699,6 +7706,69 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
       }
     }
   }
+
+  // Si parte (o todo) el cobro fue "directo al propietario", esa plata ya
+  // está en manos del propietario — hay que avisarle al Recibo Propietario
+  // para que NO la vuelva a ofrecer/girar (si no, el propietario cobraría
+  // dos veces: una directo del inquilino, y otra vía la rendición nuestra).
+  // Se marca como "ya rendido" el mismo ítem/orden que ya se usó para
+  // imputar el pago (alquiler primero, después EPE/agua/etc., después
+  // extras), tomando de a un ítem hasta agotar medioDirectoTotal.
+  // LIMITACIÓN CONOCIDA: en contratos con más de un propietario, el
+  // rendido se trackea por propietario en otra tabla y acá no sabemos con
+  // certeza a cuál de ellos le pagaron directo — en ese caso NO se marca
+  // nada automáticamente y se avisa para resolverlo a mano en el Recibo
+  // Propietario de ese contrato.
+  if (medioDirectoTotal > 0.004) {
+    const propsCpDirecto = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId) && x.rol === 'propietario');
+    if (propsCpDirecto.length > 1) {
+      toast('Ojo: este contrato tiene más de un propietario — marcá a mano en el Recibo Propietario cuál de ellos cobró directo, para no rendírselo de nuevo', 'error');
+    } else {
+      try {
+        const deltaPorItem = {};
+        for (const [key, newTotal] of Object.entries(pagadoPorItem)) {
+          const oldVal = parseFloat(p[key]) || 0;
+          const d = redondear2(newTotal - oldVal);
+          if (d > 0) deltaPorItem[key.replace('pagado_','')] = d;
+        }
+        let restanteDirecto = medioDirectoTotal;
+        const rendidoDirectoPorItem = {};
+        for (const item of orden) {
+          if (restanteDirecto <= 0.004) break;
+          const d = deltaPorItem[item] || 0;
+          if (d <= 0) continue;
+          const usar = Math.min(d, restanteDirecto);
+          rendidoDirectoPorItem[item] = redondear2(usar);
+          restanteDirecto -= usar;
+        }
+        if (restanteDirecto > 0.004) {
+          for (const ex of extrasChkDetalle) {
+            if (restanteDirecto <= 0.004) break;
+            if (ex.signo <= 0) continue;
+            const usar = Math.min(ex.monto, restanteDirecto);
+            const key = `extra-${ex.id}`;
+            rendidoDirectoPorItem[key] = redondear2((rendidoDirectoPorItem[key]||0) + usar);
+            restanteDirecto -= usar;
+          }
+        }
+        if (Object.keys(rendidoDirectoPorItem).length) {
+          const rendidoPrevio = p.rendido_prop_items || {};
+          const nuevoRendido = { ...rendidoPrevio };
+          const nowIso = new Date().toISOString();
+          for (const [itemKey, monto] of Object.entries(rendidoDirectoPorItem)) {
+            const montoPrevio = _rendidoMonto(nuevoRendido[itemKey]);
+            nuevoRendido[itemKey] = { monto: redondear2(montoPrevio + monto), fecha: nowIso };
+          }
+          await sbPatch('pagos', p.id, { rendido_prop_items: nuevoRendido });
+          p.rendido_prop_items = nuevoRendido;
+          const pLocalDirecto = DB.pagos.find(x => x.id === p.id);
+          if (pLocalDirecto) pLocalDirecto.rendido_prop_items = nuevoRendido;
+          toast('Se marcó como ya rendido al propietario lo que cobró directo, para que no se le vuelva a ofrecer en el Recibo Propietario', 'success');
+        }
+      } catch(e) { console.warn('No se pudo marcar como rendido directo al propietario:', e); }
+    }
+  }
+
 
   // Calculate pending items for recibo
   const orden2 = ['alquiler','epe','agua','tgiu','seguro','internet','expensas'];
@@ -11387,6 +11457,7 @@ function filaMedioPagoCajaGP(idx) {
         <select id="gp-caja-titular-${idx}" onchange="actualizarCuentasCajaGP(${idx})">
           <option value="">Seleccioná un titular...</option>
           ${opcionesTitular}
+          <option value="directo_propietario">🏠 Le pagó directo al propietario (no entra a Caja)</option>
         </select>
       </div>
       <div class="form-group" style="margin-bottom:0">
@@ -11428,9 +11499,18 @@ function eliminarMedioPagoCajaGP(idx) {
 }
 
 function actualizarCuentasCajaGP(idx) {
-  const titularId = parseInt(document.getElementById(`gp-caja-titular-${idx}`)?.value);
+  const rawTitular = document.getElementById(`gp-caja-titular-${idx}`)?.value;
   const selCuenta = document.getElementById(`gp-caja-cuenta-${idx}`);
   if (!selCuenta) return;
+  if (rawTitular === 'directo_propietario') {
+    // No aplica cuenta: esta plata no entra a ninguna cuenta del negocio ni de un socio.
+    selCuenta.innerHTML = '<option value="">No aplica</option>';
+    selCuenta.disabled = true;
+    actualizarTotalCheckCajaGP();
+    return;
+  }
+  selCuenta.disabled = false;
+  const titularId = parseInt(rawTitular);
   const cuentas = CAJA_CUENTAS.filter(c => c.titular_id === titularId && c.activo !== false);
   selCuenta.innerHTML = '<option value="">Sin especificar</option>' + cuentas.map(c => {
     const label = `${c.tipo}${c.nombre ? ' — '+c.nombre : ''} (${c.moneda||'ARS'})`;
@@ -11445,8 +11525,9 @@ function leerMediosPagoCajaGP() {
   const filas = [];
   document.querySelectorAll('[id^="gp-caja-fila-"]').forEach(div => {
     const idx = div.id.replace('gp-caja-fila-', '');
-    const titularId = parseInt(document.getElementById(`gp-caja-titular-${idx}`)?.value) || null;
-    const cuentaId = parseInt(document.getElementById(`gp-caja-cuenta-${idx}`)?.value) || null;
+    const rawTitular = document.getElementById(`gp-caja-titular-${idx}`)?.value;
+    const titularId = rawTitular === 'directo_propietario' ? 'directo_propietario' : (parseInt(rawTitular) || null);
+    const cuentaId = titularId === 'directo_propietario' ? null : (parseInt(document.getElementById(`gp-caja-cuenta-${idx}`)?.value) || null);
     const monto = parseMonto(document.getElementById(`gp-caja-monto-${idx}`)?.value);
     if (titularId && monto > 0) filas.push({ titularId, cuentaId, monto });
   });
