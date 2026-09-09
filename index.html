@@ -6011,6 +6011,19 @@ function _rendidoMonto(entry) {
 function _rendidoFecha(entry) {
   return (entry && typeof entry === 'object') ? entry.fecha : null;
 }
+// Traduce un item genérico ('alquiler','epe','agua','tgiu','seguro',
+// 'internet','expensas') a la MISMA clave que usa generarHtmlReciboProp
+// para chequear "ya rendido" de servicios: 'srv-<tipo>-<sumId>'. El
+// alquiler es la única excepción, usa la clave plana 'alquiler'. Si hay
+// más de un suministro del mismo tipo en el contrato (ej: dos cuentas de
+// agua), no hay forma de saber a cuál corresponde un monto agregado —
+// se usa sumId=0 como mejor esfuerzo.
+function _claveRendidoParaItem(contratoId, item) {
+  if (item === 'alquiler') return 'alquiler';
+  const sumsDelTipo = (DB_SUMINISTROS||[]).filter(s => parseInt(s.contrato_id) === parseInt(contratoId) && s.tipo === item);
+  const sumId = sumsDelTipo.length === 1 ? sumsDelTipo[0].id : 0;
+  return `srv-${item}-${sumId}`;
+}
 // Etiqueta legible para un itemKey del mapa de rendido (alquiler, extra-<id>,
 // srv-<tipo>-<sumId>, srv-prop-<tipo>-<sumId>), usada en el cartel de "ya
 // rendido este mes". Si el suministro o el extra ya no existen (se borraron
@@ -6943,6 +6956,10 @@ async function revertirRendidoDirectoPropietario(pagoId, soloItem = null) {
   } catch(e) { return; }
   if (!movs.length) return;
 
+  const p = DB.pagos.find(x => x.id === pagoId) || (await sbGet('pagos', `id=eq.${pagoId}&limit=1`))[0];
+  if (!p) return;
+  const contratoIdRevert = DB.contratos.find(x => x.hoja === p.hoja)?.id;
+
   const porItemTotal = {};
   let comisionTotal = 0;
   movs.forEach(m => {
@@ -6953,13 +6970,15 @@ async function revertirRendidoDirectoPropietario(pagoId, soloItem = null) {
     } catch(e) {}
   });
   if (soloItem) {
-    Object.keys(porItemTotal).forEach(k => { if (k !== soloItem) delete porItemTotal[k]; });
+    // soloItem llega como tipo genérico ('agua', 'alquiler', etc, desde
+    // revertirItem) — hay que traducirlo a la misma clave con la que se
+    // guardó (ver _claveRendidoParaItem) antes de poder filtrar por ella.
+    const claveSolo = contratoIdRevert ? _claveRendidoParaItem(contratoIdRevert, soloItem) : soloItem;
+    Object.keys(porItemTotal).forEach(k => { if (k !== claveSolo) delete porItemTotal[k]; });
     if (soloItem !== 'alquiler') comisionTotal = 0;
   }
   if (!Object.keys(porItemTotal).length && comisionTotal <= 0.004) return;
 
-  const p = DB.pagos.find(x => x.id === pagoId) || (await sbGet('pagos', `id=eq.${pagoId}&limit=1`))[0];
-  if (!p) return;
   const rendidoActual = p.rendido_prop_items || {};
   const nuevoRendido = { ...rendidoActual };
   let comisionYaCobradaAviso = false;
@@ -7844,7 +7863,7 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
           const d = deltaPorItem[item] || 0;
           if (d <= 0) continue;
           const usar = Math.min(d, restanteDirecto);
-          rendidoDirectoPorItem[item] = redondear2(usar);
+          rendidoDirectoPorItem[_claveRendidoParaItem(contratoId, item)] = redondear2(usar);
           restanteDirecto -= usar;
         }
         if (restanteDirecto > 0.004) {
