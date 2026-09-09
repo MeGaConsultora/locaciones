@@ -14356,7 +14356,15 @@ async function renderRecibosEmitir() {
     if (propsCp.length > 1) {
       return propsCp.every(cp => emitidosMulti.some(e => e.pago_id === p.id && parseInt(e.persona_id) === parseInt(cp.persona_id)));
     }
-    return !!p.recibo_prop_emitido;
+    // Antes solo entraban acá los pagos YA marcados como emitidos (para
+    // revisar si quedó un saldo parcial). Pero un pago puede tener cosas
+    // ya rendidas SIN pasar nunca por "emitir recibo" — por ejemplo cuando
+    // el inquilino le pagó directo al propietario (ver "directo_propietario"
+    // en confirmarCobroInquilino): eso marca rendido_prop_items solo, sin
+    // tocar recibo_prop_emitido. Si no los incluimos acá también, el
+    // listado los sigue mostrando como "pendiente" para siempre aunque en
+    // los hechos no quede nada real para rendir.
+    return !!p.recibo_prop_emitido || Object.keys(p.rendido_prop_items||{}).length > 0;
   });
   if (candidatosARevisar.length) {
     try {
@@ -14397,9 +14405,9 @@ async function renderRecibosEmitir() {
     const propsCp = c ? DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === c.id && x.rol === 'propietario') : [];
     const marcadoComoTerminado = propsCp.length > 1
       ? propsCp.every(cp => emitidosMulti.some(e => e.pago_id === p.id && parseInt(e.persona_id) === parseInt(cp.persona_id)))
-      : !!p.recibo_prop_emitido;
-    if (!marcadoComoTerminado) return true; // nunca se emitió — pendiente de siempre
-    return idsConSaldoPendiente.has(p.id); // se emitió, pero quedó un saldo parcial
+      : (!!p.recibo_prop_emitido || Object.keys(p.rendido_prop_items||{}).length > 0);
+    if (!marcadoComoTerminado) return true; // nunca se emitió ni se rindió nada — pendiente de siempre
+    return idsConSaldoPendiente.has(p.id); // se emitió (o se rindió algo directo), pero puede haber quedado un saldo parcial
   });
 
   if (!pagos.length) {
