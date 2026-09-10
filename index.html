@@ -7433,6 +7433,29 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
 }
 
 async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPct) {
+  // Aviso ANTES de confirmar, no después — si hay "directo al propietario"
+  // en un contrato con más de un propietario, hay que poder frenar acá y
+  // reconsiderar, no enterarse recién cuando ya no hay vuelta atrás. Esto
+  // va ANTES de abrir la pestaña en blanco del recibo (más abajo) a
+  // propósito: si el confirm() corriera después de abrir esa pestaña, el
+  // navegador le da el foco a la pestaña nueva y el diálogo queda esperando
+  // en la pestaña vieja, sin que se vea — parece que "no pasa nada".
+  {
+    const mediosPagoCajaPrevio = leerMediosPagoCajaGP();
+    const medioDirectoTotalPrevio = redondear2(mediosPagoCajaPrevio.filter(m => m.titularId === 'directo_propietario').reduce((s,f) => s+f.monto, 0));
+    if (medioDirectoTotalPrevio > 0.004) {
+      const propsCpPrevio = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId) && x.rol === 'propietario');
+      if (propsCpPrevio.length > 1) {
+        const nombresPropsPrevio = propsCpPrevio.map(cp => {
+          const persona = DB_PERSONAS.find(x => x.id === cp.persona_id);
+          return persona ? formatNombrePersona(persona) : '(propietario sin nombre)';
+        }).join(' y ');
+        const seguir = confirm(`Ojo: este contrato tiene MÁS DE UN PROPIETARIO (${nombresPropsPrevio}), y marcaste ${formatMoney(medioDirectoTotalPrevio)} como pagado directo al propietario.\n\nEl sistema no puede adivinar a cuál de ellos le pagaron, así que si confirmás, NO se va a marcar nada como rendido automáticamente — lo vas a tener que hacer vos a mano después en el Recibo Propietario.\n\n¿Confirmar igual el cobro?`);
+        if (!seguir) return;
+      }
+    }
+  }
+
   // Abrir la ventana del recibo YA, de forma sincrónica, antes de cualquier
   // espera de red. Si se abre recién al final (después de varios awaits para
   // guardar el pago), el navegador puede dejar de reconocer esto como parte
@@ -7519,25 +7542,6 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
   const mediosPagoCaja = leerMediosPagoCajaGP();
   const totalMediosPagoCaja = redondear2(mediosPagoCaja.reduce((s,f) => s + f.monto, 0));
   if (!mediosPagoCaja.length) { _ventanaRecibo?.close(); toast('Completá al menos un medio de pago en "Registrar en Caja" para poder confirmar el cobro','error'); return; }
-  // Aviso ANTES de confirmar, no después — si hay "directo al propietario"
-  // en un contrato con más de un propietario, hay que poder frenar acá y
-  // reconsiderar, no enterarse recién cuando ya no hay vuelta atrás (el
-  // cobro ya quedó confirmado). No bloquea el flujo normal: solo pregunta
-  // si se quiere seguir, sabiendo que no se va a marcar nada solo.
-  {
-    const medioDirectoTotalPrevio = redondear2(mediosPagoCaja.filter(m => m.titularId === 'directo_propietario').reduce((s,f) => s+f.monto, 0));
-    if (medioDirectoTotalPrevio > 0.004) {
-      const propsCpPrevio = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId) && x.rol === 'propietario');
-      if (propsCpPrevio.length > 1) {
-        const nombresPropsPrevio = propsCpPrevio.map(cp => {
-          const persona = DB_PERSONAS.find(x => x.id === cp.persona_id);
-          return persona ? formatNombrePersona(persona) : '(propietario sin nombre)';
-        }).join(' y ');
-        const seguir = confirm(`Ojo: este contrato tiene MÁS DE UN PROPIETARIO (${nombresPropsPrevio}), y marcaste ${formatMoney(medioDirectoTotalPrevio)} como pagado directo al propietario.\n\nEl sistema no puede adivinar a cuál de ellos le pagaron, así que si confirmás, NO se va a marcar nada como rendido automáticamente — lo vas a tener que hacer vos a mano después en el Recibo Propietario.\n\n¿Confirmar igual el cobro?`);
-        if (!seguir) { _ventanaRecibo?.close(); return; }
-      }
-    }
-  }
   if (Math.abs(totalMediosPagoCaja - totalCobrado) > 0.01) {
     _ventanaRecibo?.close();
     toast(`Lo asignado en "Registrar en Caja" (${formatMoney(totalMediosPagoCaja)}) no coincide con el total a cobrar (${formatMoney(totalCobrado)})`, 'error');
