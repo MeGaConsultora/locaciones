@@ -3151,11 +3151,18 @@ async function recalcularFilaPago(pagoId) {
   let extras = extrasActuales[pagoId]||[];
   try {
     const extrasDB = await sbGet('pagos_extras', `pago_id=eq.${pagoId}`);
-    if (extrasDB.length) {
-      extras = extrasDB;
-      extrasActuales[pagoId] = extrasDB; // sincronizar memoria también
-    }
-  } catch(e) { /* fallback a memoria */ }
+    // BUG encontrado: acá antes decía "if (extrasDB.length)" — si el pago
+    // se quedó sin ningún extra (justo se borró el último), la consulta
+    // trae un array vacío, esa condición da falso, y la función se
+    // quedaba con lo que tenía en memoria (que podía seguir teniendo el
+    // extra ya borrado) en vez del array vacío real. Eso dejaba un
+    // "extra fantasma" sumado para siempre en el total guardado, hasta
+    // que alguien volviera a tocar ese pago. Ahora se usa SIEMPRE lo que
+    // vino de la base (sea [] o no) — el fallback a memoria es solo para
+    // cuando la consulta realmente falla (excepción, sin conexión, etc).
+    extras = extrasDB;
+    extrasActuales[pagoId] = extrasDB; // sincronizar memoria también
+  } catch(e) { /* fallback a memoria — la consulta en sí falló */ }
   const psData = window._pagosSuministros?.[p.id];
   const total = calcularTotal(p, extras, psData);
   // pagado_importe es inmutable — saldo = total - pagado_importe
@@ -3202,6 +3209,12 @@ async function agregarExtra(pagoId) {
       `;
       div.appendChild(newDiv);
     }
+    // Recalcular ya mismo, aunque el importe todavía sea 0 — así el total
+    // guardado en la base nunca queda un instante desactualizado respecto
+    // a lo que ya aparece en pagos_extras (evita una ventana chica donde
+    // alguien viendo el portal del inquilino podría ver el extra listado
+    // pero el total todavía sin reflejarlo).
+    await recalcularFilaPago(pagoId);
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
@@ -5592,23 +5605,23 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       <div id="gp-extras-list">
         ${extrasDelMes.map(e => `
           <div class="extra-item" id="gp-extra-${e.id}" style="flex-wrap:wrap;gap:6px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #f0ece4">
-            <input type="text" id="gpe-concepto-${e.id}" value="${e.concepto||''}" placeholder="Concepto" style="flex:2;min-width:120px" onchange="guardarExtraGP(${e.id})">
-            <input type="text" id="gpe-importe-${e.id}" value="${e.importe||''}" placeholder="$" style="width:90px" onchange="guardarExtraGP(${e.id})">
-            <select id="gpe-cargo-${e.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="actualizarLabelsTipoExtra(${e.id}); guardarExtraGP(${e.id})">
+            <input type="text" id="gpe-concepto-${e.id}" value="${e.concepto||''}" placeholder="Concepto" style="flex:2;min-width:120px" onchange="guardarExtraGP(${e.id}, ${p.id})">
+            <input type="text" id="gpe-importe-${e.id}" value="${e.importe||''}" placeholder="$" style="width:90px" onchange="guardarExtraGP(${e.id}, ${p.id})">
+            <select id="gpe-cargo-${e.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="actualizarLabelsTipoExtra(${e.id}); guardarExtraGP(${e.id}, ${p.id})">
               <option value="inquilino" ${e.a_cargo_de!=='propietario'?'selected':''}>Inquilino</option>
               <option value="propietario" ${e.a_cargo_de==='propietario'?'selected':''}>Propietario</option>
             </select>
             ${(() => {
               const propsCp = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === contratoId && x.rol === 'propietario');
               if (propsCp.length < 2) return '';
-              return '<select id="gpe-prop-'+e.id+'" style="padding:4px 8px;border:1px solid #f0c040;border-radius:6px;font-size:0.82rem;display:'+(e.a_cargo_de==='propietario'?'block':'none')+'" onchange="guardarExtraGP('+e.id+')" title="Propietario al que corresponde">' +
+              return '<select id="gpe-prop-'+e.id+'" style="padding:4px 8px;border:1px solid #f0c040;border-radius:6px;font-size:0.82rem;display:'+(e.a_cargo_de==='propietario'?'block':'none')+'" onchange="guardarExtraGP('+e.id+', '+p.id+')" title="Propietario al que corresponde">' +
                 '<option value="">— Todos —</option>' +
                 propsCp.map(cp => {
                   const per = DB_PERSONAS.find(x=>x.id===parseInt(cp.persona_id));
                   return '<option value="'+cp.persona_id+'" '+(parseInt(e.propietario_persona_id)===parseInt(cp.persona_id)?'selected':'')+'>'+formatNombrePersona(per)+'</option>';
                 }).join('') + '</select>';
             })()}
-            <select id="gpe-tipo-${e.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="guardarExtraGP(${e.id})">
+            <select id="gpe-tipo-${e.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="guardarExtraGP(${e.id}, ${p.id})">
               <option value="debito" ${e.tipo!=='credito'?'selected':''}>${e.a_cargo_de==='propietario'?'Debitar':'Cargo extra'}</option>
               <option value="credito" ${e.tipo==='credito'?'selected':''}>${e.a_cargo_de==='propietario'?'Acreditar':'Descuento'}</option>
             </select>
@@ -6014,7 +6027,12 @@ function renderReciboPropBadgeYBoton(pagoId, esMultiProp, activePropId, contrato
 
 async function cambiarPropietarioGP(personaId) {
   window._gpPropietarioId = personaId;
-  const p = pagosActuales.find(x => x.mes && x.mes.startsWith(window._gpMesKey));
+  // Preferir la referencia ya sincronizada (window._gpPagoActual, que se
+  // actualiza con datos frescos cada vez que se toca algo en este GP) por
+  // sobre la búsqueda en pagosActuales por mes — esa búsqueda es la misma
+  // que causó el bug real de extras: si el formato de mes no matchea por
+  // algún motivo puntual, devuelve undefined en silencio.
+  const p = window._gpPagoActual || pagosActuales.find(x => x.mes && x.mes.startsWith(window._gpMesKey));
   const hoja = window._gpHoja;
   const contratoId = window._gpContratoId;
   const comisionPct = window._gpComision || 8;
@@ -6547,14 +6565,25 @@ async function guardarExtraGP(extraId, pagoId) {
       method:'PATCH', headers:HEADERS,
       body:JSON.stringify({concepto, importe, a_cargo_de:cargo, tipo, propietario_persona_id: propietarioPId})
     });
-    // Recalcular total y saldo del pago
-    const pid = pagoId || (() => {
+    // Recalcular total y saldo del pago. pagoId debería llegar siempre
+    // explícito ahora (todos los onclick que llaman a esta función lo
+    // pasan) — el resto de acá es solo un plan B por si alguna vez se
+    // agrega un llamado nuevo que se olvide de pasarlo. A diferencia de
+    // antes, si el plan B también falla, avisa con un toast en vez de
+    // saltearse el recálculo en silencio (así, si esto vuelve a pasar
+    // algún día, se nota al toque en vez de quedar un total mal guardado
+    // sin que nadie se entere).
+    const pid = pagoId || window._gpPagoActual?.id || (() => {
       const hoja = window._gpHoja;
       const mesKey = window._gpMesKey;
       if (!hoja || !mesKey) return null;
       return DB.pagos.find(p => p.hoja === hoja && p.mes && p.mes.startsWith(mesKey))?.id;
     })();
-    if (pid) await recalcularFilaPago(pid);
+    if (pid) {
+      await recalcularFilaPago(pid);
+    } else {
+      toast('No se pudo identificar el pago para recalcular el total — revisá este mes a mano', 'error');
+    }
     // Refrescar la pestaña "Recibo Propietario" — no se actualiza sola al
     // cambiar de pestaña (mostrarSolapa solo muestra/oculta lo que ya está
     // armado), así que sin esto un extra recién cargado o modificado quedaba
@@ -6579,13 +6608,13 @@ async function agregarExtraGP(hoja, contratoId, mesKey, pagoId, comisionPct) {
       el.id = `gp-extra-${extra.id}`;
       el.style.cssText = 'flex-wrap:wrap;gap:6px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #f0ece4';
       el.innerHTML = `
-        <input type="text" id="gpe-concepto-${extra.id}" value="" placeholder="Concepto" style="flex:2;min-width:120px" onchange="guardarExtraGP(${extra.id})">
-        <input type="text" id="gpe-importe-${extra.id}" value="" placeholder="$" style="width:90px" onchange="guardarExtraGP(${extra.id})">
-        <select id="gpe-cargo-${extra.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="actualizarLabelsTipoExtra(${extra.id}); guardarExtraGP(${extra.id})">
+        <input type="text" id="gpe-concepto-${extra.id}" value="" placeholder="Concepto" style="flex:2;min-width:120px" onchange="guardarExtraGP(${extra.id}, ${pagoId})">
+        <input type="text" id="gpe-importe-${extra.id}" value="" placeholder="$" style="width:90px" onchange="guardarExtraGP(${extra.id}, ${pagoId})">
+        <select id="gpe-cargo-${extra.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="actualizarLabelsTipoExtra(${extra.id}); guardarExtraGP(${extra.id}, ${pagoId})">
           <option value="inquilino" selected>Inquilino</option>
           <option value="propietario">Propietario</option>
         </select>
-        <select id="gpe-tipo-${extra.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="guardarExtraGP(${extra.id})">
+        <select id="gpe-tipo-${extra.id}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem" onchange="guardarExtraGP(${extra.id}, ${pagoId})">
           <option value="debito" selected>Cargo extra</option>
           <option value="credito">Descuento</option>
         </select>

@@ -23,6 +23,12 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  // Mismo motivo que en el portal inquilino: las llamadas a Supabase
+  // nunca deben pasar por este cacheo, para que un fallo puntual de red
+  // en una sola consulta no termine mostrando una mezcla de datos
+  // viejos (de esa consulta) con datos frescos (del resto) en la misma
+  // pantalla. Solo el archivo de la app en sí usa cacheo con respaldo.
+  if (event.request.url.includes('supabase.co')) return;
   event.respondWith(
     fetch(event.request)
       .then((respuesta) => {
