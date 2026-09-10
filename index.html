@@ -1973,6 +1973,29 @@ function getEstado(c) {
 function daysDiff(d1, d2) {
   return Math.round((new Date(d1) - new Date(d2)) / 86400000);
 }
+// Confirm() propio, en vez del confirm() nativo del navegador — se
+// arma con su propio overlay (no reusa #modal-overlay, que puede estar
+// ocupado por la pantalla de Gestión de Pago detrás) y devuelve una
+// Promise<boolean>, para poder usar "await confirmarPersonalizado(...)"
+// igual que si fuera el confirm() de toda la vida.
+function confirmarPersonalizado(mensaje) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+    overlay.innerHTML = `
+      <div style="background:white;border-radius:12px;max-width:480px;width:100%;padding:1.5rem;box-shadow:0 10px 40px rgba(0,0,0,0.3)">
+        <p style="white-space:pre-line;font-size:0.88rem;line-height:1.5;color:#222;margin:0 0 1.2rem">${mensaje.replace(/</g,'&lt;')}</p>
+        <div style="display:flex;gap:0.6rem;justify-content:flex-end">
+          <button id="confpers-cancelar" class="btn btn-secondary">Cancelar</button>
+          <button id="confpers-continuar" class="btn btn-green">Confirmar igual</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#confpers-cancelar').onclick = () => { overlay.remove(); resolve(false); };
+    overlay.querySelector('#confpers-continuar').onclick = () => { overlay.remove(); resolve(true); };
+  });
+}
+
 function toast(msg, type='success') {
   let container = document.getElementById('toast-container');
   if (!container) {
@@ -7450,7 +7473,7 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
           const persona = DB_PERSONAS.find(x => x.id === cp.persona_id);
           return persona ? formatNombrePersona(persona) : '(propietario sin nombre)';
         }).join(' y ');
-        const seguir = confirm(`Ojo: este contrato tiene MÁS DE UN PROPIETARIO (${nombresPropsPrevio}), y marcaste ${formatMoney(medioDirectoTotalPrevio)} como pagado directo al propietario.\n\nEl sistema no puede adivinar a cuál de ellos le pagaron, así que si confirmás, NO se va a marcar nada como rendido automáticamente — lo vas a tener que hacer vos a mano después en el Recibo Propietario.\n\n¿Confirmar igual el cobro?`);
+        const seguir = await confirmarPersonalizado(`Ojo: este contrato tiene MÁS DE UN PROPIETARIO (${nombresPropsPrevio}), y marcaste ${formatMoney(medioDirectoTotalPrevio)} como pagado directo al propietario.\n\nEl sistema no puede adivinar a cuál de ellos le pagaron, así que si confirmás, NO se va a marcar nada como rendido automáticamente — lo vas a tener que hacer vos a mano después en el Recibo Propietario.\n\n¿Confirmar igual el cobro?`);
         if (!seguir) return;
       }
     }
@@ -11953,6 +11976,7 @@ function abrirNuevoMovimientoCaja() {
   document.getElementById('cm-fecha').value = TODAY;
   document.getElementById('cm-monto').value = '';
   document.getElementById('cm-concepto').value = '';
+  document.getElementById('cm-categoria').value = 'Cobro alquiler';
   document.getElementById('cm-categoria-otro').value = '';
   document.getElementById('cm-categoria-otro').style.display = 'none';
   document.getElementById('cm-moneda').value = 'ARS';
