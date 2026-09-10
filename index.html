@@ -7847,7 +7847,17 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
   if (medioDirectoTotal > 0.004) {
     const propsCpDirecto = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId) && x.rol === 'propietario');
     if (propsCpDirecto.length > 1) {
-      toast('Ojo: este contrato tiene más de un propietario — marcá a mano en el Recibo Propietario cuál de ellos cobró directo, para no rendírselo de nuevo', 'error');
+      // No bloquea nada — el cobro ya se confirmó arriba de este punto.
+      // Solo que como hay más de un propietario, no hay forma automática
+      // de saber a cuál le pagaron directo, así que no se marca nada solo
+      // y se lo dejamos bien visible (alert, no un toast que puede
+      // pasar desapercibido) para que lo resuelva a mano en el Recibo
+      // Propietario de este contrato.
+      const nombresProps = propsCpDirecto.map(cp => {
+        const persona = DB_PERSONAS.find(x => x.id === cp.persona_id);
+        return persona ? formatNombrePersona(persona) : '(propietario sin nombre)';
+      }).join(' y ');
+      alert(`Este cobro se confirmó bien y ya quedó registrado.\n\nOjo con esto: marcaste que ${formatMoney(medioDirectoTotal)} se pagaron directo al propietario, pero este contrato tiene MÁS DE UN PROPIETARIO (${nombresProps}) — el sistema no puede adivinar a cuál de ellos le pagaron, así que no se marcó nada como rendido automáticamente.\n\nAndá al Recibo Propietario de este contrato y marcá a mano cuál corresponde, para no ofrecérselo de nuevo a rendir por error.`);
     } else {
       try {
         const deltaPorItem = {};
