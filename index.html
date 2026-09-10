@@ -2672,7 +2672,7 @@ async function subirArchivoContrato(contratoId, inputEl) {
       method: 'PUT',
       headers: {
         'apikey': SB_KEY,
-        'Authorization': `Bearer ${SB_KEY}`,
+        'Authorization': HEADERS['Authorization'],
         'Content-Type': file.type || 'application/octet-stream',
         'x-upsert': 'true',
       },
@@ -2693,11 +2693,22 @@ async function subirArchivoContrato(contratoId, inputEl) {
   }
 }
 
-function verArchivoContrato(contratoId) {
+async function verArchivoContrato(contratoId) {
   const c = DB.contratos.find(x => x.id === contratoId);
   if (!c?.archivo_contrato_path) return;
-  const url = `${SB_URL}/storage/v1/object/public/contratos-archivos/${c.archivo_contrato_path}`;
-  window.open(url, '_blank');
+  try {
+    const resp = await fetch(`${SB_URL}/storage/v1/object/sign/contratos-archivos/${c.archivo_contrato_path}`, {
+      method: 'POST',
+      headers: { 'apikey': SB_KEY, 'Authorization': HEADERS['Authorization'], 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expiresIn: 3600 })
+    });
+    const data = await resp.json();
+    const signedUrl = data.signedURL ? `${SB_URL}/storage/v1${data.signedURL}` : null;
+    if (!signedUrl) throw new Error('No se pudo obtener la URL del documento');
+    window.open(signedUrl, '_blank');
+  } catch(e) {
+    toast('Error al abrir el documento: ' + e.message, 'error');
+  }
 }
 
 // Sube el comprobante (foto o PDF) de un concepto extra puntual — mismo
@@ -2709,6 +2720,22 @@ function verArchivoContrato(contratoId) {
 // importar si ya había uno adjunto — por eso parecía que "no se guardaba":
 // en realidad sí se guardaba, pero no había forma de verlo ni de darse
 // cuenta, porque cada click disparaba una subida nueva de una.
+async function abrirComprobanteExtraFirmado(archivoPath) {
+  try {
+    const resp = await fetch(`${SB_URL}/storage/v1/object/sign/contratos-archivos/${archivoPath}`, {
+      method: 'POST',
+      headers: { 'apikey': SB_KEY, 'Authorization': HEADERS['Authorization'], 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expiresIn: 3600 })
+    });
+    const data = await resp.json();
+    const signedUrl = data.signedURL ? `${SB_URL}/storage/v1${data.signedURL}` : null;
+    if (!signedUrl) throw new Error('No se pudo obtener la URL del comprobante');
+    window.open(signedUrl, '_blank');
+  } catch(e) {
+    toast('Error al abrir el comprobante: ' + e.message, 'error');
+  }
+}
+
 function manejarClickArchivoExtra(extraId) {
   const btn = document.getElementById(`gpe-btn-archivo-${extraId}`);
   const archivoPath = btn?.dataset.archivo;
@@ -2720,7 +2747,7 @@ function manejarClickArchivoExtra(extraId) {
   div.innerHTML = `<div style="background:white;border-radius:12px;padding:1.25rem;text-align:center;min-width:240px;max-width:90vw">
     <div style="font-weight:600;margin-bottom:0.25rem">📎 Comprobante adjunto</div>
     <div style="font-size:0.78rem;color:#888;margin-bottom:1rem;word-break:break-word">${archivoNombre}</div>
-    <button type="button" onclick="window.open('${SB_URL}/storage/v1/object/public/contratos-archivos/${archivoPath}','_blank');document.querySelector('.modal-overlay-archivo-extra')?.remove()" style="display:block;width:100%;padding:8px 16px;margin:6px 0;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:0.9rem;background:white">👁️ Ver comprobante</button>
+    <button type="button" onclick="abrirComprobanteExtraFirmado('${archivoPath}');document.querySelector('.modal-overlay-archivo-extra')?.remove()" style="display:block;width:100%;padding:8px 16px;margin:6px 0;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:0.9rem;background:white">👁️ Ver comprobante</button>
     <button type="button" onclick="document.querySelector('.modal-overlay-archivo-extra')?.remove();document.getElementById('gpe-file-${extraId}').click()" style="display:block;width:100%;padding:8px 16px;margin:6px 0;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:0.9rem;background:white">🔄 Reemplazar</button>
     <button type="button" onclick="document.querySelector('.modal-overlay-archivo-extra')?.remove()" style="margin-top:6px;padding:6px 16px;border:none;background:#eee;border-radius:6px;cursor:pointer">Cancelar</button>
   </div>`;
@@ -2743,7 +2770,7 @@ async function subirArchivoExtra(extraId, inputEl) {
       method: 'PUT',
       headers: {
         'apikey': SB_KEY,
-        'Authorization': `Bearer ${SB_KEY}`,
+        'Authorization': HEADERS['Authorization'],
         'Content-Type': file.type || 'application/octet-stream',
         'x-upsert': 'true',
       },
@@ -5278,13 +5305,13 @@ async function abrirBoletaPdf(pdfRec) {
       `${SB_URL}/storage/v1/object/sign/servicios/${pdfRec.pdf_path}`,
       {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
+        headers: { 'apikey': SB_KEY, 'Authorization': HEADERS['Authorization'], 'Content-Type': 'application/json' },
         body: JSON.stringify({ expiresIn: 3600 })
       }
     );
     const data = await resp.json();
     const signedUrl = data.signedURL ? `${SB_URL}/storage/v1${data.signedURL}` : null;
-    if (!signedUrl) throw new Error('No se pudo obtener URL');
+    if (!signedUrl) throw new Error(data.message || data.error || 'No se pudo obtener URL');
 
     // Open in new window — use blob to avoid script tag parsing issues
     const html = [
@@ -5325,13 +5352,13 @@ async function abrirComprobanteExtra(extraRec) {
       `${SB_URL}/storage/v1/object/sign/contratos-archivos/${extraRec.archivo_path}`,
       {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
+        headers: { 'apikey': SB_KEY, 'Authorization': HEADERS['Authorization'], 'Content-Type': 'application/json' },
         body: JSON.stringify({ expiresIn: 3600 })
       }
     );
     const data = await resp.json();
     const signedUrl = data.signedURL ? `${SB_URL}/storage/v1${data.signedURL}` : null;
-    if (!signedUrl) throw new Error('No se pudo obtener URL');
+    if (!signedUrl) throw new Error(data.message || data.error || 'No se pudo obtener URL');
     window.open(signedUrl, '_blank');
   } catch(e) {
     toast('Error al abrir el comprobante: ' + e.message, 'error');
@@ -13228,7 +13255,7 @@ async function procesarPDF() {
         `${SB_URL}/storage/v1/object/servicios/${fileName}`,
         {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/pdf', 'x-upsert': 'true' },
+          headers: { 'Authorization': HEADERS['Authorization'], 'Content-Type': 'application/pdf', 'x-upsert': 'true' },
           body: file
         }
       );
