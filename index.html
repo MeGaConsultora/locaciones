@@ -12572,6 +12572,7 @@ async function verificarAprobacion() {
     document.getElementById('user-name').textContent = u.nombre || u.email;
     if (u.admin || u.rol === 'admin') document.getElementById('tab-admin').style.display = 'block';
     hideLoginScreen();
+    iniciarTimerInactividad();
     loadAll();
   } catch(e) {
     showLoginScreen();
@@ -12623,6 +12624,7 @@ async function doRegistro() {
 
 function doLogout() {
   detenerPollingCaja();
+  detenerTimerInactividad();
   localStorage.removeItem('sb_token');
   localStorage.removeItem('sb_uid');
   localStorage.removeItem('sb_email');
@@ -12641,6 +12643,49 @@ function showLoginScreen() {
 }
 function hideLoginScreen() {
   document.getElementById('login-screen').style.display = 'none';
+}
+
+// ============================================================
+// CIERRE POR INACTIVIDAD — si un admin se olvida la app abierta sin
+// tocarla, se cierra sesión sola después de 1 hora, por seguridad.
+//
+// IMPORTANTE: esto es un timer PURAMENTE LOCAL del navegador (setTimeout
+// nomás). No hace ningún llamado a Supabase, no toca sb_token ni
+// sb_refresh_token, no interactúa para nada con el mecanismo de
+// renovación de sesión — es completamente independiente de todo eso.
+// Solo escucha actividad real (mouse, teclado, touch, scroll) y, si
+// pasan 60 minutos sin nada de esto, llama a doLogout() (la misma
+// función que usa el botón "Salir").
+//
+// Como cada admin usa su propio navegador/dispositivo, esto ya es "por
+// cada admin" de forma automática: la inactividad de Hugo en su PC no
+// afecta la sesión de Gregorio en la suya.
+const INACTIVIDAD_LIMITE_MS = 60 * 60 * 1000; // 1 hora
+const INACTIVIDAD_EVENTOS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+let _inactividadTimer = null;
+let _inactividadUltimoReset = 0;
+function _resetTimerInactividad() {
+  const ahora = Date.now();
+  // Throttle: no hace falta reiniciar el timer en cada mousemove
+  // individual (podrían ser cientos por segundo) — alcanza con chequear
+  // cada 5 segundos como mucho, el margen de precisión es insignificante
+  // frente a una hora de límite.
+  if (ahora - _inactividadUltimoReset < 5000) return;
+  _inactividadUltimoReset = ahora;
+  if (_inactividadTimer) clearTimeout(_inactividadTimer);
+  _inactividadTimer = setTimeout(() => {
+    toast('Se cerró la sesión por inactividad (1 hora sin uso)', 'error');
+    doLogout();
+  }, INACTIVIDAD_LIMITE_MS);
+}
+function iniciarTimerInactividad() {
+  INACTIVIDAD_EVENTOS.forEach(ev => document.addEventListener(ev, _resetTimerInactividad, { passive: true }));
+  _inactividadUltimoReset = 0; // fuerza que el primer llamado sí arranque el timer
+  _resetTimerInactividad();
+}
+function detenerTimerInactividad() {
+  if (_inactividadTimer) { clearTimeout(_inactividadTimer); _inactividadTimer = null; }
+  INACTIVIDAD_EVENTOS.forEach(ev => document.removeEventListener(ev, _resetTimerInactividad));
 }
 function showLoginMsg(panel, msg, type) {
   const el = document.getElementById(panel + '-msg');
