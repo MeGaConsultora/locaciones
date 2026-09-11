@@ -7908,11 +7908,19 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
   // que las filas reales sigan quedando bien proporcionadas entre sí.
   const medioDirectoTotal = redondear2(mediosPagoCaja.filter(m => m.titularId === 'directo_propietario').reduce((s,f) => s+f.monto, 0));
   {
-    const totalParaCaja = Math.max((montoEsteMovimiento + honMontoFinal) - medioDirectoTotal, 0);
+    // BUG encontrado (caso real: Dellaporta I-Díaz): acá solo se reducía el
+    // DENOMINADOR (totalParaCaja) restando medioDirectoTotal, pero el
+    // NUMERADOR seguía usando montoEsteMovimiento completo, sin descontar
+    // nada — así que la proporción daba bien, pero se aplicaba sobre la
+    // base equivocada, y el medio real terminaba absorbiendo TODA la plata
+    // (incluida la que ya había quedado en manos del propietario), en vez
+    // de solo la parte que de verdad pasó por Caja.
+    const montoAlquilerParaCaja = Math.max(redondear2(montoEsteMovimiento - medioDirectoTotal), 0);
+    const totalParaCaja = montoAlquilerParaCaja + honMontoFinal;
     for (const medio of mediosPagoCaja) {
       if (medio.titularId === 'directo_propietario') continue;
       const proporcion = totalParaCaja > 0 ? medio.monto / totalParaCaja : 0;
-      const montoAlquilerMedio = redondear2(montoEsteMovimiento * proporcion);
+      const montoAlquilerMedio = redondear2(montoAlquilerParaCaja * proporcion);
       const montoHonorariosMedio = redondear2(honMontoFinal * proporcion);
       const monedaMedio = medio.cuentaId ? (CAJA_CUENTAS.find(c => c.id === medio.cuentaId)?.moneda || 'ARS') : 'ARS';
       if (montoAlquilerMedio > 0.004) {
@@ -10959,20 +10967,34 @@ function agruparMovimientosDelMismoCobrado(movs) {
     const sinTimestamp = ultimo && (!tActual || !ultimo._t) && ultimo.fecha === m.fecha;
 
     if (mismoPago && (cercaEnTiempo || sinTimestamp)) {
-      ultimo.monto = (ultimo.monto||0) + (m.monto||0);
+      // "RendidoDirectoPropietario" es un registro de SEGUIMIENTO interno
+      // (anota cuánto de ESTE MISMO cobro fue directo al propietario) — no
+      // es plata cobrada aparte. Si se suma igual que Honorarios (que sí es
+      // plata real cobrada por otro medio), el total mostrado termina
+      // siendo el doble de lo que realmente pagó el inquilino — pasó justo
+      // esto con Dellaporta I-Díaz: $539.961,04 (recibo real) + $493.515
+      // (el mismo monto, anotado aparte) = $1.033.476,04 mostrado, el doble.
+      if (m.concepto !== 'RendidoDirectoPropietario') {
+        ultimo.monto = ultimo._esSoloDirecto ? (m.monto||0) : (ultimo.monto||0) + (m.monto||0);
+        ultimo._esSoloDirecto = false;
+      }
       const partesConcepto = [ultimo.concepto, m.concepto].filter(Boolean);
       partesConcepto.sort((a,b) => (a==='Honorarios'?1:0) - (b==='Honorarios'?1:0));
       ultimo.concepto = partesConcepto.join(', ');
-      try {
-        const itemsPrev = JSON.parse(ultimo.items || '[]');
-        const itemsNuevo = JSON.parse(m.items || '[]');
-        const itemsCombinados = [...itemsPrev, ...itemsNuevo];
-        itemsCombinados.sort((a,b) => (a.label==='Honorarios'?1:0) - (b.label==='Honorarios'?1:0));
-        ultimo.items = JSON.stringify(itemsCombinados);
-      } catch(e) {}
+      if (m.concepto !== 'RendidoDirectoPropietario') {
+        try {
+          const itemsPrevParsed = JSON.parse(ultimo.items || '[]');
+          const itemsNuevoParsed = JSON.parse(m.items || '[]');
+          const itemsPrev = Array.isArray(itemsPrevParsed) ? itemsPrevParsed : [];
+          const itemsNuevo = Array.isArray(itemsNuevoParsed) ? itemsNuevoParsed : [];
+          const itemsCombinados = [...itemsPrev, ...itemsNuevo];
+          itemsCombinados.sort((a,b) => (a.label==='Honorarios'?1:0) - (b.label==='Honorarios'?1:0));
+          ultimo.items = JSON.stringify(itemsCombinados);
+        } catch(e) {}
+      }
       ultimo._t = tActual || ultimo._t;
     } else {
-      grupos.push({ ...m, _t: tActual });
+      grupos.push({ ...m, _t: tActual, _esSoloDirecto: m.concepto === 'RendidoDirectoPropietario' });
     }
   }
 
@@ -10981,7 +11003,7 @@ function agruparMovimientosDelMismoCobrado(movs) {
     if (a.fecha !== b.fecha) return (b.fecha||'').localeCompare(a.fecha||'');
     return (b._t||b.id) - (a._t||a.id);
   });
-  grupos.forEach(g => delete g._t);
+  grupos.forEach(g => { delete g._t; delete g._esSoloDirecto; });
   return grupos;
 }
 
