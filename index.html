@@ -5445,6 +5445,13 @@ async function abrirNuevoMes(hoja, mesPreseleccionado, solapaInicial='s1') {
 }
 
 async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, solapaInicial='s1') {
+  // Si se está entrando a un contrato DISTINTO al que se tenía abierto,
+  // hay que largar la selección de "qué propietario estoy viendo" — si no,
+  // en un contrato multi-propietario podía quedar seleccionado un
+  // propietario que ni siquiera pertenece a este contrato nuevo, y
+  // colarse en el recibo (ver imprimirReciboPropGP). Si solo se cambió de
+  // MES dentro del mismo contrato, se respeta la selección que ya había.
+  if (window._gpContratoId !== contratoId) window._gpPropietarioId = null;
   window._gpMesKey = mesKey; // keep in sync when month changes
   window._gpHoja = hoja;
   window._gpContratoId = contratoId;
@@ -5493,7 +5500,8 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
   // siempre en `pagos`).
   const propsCpGP = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId) && x.rol === 'propietario');
   const esMultiPropGP = propsCpGP.length > 1;
-  const activePropIdGP = window._gpPropietarioId ? parseInt(window._gpPropietarioId) : (propsCpGP[0]?.persona_id ? parseInt(propsCpGP[0].persona_id) : null);
+  const _gpPropIdOk_5503 = window._gpPropietarioId && propsCpGP.some(cp => parseInt(cp.persona_id) === parseInt(window._gpPropietarioId));
+  const activePropIdGP = _gpPropIdOk_5503 ? parseInt(window._gpPropietarioId) : (propsCpGP[0]?.persona_id ? parseInt(propsCpGP[0].persona_id) : null);
   let reciboPropEmitidoActivo = false, reciboPropFechaActivo = null;
   // Qué ya se rindió (por ítem) en emisiones anteriores de este mismo mes,
   // para que generarItemsPropietario() solo ofrezca el saldo pendiente de
@@ -5737,7 +5745,7 @@ function renderSolapaReciboPropHtml(p, extrasProp, comisionPct, c, hoja, contrat
   const vacio = (!p || (!p.total && !(p.pagado_importe > 0) && !tieneParteProp && !tieneExtraProp)) && !_sH;
   if (vacio) return `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>`;
   return `
-      <div id="gp-prop-items">${generarItemsPropietario(p, extrasProp, comisionPct, c, window._gpPropietarioId||null, rendidoPropItemsGP)}</div>
+      <div id="gp-prop-items">${generarItemsPropietario(p, extrasProp, comisionPct, c, activePropIdGP||null, rendidoPropItemsGP)}</div>
       <div style="display:flex;justify-content:space-between;padding:0.75rem 0;font-weight:700;border-top:2px solid var(--ink);margin-top:0.75rem;font-size:1rem">
         <span>Total a rendir:</span>
         <span id="gp-total-prop" style="color:var(--green)">—</span>
@@ -5771,7 +5779,8 @@ async function refrescarSolapaPropGP() {
 
   const propsCpGP = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId) && x.rol === 'propietario');
   const esMultiPropGP = propsCpGP.length > 1;
-  const activePropIdGP = window._gpPropietarioId ? parseInt(window._gpPropietarioId) : (propsCpGP[0]?.persona_id ? parseInt(propsCpGP[0].persona_id) : null);
+  const _gpPropIdOk_5781 = window._gpPropietarioId && propsCpGP.some(cp => parseInt(cp.persona_id) === parseInt(window._gpPropietarioId));
+  const activePropIdGP = _gpPropIdOk_5781 ? parseInt(window._gpPropietarioId) : (propsCpGP[0]?.persona_id ? parseInt(propsCpGP[0].persona_id) : null);
   let reciboPropEmitidoActivo = false, reciboPropFechaActivo = null, rendidoPropItemsGP = {};
   if (p) {
     if (esMultiPropGP && activePropIdGP) {
@@ -8629,7 +8638,14 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
   // tiene su propio recibo — hay que identificar cuál se está generando)
   const propsCp = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId) && x.rol === 'propietario');
   const esMultiProp = propsCp.length > 1;
-  const activePropId = window._gpPropietarioId ? parseInt(window._gpPropietarioId) : (propsCp[0]?.persona_id ? parseInt(propsCp[0].persona_id) : null);
+  // BUG encontrado (caso real: apareció "DAJ, Liliana Mirta" en el recibo
+  // de un contrato de otro propietario distinto): window._gpPropietarioId
+  // se usaba directo, sin chequear que realmente sea un propietario DE
+  // ESTE contrato — si quedaba seteada de un contrato multi-propietario
+  // visto antes, esa persona (de OTRO contrato) se colaba acá. Ahora se
+  // valida contra los propietarios reales de este contrato antes de usarla.
+  const gpPropietarioIdValido = window._gpPropietarioId && propsCp.some(cp => parseInt(cp.persona_id) === parseInt(window._gpPropietarioId));
+  const activePropId = gpPropietarioIdValido ? parseInt(window._gpPropietarioId) : (propsCp[0]?.persona_id ? parseInt(propsCp[0].persona_id) : null);
   const activePersona = activePropId ? DB_PERSONAS.find(x => x.id === activePropId) : null;
   const propietarioNombreActivo = activePersona ? formatNombrePersona(activePersona) : (c?.locador || '');
 
