@@ -971,6 +971,7 @@
         <select class="filter-select" id="caja-filtro-cuenta" style="width:auto" onchange="renderCajaMovimientos()">
           <option value="">Todos los titulares</option>
         </select>
+        <input type="text" class="filter-select" id="caja-filtro-texto" placeholder="🔍 Buscar por concepto, cuenta, categoría..." style="width:260px" oninput="renderCajaMovimientos()">
         <button class="btn btn-primary" onclick="abrirNuevoMovimientoCaja()" style="margin-left:auto">+ Nuevo movimiento</button>
         <button class="btn btn-secondary" onclick="abrirTransferenciaCaja()">⇄ Transferencia entre titulares</button>
       </div>
@@ -12231,12 +12232,24 @@ function renderCajaMovimientos() {
   const desde = document.getElementById('caja-desde').value;
   const hasta = document.getElementById('caja-hasta').value;
   const filtroCuenta = document.getElementById('caja-filtro-cuenta').value;
+  const filtroTexto = (document.getElementById('caja-filtro-texto')?.value || '').trim().toLowerCase();
 
   const filtrados = CAJA_MOVIMIENTOS.filter(m => {
     if (desde && m.fecha < desde) return false;
     if (hasta && m.fecha > hasta) return false;
     if (filtroCuenta && filtroCuenta.startsWith('titular:')) {
       if (m.titular_id !== parseInt(filtroCuenta.slice(8))) return false;
+    }
+    if (filtroTexto) {
+      // Buscar en concepto, categoría, nombre del titular y datos de la
+      // cuenta (tipo/nombre) — texto plano armado a mano, no la etiqueta
+      // con HTML que se usa para mostrar en pantalla.
+      const t = CAJA_TITULARES.find(x => x.id === m.titular_id);
+      const c = m.cuenta_id ? CAJA_CUENTAS.find(x => x.id === m.cuenta_id) : null;
+      const textoBusqueda = [
+        m.concepto, m.categoria, t?.nombre, c?.tipo, c?.nombre, monedaDelMovimiento(m)
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!textoBusqueda.includes(filtroTexto)) return false;
     }
     return true;
   });
