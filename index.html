@@ -14658,7 +14658,10 @@ async function renderRecibosEmitidos() {
       <th style="padding:8px 10px;text-align:left;cursor:pointer" onclick="sortRecibosEmitidos('propietario')">Propietario ↕</th>
       <th style="padding:8px 10px;text-align:right;cursor:pointer" onclick="sortRecibosEmitidos('rendido')">Rendido ↕</th>
       <th style="padding:8px 10px;text-align:right;cursor:pointer" onclick="sortRecibosEmitidos('pagado')">Pagado ↕</th>
-      <th style="padding:8px 10px;text-align:left" colspan="4">Pago al propietario</th>
+      <th style="padding:8px 10px;text-align:left">Titular</th>
+      <th style="padding:8px 10px;text-align:left">Cuenta</th>
+      <th style="padding:8px 10px;text-align:right">Monto a pagar</th>
+      <th style="padding:8px 10px"></th>
     </tr></thead>
     <tbody>
       ${filas.map(f => {
@@ -14682,7 +14685,7 @@ async function renderRecibosEmitidos() {
           <select id="rp-caja-cuenta-${key}" style="width:100%;font-size:0.78rem"><option value="">Sin especificar</option></select>
         </td>
         <td style="padding:7px 6px">
-          <input type="text" inputmode="decimal" id="rp-caja-monto-${key}" value="${Number(f.saldo).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}" style="width:100%;box-sizing:border-box;text-align:right;font-size:0.78rem">
+          <input type="text" inputmode="decimal" id="rp-caja-monto-${key}" value="${formatMoney(f.saldo)}" style="width:100%;box-sizing:border-box;text-align:right;font-size:0.78rem">
         </td>
         <td style="padding:7px 6px;text-align:center">
           <button class="btn btn-primary" title="Marcar como pagado" style="font-size:0.75rem;padding:4px 8px;white-space:nowrap" onclick="marcarPagoPropietario(${f.pagoId},${f.personaId||'null'})">💰</button>
