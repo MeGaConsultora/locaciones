@@ -14615,12 +14615,48 @@ async function renderRecibosEmitidos() {
     pagosCaja = await sbGet('caja_movimientos', `pago_id=in.(${idsDelMes.join(',')})&categoria=eq.${encodeURIComponent('Pago a propietario')}&select=*`);
   } catch(e) { console.warn('No se pudo cargar los pagos a propietarios ya registrados en Caja:', e); }
 
+  // itemsRendidos guarda cada ítem con su MAGNITUD en bruto (mismo criterio
+  // que usa generarHtmlReciboProp para calcular "lo pendiente" — nunca un
+  // valor ya neteado): el alquiler va sin descontar la comisión (se deriva
+  // siempre del alquiler rendido, nunca se guarda aparte, para no
+  // duplicarla), y los extras van sin signo (para poder calcular cuánto de
+  // ESE extra ya se ofreció, sin importar si es débito o crédito). Por eso
+  // acá hace falta reconstruir el signo de cada extra consultando su tipo
+  // real en pagos_extras — no alcanza con sumarlos tal cual vienen.
+  let extrasPorId = {};
+  try {
+    const extrasRows = await sbGet('pagos_extras', `pago_id=in.(${idsDelMes.join(',')})&select=id,tipo`);
+    extrasRows.forEach(e => { extrasPorId[e.id] = e; });
+  } catch(e) { console.warn('No se pudo cargar pagos_extras para calcular el neto rendido:', e); }
+
+  const calcularTotalRendidoNeto = (itemsRendidos, c) => {
+    const comisionPct = c?.comision_porcentaje ?? 8;
+    let total = 0;
+    Object.entries(itemsRendidos || {}).forEach(([key, val]) => {
+      const monto = _rendidoMonto(val);
+      if (key === 'alquiler') {
+        total += monto - redondear2(monto * comisionPct / 100);
+      } else if (key.startsWith('srv-prop-')) {
+        total -= monto; // servicio a cargo del propietario: se descuenta de lo que se le rinde
+      } else if (key.startsWith('srv-')) {
+        total += monto; // servicio que la agencia cobró para el propietario: se le rinde
+      } else if (key.startsWith('extra-')) {
+        const extraId = parseInt(key.replace('extra-', ''));
+        const tipo = extrasPorId[extraId]?.tipo;
+        total += (tipo === 'credito' ? 1 : -1) * monto;
+      } else {
+        total += monto;
+      }
+    });
+    return redondear2(total);
+  };
+
   if (!CAJA_TITULARES.length) await cargarCajaTitularesYCuentas();
 
   const filas = entradas.map(en => {
     const p = DB.pagos.find(x => x.id === en.pagoId);
     const c = DB.contratos.find(x => x.hoja === p.hoja);
-    const totalRendido = redondear2(Object.values(en.itemsRendidos||{}).reduce((s,v) => s + _rendidoMonto(v), 0));
+    const totalRendido = calcularTotalRendidoNeto(en.itemsRendidos, c);
     const movs = pagosCaja.filter(m => m.pago_id === en.pagoId && (en.personaId ? parseInt(m.persona_id) === en.personaId : !m.persona_id));
     const totalPagado = redondear2(movs.reduce((s,m) => s + (m.monto||0), 0));
     const saldo = redondear2(totalRendido - totalPagado);
