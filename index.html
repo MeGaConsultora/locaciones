@@ -14648,38 +14648,45 @@ async function renderRecibosEmitidos() {
 
   const opcionesTitular = CAJA_TITULARES.filter(t => t.activo !== false).map(t => `<option value="${t.id}">${(t.nombre||'').replace(/</g,'&lt;')}</option>`).join('');
 
-  cont.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+  cont.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed">
+    <colgroup>
+      <col style="width:19%"><col style="width:16%"><col style="width:11%"><col style="width:11%">
+      <col style="width:13%"><col style="width:14%"><col style="width:10%"><col style="width:6%">
+    </colgroup>
     <thead><tr style="background:var(--ink2);color:white">
       <th style="padding:8px 10px;text-align:left;cursor:pointer" onclick="sortRecibosEmitidos('contrato')">Contrato ↕</th>
       <th style="padding:8px 10px;text-align:left;cursor:pointer" onclick="sortRecibosEmitidos('propietario')">Propietario ↕</th>
       <th style="padding:8px 10px;text-align:right;cursor:pointer" onclick="sortRecibosEmitidos('rendido')">Rendido ↕</th>
       <th style="padding:8px 10px;text-align:right;cursor:pointer" onclick="sortRecibosEmitidos('pagado')">Pagado ↕</th>
-      <th style="padding:8px 10px;text-align:left">Pago al propietario</th>
+      <th style="padding:8px 10px;text-align:left" colspan="4">Pago al propietario</th>
     </tr></thead>
     <tbody>
       ${filas.map(f => {
         const key = `${f.pagoId}-${f.personaId||0}`;
-        return `<tr style="border-bottom:1px solid #eee">
-        <td style="padding:7px 10px;font-weight:600">${f.c?.titulo||f.pagoId}</td>
+        const historial = f.movs.length ? `<div style="margin-top:3px;font-size:0.72rem;color:#888;line-height:1.5">${f.movs.map(m => {
+            const t = CAJA_TITULARES.find(x=>x.id===m.titular_id);
+            return `${formatDate(m.fecha, true)} — ${t?.nombre||'—'} — ${formatMoney(m.monto)} <a href="#" onclick="revertirPagoPropietario(${m.id});return false" style="color:#c0392b">↩ revertir</a>`;
+          }).join('<br>')}</div>` : '';
+        return `<tr style="border-bottom:1px solid #eee;vertical-align:top">
+        <td style="padding:7px 10px;font-weight:600">${f.c?.titulo||f.pagoId}${historial}</td>
         <td style="padding:7px 10px">${f.propNombre}</td>
         <td style="padding:7px 10px;text-align:right">${formatMoney(f.totalRendido)}</td>
         <td style="padding:7px 10px;text-align:right;color:${f.totalPagado>0?'#2d7a4f':'#999'}">${formatMoney(f.totalPagado)}</td>
-        <td style="padding:7px 10px">${
-          f.saldo > 0.004
-            ? `<div style="display:flex;gap:0.4rem;align-items:end;flex-wrap:wrap">
-                 <select id="rp-caja-titular-${key}" onchange="actualizarCuentasRecibosCaja(${f.pagoId},${f.personaId||0})" style="font-size:0.78rem">
-                   <option value="">Titular...</option>${opcionesTitular}
-                 </select>
-                 <select id="rp-caja-cuenta-${key}" style="font-size:0.78rem"><option value="">Sin especificar</option></select>
-                 <input type="text" inputmode="decimal" id="rp-caja-monto-${key}" value="${f.saldo}" style="width:90px;font-size:0.78rem">
-                 <button class="btn btn-primary" style="font-size:0.75rem;padding:4px 10px" onclick="marcarPagoPropietario(${f.pagoId},${f.personaId||'null'})">💰 Marcar pagado</button>
-               </div>`
-            : `<span style="color:#2d7a4f;font-weight:600">✓ Pagado</span>`
-        }${f.movs.length ? `<div style="margin-top:4px;font-size:0.74rem;color:#888">${f.movs.map(m => {
-            const t = CAJA_TITULARES.find(x=>x.id===m.titular_id);
-            return `${formatDate(m.fecha, true)} — ${t?.nombre||'—'} — ${formatMoney(m.monto)} <a href="#" onclick="revertirPagoPropietario(${m.id});return false" style="color:#c0392b">↩ revertir</a>`;
-          }).join('<br>')}</div>` : ''}
+        ${f.saldo > 0.004 ? `
+        <td style="padding:7px 6px">
+          <select id="rp-caja-titular-${key}" onchange="actualizarCuentasRecibosCaja(${f.pagoId},${f.personaId||0})" style="width:100%;font-size:0.78rem">
+            <option value="">Titular...</option>${opcionesTitular}
+          </select>
         </td>
+        <td style="padding:7px 6px">
+          <select id="rp-caja-cuenta-${key}" style="width:100%;font-size:0.78rem"><option value="">Sin especificar</option></select>
+        </td>
+        <td style="padding:7px 6px">
+          <input type="text" inputmode="decimal" id="rp-caja-monto-${key}" value="${Number(f.saldo).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}" style="width:100%;box-sizing:border-box;text-align:right;font-size:0.78rem">
+        </td>
+        <td style="padding:7px 6px;text-align:center">
+          <button class="btn btn-primary" title="Marcar como pagado" style="font-size:0.75rem;padding:4px 8px;white-space:nowrap" onclick="marcarPagoPropietario(${f.pagoId},${f.personaId||'null'})">💰</button>
+        </td>` : `<td colspan="4" style="padding:7px 10px;color:#2d7a4f;font-weight:600">✓ Pagado</td>`}
       </tr>`;
       }).join('')}
     </tbody>
