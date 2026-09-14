@@ -84,7 +84,21 @@ El formulario de auto-registro (`doRegistro`) se había sacado de la interfaz de
 
 ---
 
-## PARTE 4 — PENDIENTES / TEMAS ABIERTOS
+## PARTE 4 — SESIÓN 2026-09-14 (2): Recibos Propietarios — año/mes por defecto + pestaña "Ya emitidos" con pago a Caja
+
+### Qué se hizo
+1. `populateRecibosAnios()` ahora precarga año y mes actuales en los selects de Recibos Propietarios (antes quedaban siempre en "-- Año --"/"-- Mes --"), mismo patrón que ya usaba `populateInformeAnios()`.
+2. El panel de Recibos Propietarios se dividió en 2 sub-pestañas (mismo patrón que las sub-pestañas de Caja, `showCajaSubtab`): **"Pendientes de emitir"** (lo que ya había) y **"Ya emitidos"** (nueva).
+3. "Ya emitidos" (`renderRecibosEmitidos()`) lista, para el período elegido, los recibos ya impresos con su saldo pendiente de pagarle al propietario. El estado "pagado" **no se guarda como flag aparte**: se deriva siempre de la suma de `caja_movimientos` con `categoria = 'Pago a propietario'` vinculados a ese `pago_id` (y `persona_id` en contratos con más de un propietario) — mismo criterio que ya usa el proyecto (`caja_movimientos.pago_id`) para poder revertir en cascada sin duplicar estado.
+4. Nueva columna `caja_movimientos.persona_id` (nullable, `REFERENCES personas(id)`) — script en `locaciones/sql_historial_local/07_pago_propietario_caja.sql`, **hay que correrlo a mano en el SQL Editor de Supabase** antes de usar la función en producción.
+5. `marcarPagoPropietario(pagoId, personaId)` registra un egreso en Caja (categoría "Pago a propietario") por el medio elegido; `revertirPagoPropietario(cajaMovimientoId)` lo borra. Se agregó también "Pago a propietario" como categoría fija del combo manual de "Nuevo movimiento" en Caja.
+
+### ⚠️ Riesgo conocido (no resuelto en esta sesión)
+`revertirCobro()` borra **todos** los `caja_movimientos` de un `pago_id` sin filtrar por categoría (`sbDeleteWhere('caja_movimientos', 'pago_id=eq.'+p.id)`) al revertir el cobro del inquilino — mismo patrón que ya afecta hoy a "Honorarios". Si ya se registró un "Pago a propietario" sobre ese mismo `pago_id` y después se revierte el cobro del inquilino, ese egreso se borra también de arrastre. Es un caso borde poco frecuente (revertir un cobro después de haber pagado ya al propietario), pero conviene tenerlo presente si se toca `revertirCobro` en el futuro.
+
+---
+
+## PARTE 5 — PENDIENTES / TEMAS ABIERTOS
 - Dividir `locaciones/index.html` en módulos (ver Parte 3)
 - Optimizar `loadAll()` para no recargar toda la base en cada guardado
 - Mejorar responsive de la tabla de pagos del portal en celular
@@ -92,3 +106,4 @@ El formulario de auto-registro (`doRegistro`) se había sacado de la interfaz de
 - Rate limiting de Supabase Auth (no revisado)
 - Revisión más exhaustiva de código en busca de otros endpoints sueltos sin RLS bien pensado
 - Si aparece algún total viejo que no cierre en algún contrato con "directo al propietario", comparar `pagos.total` guardado contra la suma real armada con SQL
+- `revertirCobro()` puede borrar de arrastre un "Pago a propietario" ya registrado si comparte `pago_id` (ver Parte 4) — evaluar si conviene filtrar por categoría en ese borrado

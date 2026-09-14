@@ -851,10 +851,10 @@
   <div id="panel-recibos-emitir" class="panel" style="display:none">
     <div class="toolbar" style="margin-bottom:0.75rem">
       <strong style="font-size:0.95rem">🖨️ Recibos Propietarios</strong>
-      <select class="filter-select" id="recibos-anio" style="width:auto" onchange="renderRecibosEmitir()">
+      <select class="filter-select" id="recibos-anio" style="width:auto" onchange="renderRecibosSubtabActual()">
         <option value="">-- Año --</option>
       </select>
-      <select class="filter-select" id="recibos-mes" style="width:auto" onchange="renderRecibosEmitir()">
+      <select class="filter-select" id="recibos-mes" style="width:auto" onchange="renderRecibosSubtabActual()">
         <option value="">-- Mes --</option>
         <option value="01">Enero</option><option value="02">Febrero</option>
         <option value="03">Marzo</option><option value="04">Abril</option>
@@ -863,16 +863,40 @@
         <option value="09">Septiembre</option><option value="10">Octubre</option>
         <option value="11">Noviembre</option><option value="12">Diciembre</option>
       </select>
-      <button class="btn btn-secondary" id="btn-sel-todos-recibos" onclick="seleccionarTodosRecibos(true)" style="display:none">✓ Seleccionar todos</button>
-      <button class="btn btn-secondary" id="btn-desel-todos-recibos" onclick="seleccionarTodosRecibos(false)" style="display:none">✕ Deseleccionar</button>
-      <button class="btn btn-primary" id="btn-generar-recibos" onclick="generarRecibosSeleccionados()" style="display:none">🖨️ Generar seleccionados</button>
-    </div>
-    <div style="background:#f5f0e8;border-radius:8px;padding:0.65rem 1rem;margin-bottom:1rem;font-size:0.8rem;color:#666;line-height:1.5">
-      Este listado incluye únicamente los recibos de rendición a propietarios <strong>pendientes de emisión</strong> para el período seleccionado. Solo se muestran los contratos cuyo alquiler ha sido <strong>abonado en su totalidad</strong> a la fecha. Los recibos ya emitidos no se vuelven a listar.
     </div>
     <div id="recibos-pendiente-confirmar-banner"></div>
-    <div id="recibos-emitir-contenido">
-      <div class="empty-state"><div class="icon">🖨️</div><p>Seleccioná un año y mes</p></div>
+    <div style="background:var(--ink2);border-radius:10px;padding:4px;display:inline-flex;gap:2px;margin-bottom:1rem">
+      <button class="tab-btn recibos-subtab active" onclick="showRecibosSubtab('pendientes', this)" style="padding:6px 14px;border-radius:8px">Pendientes de emitir</button>
+      <button class="tab-btn recibos-subtab" onclick="showRecibosSubtab('emitidos', this)" style="padding:6px 14px;border-radius:8px">Ya emitidos</button>
+    </div>
+
+    <div id="recibos-subtab-pendientes">
+      <div class="toolbar" style="margin-bottom:0.75rem">
+        <button class="btn btn-secondary" id="btn-sel-todos-recibos" onclick="seleccionarTodosRecibos(true)" style="display:none">✓ Seleccionar todos</button>
+        <button class="btn btn-secondary" id="btn-desel-todos-recibos" onclick="seleccionarTodosRecibos(false)" style="display:none">✕ Deseleccionar</button>
+        <button class="btn btn-primary" id="btn-generar-recibos" onclick="generarRecibosSeleccionados()" style="display:none">🖨️ Generar seleccionados</button>
+      </div>
+      <div style="background:#f5f0e8;border-radius:8px;padding:0.65rem 1rem;margin-bottom:1rem;font-size:0.8rem;color:#666;line-height:1.5">
+        Este listado incluye únicamente los recibos de rendición a propietarios <strong>pendientes de emisión</strong> para el período seleccionado. Solo se muestran los contratos cuyo alquiler ha sido <strong>abonado en su totalidad</strong> a la fecha. Los recibos ya emitidos no se vuelven a listar.
+      </div>
+      <div id="recibos-emitir-contenido">
+        <div class="empty-state"><div class="icon">🖨️</div><p>Seleccioná un año y mes</p></div>
+      </div>
+    </div>
+
+    <div id="recibos-subtab-emitidos" style="display:none">
+      <div class="toolbar" style="margin-bottom:0.75rem">
+        <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.82rem;color:#666;cursor:pointer">
+          <input type="checkbox" id="chk-recibos-mostrar-pagados" onchange="renderRecibosEmitidos()" style="width:15px;height:15px">
+          Mostrar también los ya pagados
+        </label>
+      </div>
+      <div style="background:#f5f0e8;border-radius:8px;padding:0.65rem 1rem;margin-bottom:1rem;font-size:0.8rem;color:#666;line-height:1.5">
+        Recibos ya emitidos para el período seleccionado. Marcá acá con qué medio se le pagó al propietario lo rendido — cada pago queda registrado como un egreso en <strong>Caja</strong>.
+      </div>
+      <div id="recibos-emitidos-contenido">
+        <div class="empty-state"><div class="icon">💰</div><p>Seleccioná un año y mes</p></div>
+      </div>
     </div>
   </div>
 
@@ -1016,6 +1040,7 @@
             <select id="cm-categoria" onchange="if(this.value==='__otro__'){document.getElementById('cm-categoria-otro').style.display='block';}else{document.getElementById('cm-categoria-otro').style.display='none';}">
               <option value="Cobro alquiler">Cobro alquiler</option>
               <option value="Honorarios">Honorarios</option>
+              <option value="Pago a propietario">Pago a propietario</option>
               <option value="Pago proveedor">Pago proveedor</option>
               <option value="Sueldo">Sueldo</option>
               <option value="Gasto oficina">Gasto oficina</option>
@@ -10436,7 +10461,7 @@ function selectInforme(tipo) {
   // Run the content
   if (tipo === 'vencimientos') renderVencimientos();
   else if (tipo === 'reporte-total') renderReporteTotal();
-  else if (tipo === 'recibos-emitir') { populateRecibosAnios(); renderRecibosEmitir(); }
+  else if (tipo === 'recibos-emitir') { populateRecibosAnios(); renderRecibosSubtabActual(); }
   else if (tipo === 'numeracion-servicios') renderNumeracionServicios();
   else if (tipo === 'consorcios') renderConsorcios();
   else if (tipo === 'historial-notas') renderHistorialNotas();
@@ -14457,9 +14482,35 @@ async function generarGastosCuotas(contratoId, body) {
 // ============================================================
 function populateRecibosAnios() {
   const sel = document.getElementById('recibos-anio');
-  if (!sel || sel.options.length > 1) return;
-  const anios = [...new Set(DB.pagos.map(p => p.mes?.substring(0,4)).filter(Boolean))].sort().reverse();
-  anios.forEach(a => { const o = document.createElement('option'); o.value=a; o.textContent=a; sel.appendChild(o); });
+  if (!sel) return;
+  const anioActual = TODAY.substring(0,4);
+  if (sel.options.length <= 1) {
+    const anios = [...new Set(DB.pagos.map(p => p.mes?.substring(0,4)).filter(Boolean))].sort().reverse();
+    if (!anios.includes(anioActual)) anios.unshift(anioActual); // por si el año en curso todavía no tiene ningún pago cargado
+    anios.sort().reverse();
+    anios.forEach(a => { const o = document.createElement('option'); o.value=a; o.textContent=a; sel.appendChild(o); });
+  }
+  // Precargar año y mes actuales — antes quedaba en "-- Año --" / "-- Mes --"
+  // y había que elegirlos a mano cada vez que se abría la pantalla.
+  if (!sel.value) sel.value = anioActual;
+  const selMes = document.getElementById('recibos-mes');
+  if (selMes && !selMes.value) selMes.value = TODAY.substring(5,7);
+}
+
+// Sub-pestañas "Pendientes de emitir" / "Ya emitidos" dentro de Recibos
+// Propietarios — mismo patrón que showCajaSubtab.
+function showRecibosSubtab(nombre, btn) {
+  document.querySelectorAll('.recibos-subtab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  document.getElementById('recibos-subtab-pendientes').style.display = nombre === 'pendientes' ? 'block' : 'none';
+  document.getElementById('recibos-subtab-emitidos').style.display = nombre === 'emitidos' ? 'block' : 'none';
+  window._recibosSubtabActual = nombre;
+  renderRecibosSubtabActual();
+}
+
+function renderRecibosSubtabActual() {
+  if (window._recibosSubtabActual === 'emitidos') renderRecibosEmitidos();
+  else renderRecibosEmitir();
 }
 
 let _recibosSort = { campo: 'propietario', asc: true };
@@ -14491,6 +14542,180 @@ function renderBannerRecibosPendientes() {
         <button class="btn btn-secondary" style="font-size:0.8rem" onclick="localStorage.removeItem('recibosPendientesMarcar');renderBannerRecibosPendientes()">Descartar</button>
       </div>
     </div>`;
+}
+
+// ============================================================
+// "YA EMITIDOS" — recibos de propietario ya impresos para el período
+// elegido, con el saldo pendiente de pagarle al propietario y el registro
+// de con qué medio se le pagó (impacta Caja como egreso, categoría "Pago a
+// propietario"). El estado "pagado" no se guarda como flag aparte: se
+// deriva siempre de la suma de caja_movimientos vinculados a ese pago_id
+// (y persona_id en contratos con más de un propietario) — mismo criterio
+// que ya usa el proyecto para reversión en cascada (ver CONTEXTO_PROYECTO.md).
+// ============================================================
+async function renderRecibosEmitidos() {
+  const anio = document.getElementById('recibos-anio')?.value;
+  const mes = document.getElementById('recibos-mes')?.value;
+  const cont = document.getElementById('recibos-emitidos-contenido');
+  if (!cont) return;
+  if (!anio || !mes) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">💰</div><p>Seleccioná un año y mes</p></div>';
+    return;
+  }
+  const mesKey = anio + '-' + mes;
+  const mostrarPagados = document.getElementById('chk-recibos-mostrar-pagados')?.checked;
+
+  const pagosDelMes = DB.pagos.filter(p => p.mes && p.mes.startsWith(mesKey));
+  if (!pagosDelMes.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">💰</div><p>No hay recibos emitidos para ese período</p></div>';
+    return;
+  }
+  const idsDelMes = pagosDelMes.map(p => p.id);
+
+  let emitidosMulti = [];
+  try {
+    emitidosMulti = await sbGet('recibos_propietario_emitidos', `pago_id=in.(${idsDelMes.join(',')})&select=pago_id,persona_id,items_rendidos`);
+  } catch(e) { console.warn('No se pudo cargar emisiones por propietario:', e); }
+
+  const entradas = []; // {pagoId, personaId, itemsRendidos}
+  pagosDelMes.forEach(p => {
+    const c = DB.contratos.find(x => x.hoja === p.hoja);
+    const propsCp = c ? DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === c.id && x.rol === 'propietario') : [];
+    if (propsCp.length > 1) {
+      emitidosMulti.filter(e => e.pago_id === p.id).forEach(e => {
+        entradas.push({ pagoId: p.id, personaId: parseInt(e.persona_id), itemsRendidos: e.items_rendidos || {} });
+      });
+    } else if (p.recibo_prop_emitido || Object.keys(p.rendido_prop_items||{}).length) {
+      entradas.push({ pagoId: p.id, personaId: null, itemsRendidos: p.rendido_prop_items || {} });
+    }
+  });
+
+  if (!entradas.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">💰</div><p>No hay recibos emitidos para ese período</p></div>';
+    return;
+  }
+
+  let pagosCaja = [];
+  try {
+    pagosCaja = await sbGet('caja_movimientos', `pago_id=in.(${idsDelMes.join(',')})&categoria=eq.${encodeURIComponent('Pago a propietario')}&select=*`);
+  } catch(e) { console.warn('No se pudo cargar los pagos a propietarios ya registrados en Caja:', e); }
+
+  if (!CAJA_TITULARES.length) await cargarCajaTitularesYCuentas();
+
+  const filas = entradas.map(en => {
+    const p = DB.pagos.find(x => x.id === en.pagoId);
+    const c = DB.contratos.find(x => x.hoja === p.hoja);
+    const totalRendido = redondear2(Object.values(en.itemsRendidos||{}).reduce((s,v) => s + _rendidoMonto(v), 0));
+    const movs = pagosCaja.filter(m => m.pago_id === en.pagoId && (en.personaId ? parseInt(m.persona_id) === en.personaId : !m.persona_id));
+    const totalPagado = redondear2(movs.reduce((s,m) => s + (m.monto||0), 0));
+    const saldo = redondear2(totalRendido - totalPagado);
+    const propNombre = en.personaId
+      ? (formatNombrePersona(DB_PERSONAS.find(x => x.id === en.personaId)) || c?.locador || '—')
+      : (c?.locador || '—');
+    return { ...en, c, totalRendido, totalPagado, saldo, movs, propNombre };
+  }).filter(f => mostrarPagados || f.saldo > 0.004);
+
+  if (!filas.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">✓</div><p>No hay pagos a propietarios pendientes para ese período</p></div>';
+    return;
+  }
+
+  const opcionesTitular = CAJA_TITULARES.filter(t => t.activo !== false).map(t => `<option value="${t.id}">${(t.nombre||'').replace(/</g,'&lt;')}</option>`).join('');
+
+  cont.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+    <thead><tr style="background:var(--ink2);color:white">
+      <th style="padding:8px 10px;text-align:left">Contrato</th>
+      <th style="padding:8px 10px;text-align:left">Propietario</th>
+      <th style="padding:8px 10px;text-align:right">Rendido</th>
+      <th style="padding:8px 10px;text-align:right">Pagado</th>
+      <th style="padding:8px 10px;text-align:left">Pago al propietario</th>
+    </tr></thead>
+    <tbody>
+      ${filas.map(f => {
+        const key = `${f.pagoId}-${f.personaId||0}`;
+        return `<tr style="border-bottom:1px solid #eee">
+        <td style="padding:7px 10px;font-weight:600">${f.c?.titulo||f.pagoId}</td>
+        <td style="padding:7px 10px">${f.propNombre}</td>
+        <td style="padding:7px 10px;text-align:right">${formatMoney(f.totalRendido)}</td>
+        <td style="padding:7px 10px;text-align:right;color:${f.totalPagado>0?'#2d7a4f':'#999'}">${formatMoney(f.totalPagado)}</td>
+        <td style="padding:7px 10px">${
+          f.saldo > 0.004
+            ? `<div style="display:flex;gap:0.4rem;align-items:end;flex-wrap:wrap">
+                 <select id="rp-caja-titular-${key}" onchange="actualizarCuentasRecibosCaja(${f.pagoId},${f.personaId||0})" style="font-size:0.78rem">
+                   <option value="">Titular...</option>${opcionesTitular}
+                 </select>
+                 <select id="rp-caja-cuenta-${key}" style="font-size:0.78rem"><option value="">Sin especificar</option></select>
+                 <input type="text" inputmode="decimal" id="rp-caja-monto-${key}" value="${f.saldo}" style="width:90px;font-size:0.78rem">
+                 <button class="btn btn-primary" style="font-size:0.75rem;padding:4px 10px" onclick="marcarPagoPropietario(${f.pagoId},${f.personaId||'null'})">💰 Marcar pagado</button>
+               </div>`
+            : `<span style="color:#2d7a4f;font-weight:600">✓ Pagado</span>`
+        }${f.movs.length ? `<div style="margin-top:4px;font-size:0.74rem;color:#888">${f.movs.map(m => {
+            const t = CAJA_TITULARES.find(x=>x.id===m.titular_id);
+            return `${formatDate(m.fecha, true)} — ${t?.nombre||'—'} — ${formatMoney(m.monto)} <a href="#" onclick="revertirPagoPropietario(${m.id});return false" style="color:#c0392b">↩ revertir</a>`;
+          }).join('<br>')}</div>` : ''}
+        </td>
+      </tr>`;
+      }).join('')}
+    </tbody>
+  </table></div>`;
+}
+
+function actualizarCuentasRecibosCaja(pagoId, personaKey) {
+  const key = `${pagoId}-${personaKey}`;
+  const titularId = parseInt(document.getElementById(`rp-caja-titular-${key}`)?.value);
+  const selCuenta = document.getElementById(`rp-caja-cuenta-${key}`);
+  if (!selCuenta) return;
+  const cuentas = CAJA_CUENTAS.filter(c => c.titular_id === titularId && c.activo !== false);
+  selCuenta.innerHTML = '<option value="">Sin especificar</option>' + cuentas.map(c => {
+    const label = `${c.tipo}${c.nombre ? ' — '+c.nombre : ''} (${c.moneda||'ARS'})`;
+    return `<option value="${c.id}">${label.replace(/</g,'&lt;')}</option>`;
+  }).join('');
+}
+
+async function marcarPagoPropietario(pagoId, personaId) {
+  const key = `${pagoId}-${personaId||0}`;
+  const titularId = parseInt(document.getElementById(`rp-caja-titular-${key}`)?.value) || null;
+  const cuentaId = parseInt(document.getElementById(`rp-caja-cuenta-${key}`)?.value) || null;
+  const monto = parseMonto(document.getElementById(`rp-caja-monto-${key}`)?.value);
+  if (!titularId) { toast('Elegí un titular', 'error'); return; }
+  if (!monto || monto <= 0) { toast('Ingresá un monto válido', 'error'); return; }
+
+  const p = DB.pagos.find(x => x.id === pagoId);
+  const c = p ? DB.contratos.find(x => x.hoja === p.hoja) : null;
+  const propNombre = personaId
+    ? (formatNombrePersona(DB_PERSONAS.find(x => x.id === personaId)) || c?.locador || '')
+    : (c?.locador || '');
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const mesKey = p?.mes?.substring(0,7) || '';
+  const fechaMes = mesKey ? `${meses[parseInt(mesKey.substring(5,7))-1]} ${mesKey.substring(0,4)}` : '';
+  const moneda = cuentaId ? (CAJA_CUENTAS.find(x => x.id === cuentaId)?.moneda || 'ARS') : 'ARS';
+
+  try {
+    const nuevo = await sbPost('caja_movimientos', {
+      fecha: TODAY, tipo: 'egreso', titular_id: titularId, cuenta_id: cuentaId, moneda,
+      categoria: 'Pago a propietario',
+      concepto: `Pago a propietario — ${propNombre} — ${c?.titulo||p?.hoja||''} — ${fechaMes}`,
+      monto, pago_id: pagoId, persona_id: personaId || null
+    });
+    if (nuevo && nuevo[0]) CAJA_MOVIMIENTOS.unshift(nuevo[0]);
+    toast('Pago registrado ✓');
+    renderRecibosEmitidos();
+  } catch(e) {
+    console.error('Error registrando pago a propietario:', e);
+    toast('Error al registrar el pago: ' + e.message, 'error');
+  }
+}
+
+async function revertirPagoPropietario(cajaMovimientoId) {
+  if (!confirm('¿Revertir este pago al propietario? Se elimina el movimiento de Caja correspondiente.')) return;
+  try {
+    await sbDelete('caja_movimientos', cajaMovimientoId);
+    CAJA_MOVIMIENTOS = CAJA_MOVIMIENTOS.filter(m => m.id !== cajaMovimientoId);
+    toast('Pago revertido ✓');
+    renderRecibosEmitidos();
+  } catch(e) {
+    toast('Error al revertir: ' + e.message, 'error');
+  }
 }
 
 async function renderRecibosEmitir() {
