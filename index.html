@@ -6831,7 +6831,8 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
     const el = document.getElementById(id);
     if (!el) return 0;
     const val = parseMonto(el.value);
-    const pct = parseFloat(el.dataset.pct)||100;
+    const pctRaw = parseFloat(el.dataset.pct);
+    const pct = isNaN(pctRaw) ? 100 : pctRaw;
     return Math.round(val * pct / 100 * 100) / 100;
   };
   const vence = document.getElementById('gp-vence')?.value||null;
@@ -9714,8 +9715,8 @@ async function guardarContrato() {
     const pid = item.dataset.personaId;
     if (pid) {
       propIds.push(parseInt(pid));
-      const pct = parseFloat(item.querySelector('.pct-alquiler')?.value) || 100;
-      propPcts.push(pct);
+      const pctRaw = parseFloat(item.querySelector('.pct-alquiler')?.value);
+      propPcts.push(isNaN(pctRaw) ? 100 : pctRaw);
     }
   }
   for (const item of inqItems) {
@@ -9867,7 +9868,10 @@ async function actualizarContrato(id) {
   const propItems = document.querySelectorAll('[data-rol="propietario"]');
   const inqItems = document.querySelectorAll('[data-rol="inquilino"]');
   const propIds = [...propItems].map(x => parseInt(x.dataset.personaId)).filter(Boolean);
-  const propPcts = [...propItems].map(x => parseFloat(x.querySelector('.pct-alquiler')?.value) || 100);
+  const propPcts = [...propItems].map(x => {
+    const pctRaw = parseFloat(x.querySelector('.pct-alquiler')?.value);
+    return isNaN(pctRaw) ? 100 : pctRaw;
+  });
   const inqIds = [...inqItems].map(x => parseInt(x.dataset.personaId)).filter(Boolean);
 
   const propPersonas = propIds.map(pid => DB_PERSONAS.find(p=>p.id===pid)).filter(Boolean);
