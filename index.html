@@ -5967,7 +5967,17 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEst
   // imputarse, o se dejó acá a propósito). Antes no tenía ningún botón
   // propio para revertirlo — quedaba pegado en pagado_importe sin que
   // "Alquiler" ni ningún otro ítem lo representaran.
-  const excedenteVisible = Math.max(0, Math.round(((p.pagado_importe||0) - (p.total||0)) * 100) / 100);
+  // BUG encontrado (caso real: Bertolino-Rodríguez): acá se comparaba
+  // contra el campo p.total guardado en la base, que NO se recalcula
+  // cuando se agrega un extra nuevo después de creado el mes (a diferencia
+  // de p.saldo, que sí se recalcula en vivo en cada cobro). Un extra
+  // cobrado con éxito después de esa fecha quedaba sumado en
+  // pagado_importe pero no en el total de referencia, apareciendo como un
+  // "excedente" falso por ese mismo monto. Se usa calcularTotal() en vivo
+  // (mismo criterio que ya usa el saldo) en vez del campo p.total.
+  const extrasParaTotalExcedente = [...extrasInq, ...extrasInqCubiertos];
+  const totalRealParaExcedente = calcularTotal(p, extrasParaTotalExcedente, ps);
+  const excedenteVisible = Math.max(0, Math.round(((p.pagado_importe||0) - totalRealParaExcedente) * 100) / 100);
 
   const paidSection = paidItems.length > 0 || honorariosPagadoInq > 0 || yaAbonadoGP > 0 || excedenteVisible > 0.004 || extrasInqCubiertos.length > 0 ? `
     <div style="margin-bottom:0.5rem;font-size:0.75rem;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Ya cobrado</div>
