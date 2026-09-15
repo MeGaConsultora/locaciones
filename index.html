@@ -7667,6 +7667,15 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
   const mediosPagoCaja = leerMediosPagoCajaGP();
   const totalMediosPagoCaja = redondear2(mediosPagoCaja.reduce((s,f) => s + f.monto, 0));
   if (!mediosPagoCaja.length) { _ventanaRecibo?.close(); toast('Completá al menos un medio de pago en "Registrar en Caja" para poder confirmar el cobro','error'); return; }
+  {
+    const propsCpValidarDirecto = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId) && x.rol === 'propietario');
+    const filaDirectoSinPropietario = propsCpValidarDirecto.length > 1 && mediosPagoCaja.find(m => m.titularId === 'directo_propietario' && !m.personaDirectoId);
+    if (filaDirectoSinPropietario) {
+      _ventanaRecibo?.close();
+      toast('Este contrato tiene más de un propietario — elegí a cuál le pagó directo en "Registrar en Caja"', 'error');
+      return;
+    }
+  }
   if (Math.abs(totalMediosPagoCaja - totalCobrado) > 0.01) {
     _ventanaRecibo?.close();
     toast(`Lo asignado en "Registrar en Caja" (${formatMoney(totalMediosPagoCaja)}) no coincide con el total a cobrar (${formatMoney(totalCobrado)})`, 'error');
@@ -7995,51 +8004,136 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
   // Se marca como "ya rendido" el mismo ítem/orden que ya se usó para
   // imputar el pago (alquiler primero, después EPE/agua/etc., después
   // extras), tomando de a un ítem hasta agotar medioDirectoTotal.
-  // LIMITACIÓN CONOCIDA: en contratos con más de un propietario, el
-  // rendido se trackea por propietario en otra tabla y acá no sabemos con
-  // certeza a cuál de ellos le pagaron directo — en ese caso NO se marca
-  // nada automáticamente y se avisa para resolverlo a mano en el Recibo
-  // Propietario de ese contrato.
   if (medioDirectoTotal > 0.004) {
     const propsCpDirecto = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(contratoId) && x.rol === 'propietario');
-    if (propsCpDirecto.length > 1) {
-      // El aviso "fuerte" (con chance de cancelar) ya se mostró ANTES de
-      // confirmar el cobro (ver el confirm() al principio de esta función).
-      // Acá, como ya se confirmó y el admin ya eligió seguir, alcanza con
-      // un recordatorio liviano de que falta la marca manual.
-      toast('Recordá marcar a mano en el Recibo Propietario cuál de los propietarios cobró directo', 'error');
-    } else {
-      try {
-        const deltaPorItem = {};
-        for (const [key, newTotal] of Object.entries(pagadoPorItem)) {
-          const oldVal = parseFloat(p[key]) || 0;
-          const d = redondear2(newTotal - oldVal);
-          if (d > 0) deltaPorItem[key.replace('pagado_','')] = d;
-        }
-        let restanteDirecto = medioDirectoTotal;
-        const rendidoDirectoPorItem = {};
-        for (const item of orden) {
+    // Puede haber más de una fila "directo al propietario" en el mismo
+    // cobro (ej: mitad de un extra a un propietario, mitad al otro). Se
+    // consume cada ítem del waterfall de a un peso por vez de las filas en
+    // orden, para saber exactamente de cuál fila (y por lo tanto, de cuál
+    // propietario) salió cada porción de cada ítem — así los ítems que sí
+    // van a un propietario puntual (servicios/extras) se atribuyen bien
+    // aunque el cobro se haya repartido en varias filas "directo".
+    const filasDirectas = mediosPagoCaja.filter(m => m.titularId === 'directo_propietario' && m.monto > 0.004);
+    filasDirectas.forEach(f => { f._restante = f.monto; });
+    const consumirDeFilasDirectas = (monto) => {
+      const partes = [];
+      let restante = monto;
+      for (const fila of filasDirectas) {
+        if (restante <= 0.004) break;
+        if (fila._restante <= 0.004) continue;
+        const usar = Math.min(restante, fila._restante);
+        partes.push({ monto: usar, personaDirectoId: fila.personaDirectoId || null });
+        fila._restante = redondear2(fila._restante - usar);
+        restante = redondear2(restante - usar);
+      }
+      return partes;
+    };
+    try {
+      const deltaPorItem = {};
+      for (const [key, newTotal] of Object.entries(pagadoPorItem)) {
+        const oldVal = parseFloat(p[key]) || 0;
+        const d = redondear2(newTotal - oldVal);
+        if (d > 0) deltaPorItem[key.replace('pagado_','')] = d;
+      }
+      let restanteDirecto = medioDirectoTotal;
+      const rendidoDirectoPorItemPartes = {}; // itemKey -> [{monto, personaDirectoId}]
+      for (const item of orden) {
+        if (restanteDirecto <= 0.004) break;
+        const d = deltaPorItem[item] || 0;
+        if (d <= 0) continue;
+        const usar = Math.min(d, restanteDirecto);
+        const key = _claveRendidoParaItem(contratoId, item);
+        rendidoDirectoPorItemPartes[key] = (rendidoDirectoPorItemPartes[key]||[]).concat(consumirDeFilasDirectas(usar));
+        restanteDirecto -= usar;
+      }
+      if (restanteDirecto > 0.004) {
+        for (const ex of extrasChkDetalle) {
           if (restanteDirecto <= 0.004) break;
-          const d = deltaPorItem[item] || 0;
-          if (d <= 0) continue;
-          const usar = Math.min(d, restanteDirecto);
-          rendidoDirectoPorItem[_claveRendidoParaItem(contratoId, item)] = redondear2(usar);
+          if (ex.signo <= 0) continue;
+          const usar = Math.min(ex.monto, restanteDirecto);
+          const key = `extra-${ex.id}`;
+          rendidoDirectoPorItemPartes[key] = (rendidoDirectoPorItemPartes[key]||[]).concat(consumirDeFilasDirectas(usar));
           restanteDirecto -= usar;
         }
-        if (restanteDirecto > 0.004) {
-          for (const ex of extrasChkDetalle) {
-            if (restanteDirecto <= 0.004) break;
-            if (ex.signo <= 0) continue;
-            const usar = Math.min(ex.monto, restanteDirecto);
-            const key = `extra-${ex.id}`;
-            rendidoDirectoPorItem[key] = redondear2((rendidoDirectoPorItem[key]||0) + usar);
-            restanteDirecto -= usar;
+      }
+      // Totales planos por ítem (sin importar de qué fila salió cada
+      // porción) — hace falta para el caso de un solo propietario, para el
+      // reparto por % del alquiler, y para el aviso/auditoría final.
+      const rendidoDirectoPorItem = {};
+      Object.entries(rendidoDirectoPorItemPartes).forEach(([key, partes]) => {
+        rendidoDirectoPorItem[key] = redondear2(partes.reduce((s,pp) => s + pp.monto, 0));
+      });
+
+      if (Object.keys(rendidoDirectoPorItem).length) {
+        const nowIso = new Date().toISOString();
+        if (propsCpDirecto.length > 1) {
+          // Alquiler se reparte por % entre TODOS los propietarios — la
+          // agencia no recibió nada de esta plata, así que no tiene nada
+          // que girarle a NINGUNO de los dos por este ítem (decisión
+          // confirmada: opción A). El resto (servicios/extras) va a quien
+          // efectivamente cobró — como esos ítems ya están atados a un
+          // propietario específico (sin reparto porcentual), si el cobro
+          // directo se repartió en más de una fila con propietarios
+          // distintos, cada porción se atribuye a la fila de la que salió.
+          const montoAlquilerDirecto = rendidoDirectoPorItem['alquiler'] || 0;
+
+          if (montoAlquilerDirecto > 0.004) {
+            for (const cp of propsCpDirecto) {
+              const pctCp = cp.pct_alquiler ?? 100;
+              const montoCp = redondear2(montoAlquilerDirecto * pctCp / 100);
+              if (montoCp <= 0.004) continue;
+              const personaIdCp = parseInt(cp.persona_id);
+              const rowsCp = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${p.id}&persona_id=eq.${personaIdCp}&limit=1`);
+              const rendidoPrevioCp = rowsCp.length ? (rowsCp[0].items_rendidos || {}) : {};
+              const nuevoRendidoCp = { ...rendidoPrevioCp };
+              const montoPrevioCp = _rendidoMonto(nuevoRendidoCp['alquiler']);
+              nuevoRendidoCp['alquiler'] = { monto: redondear2(montoPrevioCp + montoCp), fecha: nowIso };
+              if (comisionPct > 0) {
+                const comisionNuevaCp = redondear2(montoCp * comisionPct / 100);
+                const comisionPrevPendienteCp = parseFloat(nuevoRendidoCp['alquiler'].comisionPendiente) || 0;
+                nuevoRendidoCp['alquiler'].comisionPendiente = redondear2(comisionPrevPendienteCp + comisionNuevaCp);
+                nuevoRendidoCp['alquiler'].comisionCobrada = false;
+              }
+              if (rowsCp.length) {
+                await sbPatch('recibos_propietario_emitidos', rowsCp[0].id, { fecha: nowIso, items_rendidos: nuevoRendidoCp, via_caja: false });
+              } else {
+                await sbPost('recibos_propietario_emitidos', { pago_id: p.id, persona_id: personaIdCp, fecha: nowIso, items_rendidos: nuevoRendidoCp, via_caja: false });
+              }
+            }
           }
-        }
-        if (Object.keys(rendidoDirectoPorItem).length) {
+
+          // Agrupar el resto de los ítems (todo menos alquiler) por el
+          // propietario real de cada porción, a partir de las partes
+          // guardadas durante el waterfall — no por un único propietario
+          // "elegido", que se quedaría corto si hubo más de una fila.
+          const porPersonaOtros = {}; // personaId -> { itemKey: monto }
+          Object.entries(rendidoDirectoPorItemPartes).forEach(([itemKey, partes]) => {
+            if (itemKey === 'alquiler') return;
+            partes.forEach(pp => {
+              if (!pp.personaDirectoId) return; // sin propietario asignado a esa fila: no se atribuye a ciegas
+              const pid = pp.personaDirectoId;
+              if (!porPersonaOtros[pid]) porPersonaOtros[pid] = {};
+              porPersonaOtros[pid][itemKey] = redondear2((porPersonaOtros[pid][itemKey]||0) + pp.monto);
+            });
+          });
+          for (const [personaIdStr, itemsDePersona] of Object.entries(porPersonaOtros)) {
+            const personaIdNum = parseInt(personaIdStr);
+            const rows2 = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${p.id}&persona_id=eq.${personaIdNum}&limit=1`);
+            const rendidoPrevio2 = rows2.length ? (rows2[0].items_rendidos || {}) : {};
+            const nuevoRendido2 = { ...rendidoPrevio2 };
+            for (const [itemKey, monto] of Object.entries(itemsDePersona)) {
+              const montoPrevio2 = _rendidoMonto(nuevoRendido2[itemKey]);
+              nuevoRendido2[itemKey] = { monto: redondear2(montoPrevio2 + monto), fecha: nowIso };
+            }
+            if (rows2.length) {
+              await sbPatch('recibos_propietario_emitidos', rows2[0].id, { fecha: nowIso, items_rendidos: nuevoRendido2, via_caja: false });
+            } else {
+              await sbPost('recibos_propietario_emitidos', { pago_id: p.id, persona_id: personaIdNum, fecha: nowIso, items_rendidos: nuevoRendido2, via_caja: false });
+            }
+          }
+        } else {
           const rendidoPrevio = p.rendido_prop_items || {};
           const nuevoRendido = { ...rendidoPrevio };
-          const nowIso = new Date().toISOString();
           for (const [itemKey, monto] of Object.entries(rendidoDirectoPorItem)) {
             const montoPrevio = _rendidoMonto(nuevoRendido[itemKey]);
             nuevoRendido[itemKey] = { monto: redondear2(montoPrevio + monto), fecha: nowIso };
@@ -8061,27 +8155,27 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
           p.rendido_prop_items = nuevoRendido;
           const pLocalDirecto = DB.pagos.find(x => x.id === p.id);
           if (pLocalDirecto) pLocalDirecto.rendido_prop_items = nuevoRendido;
-          const comisionAvisoPendiente = redondear2(rendidoDirectoPorItem['alquiler'] ? rendidoDirectoPorItem['alquiler'] * (comisionPct/100) : 0);
-          // Guardar CUÁNTO aportó ESTA transacción puntual al rendido directo
-          // (por ítem, más la comisión que generó) — así, si más adelante se
-          // revierte este cobro, se puede descontar exactamente esto en vez
-          // de dejar el acumulado viejo pisado (eso fue lo que duplicó el
-          // alquiler rendido de Bertolino-Rodríguez: se revirtió el cobro,
-          // pero nadie le avisó a rendido_prop_items, y al volver a cobrar se
-          // sumó sobre lo que ya había).
-          try {
-            await sbPost('movimientos_pagos', {
-              pago_id: p.id, contrato_id: contratoId, hoja, mes: p.mes, fecha: fechaMovimiento,
-              monto: medioDirectoTotal, concepto: 'RendidoDirectoPropietario',
-              items: JSON.stringify({ porItem: rendidoDirectoPorItem, comisionAgregada: comisionAvisoPendiente })
-            });
-          } catch(e) { console.warn('No se pudo guardar el historial de rendido directo (la reversión de este cobro no podría deshacerlo con precisión):', e); }
-          toast(comisionAvisoPendiente > 0.004
-            ? `Marcado como rendido. Comisión pendiente de cobrarle al propietario: ${formatMoney(comisionAvisoPendiente)} — queda en Caja > Comisiones pendientes`
-            : 'Se marcó como ya rendido al propietario lo que cobró directo, para que no se le vuelva a ofrecer en el Recibo Propietario', 'success');
         }
-      } catch(e) { console.warn('No se pudo marcar como rendido directo al propietario:', e); }
-    }
+        const comisionAvisoPendiente = redondear2(rendidoDirectoPorItem['alquiler'] ? rendidoDirectoPorItem['alquiler'] * (comisionPct/100) : 0);
+        // Guardar CUÁNTO aportó ESTA transacción puntual al rendido directo
+        // (por ítem, más la comisión que generó) — así, si más adelante se
+        // revierte este cobro, se puede descontar exactamente esto en vez
+        // de dejar el acumulado viejo pisado (eso fue lo que duplicó el
+        // alquiler rendido de Bertolino-Rodríguez: se revirtió el cobro,
+        // pero nadie le avisó a rendido_prop_items, y al volver a cobrar se
+        // sumó sobre lo que ya había).
+        try {
+          await sbPost('movimientos_pagos', {
+            pago_id: p.id, contrato_id: contratoId, hoja, mes: p.mes, fecha: fechaMovimiento,
+            monto: medioDirectoTotal, concepto: 'RendidoDirectoPropietario',
+            items: JSON.stringify({ porItem: rendidoDirectoPorItem, comisionAgregada: comisionAvisoPendiente, porItemConPersona: rendidoDirectoPorItemPartes })
+          });
+        } catch(e) { console.warn('No se pudo guardar el historial de rendido directo (la reversión de este cobro no podría deshacerlo con precisión):', e); }
+        toast(comisionAvisoPendiente > 0.004
+          ? `Marcado como rendido. Comisión pendiente de cobrarle al propietario: ${formatMoney(comisionAvisoPendiente)} — queda en Caja > Comisiones pendientes`
+          : 'Se marcó como ya rendido al propietario lo que cobró directo, para que no se le vuelva a ofrecer en el Recibo Propietario', 'success');
+      }
+    } catch(e) { console.warn('No se pudo marcar como rendido directo al propietario:', e); }
   }
 
 
@@ -8880,10 +8974,15 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     if (esMultiProp && activePropId) {
       try {
         const existenteEmision = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${p.id}&persona_id=eq.${activePropId}&limit=1`);
+        // via_caja:true siempre acá — esto es una emisión real (imprimir
+        // recibo), a diferencia del cobro "directo al propietario" que
+        // marca via_caja:false. Si la fila ya existía como directa (por
+        // ejemplo, se agregó después un ítem nuevo que sí pasa por Caja),
+        // esta emisión real la reactiva.
         if (existenteEmision.length) {
-          await sbPatch('recibos_propietario_emitidos', existenteEmision[0].id, { fecha: now, items_rendidos: nuevoRendidoMap });
+          await sbPatch('recibos_propietario_emitidos', existenteEmision[0].id, { fecha: now, items_rendidos: nuevoRendidoMap, via_caja: true });
         } else {
-          await sbPost('recibos_propietario_emitidos', { pago_id: p.id, persona_id: activePropId, fecha: now, items_rendidos: nuevoRendidoMap });
+          await sbPost('recibos_propietario_emitidos', { pago_id: p.id, persona_id: activePropId, fecha: now, items_rendidos: nuevoRendidoMap, via_caja: true });
         }
       } catch(e) { console.warn('No se pudo marcar la emisión por propietario (¿falta crear la tabla recibos_propietario_emitidos o la columna items_rendidos?):', e); }
     } else {
@@ -11843,10 +11942,31 @@ function actualizarCuentasCajaGP(idx) {
   const rawTitular = document.getElementById(`gp-caja-titular-${idx}`)?.value;
   const selCuenta = document.getElementById(`gp-caja-cuenta-${idx}`);
   if (!selCuenta) return;
+  // Limpiar el selector de "¿a cuál propietario?" de una fila anterior, si había.
+  document.getElementById(`gp-caja-propietario-directo-wrap-${idx}`)?.remove();
   if (rawTitular === 'directo_propietario') {
     // No aplica cuenta: esta plata no entra a ninguna cuenta del negocio ni de un socio.
     selCuenta.innerHTML = '<option value="">No aplica</option>';
     selCuenta.disabled = true;
+    // Si el contrato tiene más de un propietario, no alcanza con saber que
+    // "le pagó directo" — hace falta saber a CUÁL, para poder anotarlo bien
+    // en el Recibo Propietario de esa persona (ver confirmarCobroInquilino).
+    const propsCpDirecto = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(window._gpContratoId) && x.rol === 'propietario');
+    if (propsCpDirecto.length > 1) {
+      const opciones = propsCpDirecto.map(cp => {
+        const per = DB_PERSONAS.find(pe => pe.id === parseInt(cp.persona_id));
+        return `<option value="${cp.persona_id}">${(formatNombrePersona(per)||'').replace(/</g,'&lt;')}</option>`;
+      }).join('');
+      const fila = document.getElementById(`gp-caja-fila-${idx}`);
+      fila?.insertAdjacentHTML('afterend', `
+        <div id="gp-caja-propietario-directo-wrap-${idx}" style="margin:-0.35rem 0 0.5rem 0">
+          <label style="font-size:0.72rem;color:#856404">¿A cuál de los propietarios le pagó directo?</label>
+          <select id="gp-caja-propietario-directo-${idx}" style="width:100%;border:1px solid #e0a800;border-radius:4px;padding:4px">
+            <option value="">Seleccioná...</option>
+            ${opciones}
+          </select>
+        </div>`);
+    }
     actualizarTotalCheckCajaGP();
     return;
   }
@@ -11870,7 +11990,8 @@ function leerMediosPagoCajaGP() {
     const titularId = rawTitular === 'directo_propietario' ? 'directo_propietario' : (parseInt(rawTitular) || null);
     const cuentaId = titularId === 'directo_propietario' ? null : (parseInt(document.getElementById(`gp-caja-cuenta-${idx}`)?.value) || null);
     const monto = parseMonto(document.getElementById(`gp-caja-monto-${idx}`)?.value);
-    if (titularId && monto > 0) filas.push({ titularId, cuentaId, monto });
+    const personaDirectoId = titularId === 'directo_propietario' ? (parseInt(document.getElementById(`gp-caja-propietario-directo-${idx}`)?.value) || null) : null;
+    if (titularId && monto > 0) filas.push({ titularId, cuentaId, monto, personaDirectoId });
   });
   return filas;
 }
@@ -14596,7 +14717,7 @@ async function renderRecibosEmitidos() {
 
   let emitidosMulti = [];
   try {
-    emitidosMulti = await sbGet('recibos_propietario_emitidos', `pago_id=in.(${idsDelMes.join(',')})&select=pago_id,persona_id,items_rendidos`);
+    emitidosMulti = await sbGet('recibos_propietario_emitidos', `pago_id=in.(${idsDelMes.join(',')})&select=pago_id,persona_id,items_rendidos,via_caja`);
   } catch(e) { console.warn('No se pudo cargar emisiones por propietario:', e); }
 
   const entradas = []; // {pagoId, personaId, itemsRendidos}
@@ -14604,7 +14725,12 @@ async function renderRecibosEmitidos() {
     const c = DB.contratos.find(x => x.hoja === p.hoja);
     const propsCp = c ? DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === c.id && x.rol === 'propietario') : [];
     if (propsCp.length > 1) {
-      emitidosMulti.filter(e => e.pago_id === p.id).forEach(e => {
+      // via_caja:false = se anotó porque el inquilino le pagó directo a ESE
+      // propietario (ver confirmarCobroInquilino) — no es un giro pendiente
+      // por Caja, así que no corresponde listarlo acá (bug real encontrado
+      // con Bertolino-Rodríguez: aparecía como pendiente de pagar algo que
+      // el propietario ya había cobrado directo).
+      emitidosMulti.filter(e => e.pago_id === p.id && e.via_caja !== false).forEach(e => {
         entradas.push({ pagoId: p.id, personaId: parseInt(e.persona_id), itemsRendidos: e.items_rendidos || {} });
       });
     } else if (p.recibo_prop_emitido) {
@@ -15278,9 +15404,9 @@ async function confirmarRecibosEmitidos() {
         const rendidoNuevo = { ...rendidoPrevio };
         Object.entries(itemsRendidos || {}).forEach(([k,v]) => { const prevMonto = _rendidoMonto(rendidoNuevo[k]); rendidoNuevo[k] = { monto: Math.round((prevMonto + v) * 100) / 100, fecha: now }; });
         if (existente.length) {
-          await sbPatch('recibos_propietario_emitidos', existente[0].id, { fecha: now, items_rendidos: rendidoNuevo });
+          await sbPatch('recibos_propietario_emitidos', existente[0].id, { fecha: now, items_rendidos: rendidoNuevo, via_caja: true });
         } else {
-          await sbPost('recibos_propietario_emitidos', { pago_id: pagoId, persona_id: personaId, fecha: now, items_rendidos: rendidoNuevo });
+          await sbPost('recibos_propietario_emitidos', { pago_id: pagoId, persona_id: personaId, fecha: now, items_rendidos: rendidoNuevo, via_caja: true });
         }
       } else {
         const rendidoPrevio = p?.rendido_prop_items || {};
