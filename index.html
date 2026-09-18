@@ -15126,39 +15126,28 @@ async function renderRecibosEmitir() {
     <tbody>
       ${pagos.map(p => {
         const c = DB.contratos.find(x => x.hoja === p.hoja);
-        // Calcular total a cobrar por el propietario
-        const alquiler = p.importe_alquiler || 0;
         const comisionPct = c?.comision_porcentaje ?? 8;
-        const comision = Math.round(alquiler * comisionPct / 100 * 100) / 100;
-        let totalRendir = alquiler - comision;
-        const servRinde = (c?.servicios_rendir_propietario||'').toLowerCase();
-        const psRow = window._pagosSuministros?.[p.id] || {};
-        ['epe','agua','tgiu','seguro','internet','expensas'].forEach(srv => {
-          const sumsOfType = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === srv);
-          const sums = sumsOfType.length ? sumsOfType : [null];
-          sums.forEach(sum => {
-            const pctProp = sum ? (sum.pct_propietario ?? 0) : (c?.['pct_prop_'+srv] ?? 0);
-            const pctInq = sum ? (sum.pct_inquilino ?? 100) : (c?.['pct_'+srv] ?? 100);
-            const seRinde = sum ? !!sum.propietario_persona_id : servRinde.includes(srv);
-            const seDescuenta = sum ? !!sum.descuenta_persona_id : (!sum && pctProp > 0 && !seRinde);
-            if (!seRinde && !seDescuenta) return;
-            const psEntry = sum ? psRow[sum.id] : null;
-            const montoInqSum = (psEntry !== undefined && psEntry !== null)
-              ? (typeof psEntry === 'object' ? (psEntry.inq||0) : (psEntry||0))
-              : (sum ? 0 : (p['monto_'+srv]||0));
-            const montoPropSum = (psEntry !== undefined && psEntry !== null)
-              ? (typeof psEntry === 'object' ? (psEntry.prop||0) : 0)
-              : (pctInq > 0 && montoInqSum > 0 ? Math.round(montoInqSum * pctProp / pctInq) : 0);
-            if (seRinde && montoInqSum > 0) { totalRendir += montoInqSum; }
-            else if (seDescuenta && montoPropSum > 0) { totalRendir -= montoPropSum; }
+        const propsCp = c ? DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === c.id && x.rol === 'propietario') : [];
+        const extrasProp = (extrasActuales[p.id]||[]).filter(e => e.a_cargo_de === 'propietario' || e.propietario_persona_id);
+        // Mismo cálculo que ya usa el chequeo de "saldo pendiente" y el
+        // recibo real (generarHtmlReciboProp) — antes esta columna
+        // recalculaba todo desde cero (alquiler + extras) sin restar lo que
+        // ya se había rendido antes, duplicando el total cuando una parte
+        // ya estaba cobrada. Caso real: Gazzera-Espíndola, la indemnización
+        // por rescisión ya rendida como "alquiler" el 11/9, más los mismos
+        // conceptos vueltos a cargar como extras nuevos el 17/9 — esta
+        // columna sumaba las dos veces ($625.600 en vez de $312.800).
+        let totalRendir = 0;
+        if (propsCp.length > 1) {
+          propsCp.forEach(cp => {
+            const personaId = parseInt(cp.persona_id);
+            const rendidoMap = emitidosMulti.find(e => e.pago_id === p.id && parseInt(e.persona_id) === personaId)?.items_rendidos || {};
+            totalRendir += generarHtmlReciboProp(p, extrasProp, comisionPct, c, '', personaId, rendidoMap).totalRendir;
           });
-        });
-        // Sumar extras del propietario (ya cargados en memoria)
-        const extrasPago = (window._extrasCache||{})[p.id] || [];
-        extrasPago.filter(e => e.a_cargo_de === 'propietario' || e.propietario_persona_id).forEach(e => {
-          const signo = e.tipo === 'credito' ? 1 : -1;
-          totalRendir += signo * (e.importe||0);
-        });
+        } else {
+          const rendidoMap = p.rendido_prop_items || {};
+          totalRendir = generarHtmlReciboProp(p, extrasProp, comisionPct, c, '', null, rendidoMap).totalRendir;
+        }
         return `<tr style="border-bottom:1px solid #eee">
           <td style="padding:7px 10px;text-align:center"><input type="checkbox" class="chk-recibo" data-pago-id="${p.id}" data-hoja="${p.hoja}" style="width:15px;height:15px" onchange="actualizarBtnGenerar()"></td>
           <td style="padding:7px 10px;font-weight:600">${c?.titulo||p.hoja}</td>
