@@ -5682,6 +5682,11 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
         const _sH = Math.max(0, _cH.reduce((s,g)=>s+(g.monto_inquilino||0),0) - _cH.reduce((s,g)=>s+(parseFloat(g.pagado_inquilino)||0),0));
         return (!p || (!p.total && !(p.pagado_importe > 0))) && !_sH;
       })() ? `<div class="empty-state"><div class="icon">💡</div><p>Primero cargá los importes en la solapa "Cargar / Modificar"</p></div>` : `
+      <div style="background:var(--cream);border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.75rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.85rem;font-weight:600">📅 Fecha del cobro:</label>
+        <input type="date" id="gp-fecha-cobro" value="${TODAY}" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem">
+        <span style="font-size:0.76rem;color:#888">— así queda registrado en Caja, el historial y el recibo</span>
+      </div>
       ${p.saldo > 0 && p.saldo < p.total ? `
       <div style="background:#fff3cd;border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.75rem;display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:0.85rem;color:#856404">💰 Saldo pendiente del mes:</span>
@@ -5696,7 +5701,7 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
       <div style="background:#fff8e1;border:1px solid #ffc107;border-radius:8px;padding:0.75rem 1rem;margin-top:0.75rem">
         <div style="font-size:0.82rem;font-weight:600;color:#856404;margin-bottom:6px">⏱ Interés punitorio (${c.interes_punitorio}% diario s/alquiler)</div>
         <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-          <label style="font-size:0.82rem;color:#856404">Fecha de pago:</label>
+          <label style="font-size:0.82rem;color:#856404">Calcular mora hasta:</label>
           <input type="date" id="gp-fecha-pago" value="${TODAY}" style="padding:4px 8px;border:1px solid #ffc107;border-radius:6px;font-size:0.82rem" onchange="recalcIntereses()">
           <span id="gp-interes-info" style="font-size:0.82rem;color:#856404"></span>
         </div>
@@ -7823,7 +7828,12 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
   const yaAbonadoReal = (p.pagado_importe||0) + montoRegularTotal;
   const nuevoSaldo = Math.round(Math.max(0, totalReal - yaAbonadoReal) * 100) / 100;
   const nroMes = calcularNroMes(pagosActuales, c, p.id);
-  const fechaMovimiento = document.getElementById('gp-fecha-pago')?.value || TODAY;
+  // Fecha real del cobro — separada a propósito de 'gp-fecha-pago' (que solo
+  // se usa para calcular la mora/intereses). Antes era el mismo campo: si se
+  // corría la fecha para atrás para cobrar menos interés, sin querer también
+  // quedaba grabado el pago bajo esa fecha vieja en Caja/historial/recibo
+  // (caso real: Carnevale, pago del 19/09 archivado como 01/09).
+  const fechaMovimiento = document.getElementById('gp-fecha-cobro')?.value || TODAY;
 
   const nuevoPagadoImporte = Math.round(((p.pagado_importe||0) + montoRegularTotal) * 100) / 100;
   await sbPatch('pagos', p.id, {

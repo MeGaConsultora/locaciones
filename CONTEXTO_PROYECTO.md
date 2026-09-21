@@ -98,7 +98,21 @@ El formulario de auto-registro (`doRegistro`) se había sacado de la interfaz de
 
 ---
 
-## PARTE 5 — PENDIENTES / TEMAS ABIERTOS
+## PARTE 5 — SESIÓN 2026-09-21: Gestión de Pago — separar fecha de cálculo de mora vs. fecha real del cobro
+
+### Qué se hizo
+El campo `gp-fecha-pago` (dentro del recuadro de Interés punitorio) se usaba para DOS cosas a la vez: calcular los días de mora, y quedar grabado como la fecha real del cobro en `movimientos_pagos.fecha`, `caja_movimientos.fecha` y el "Fecha de pago" impreso en el recibo. Si un admin lo corría para atrás para cobrarle menos interés al inquilino, sin querer también archivaba el pago bajo esa fecha vieja — invisible en cualquier búsqueda por fecha real. Caso real: Carnevale-García, pago del 19/09 quedó grabado como 01/09 (`movimientos_pagos` id 1155, `caja_movimientos` id 428 — corregidos a mano en Supabase esa vez).
+
+Se separaron en dos campos independientes en la solapa "Ingresar Pago":
+- `gp-fecha-pago` (dentro del recuadro amarillo, re-etiquetado "Calcular mora hasta") — sigue siendo *solo* para el cálculo de intereses, sin cambios de comportamiento.
+- `gp-fecha-cobro` (nuevo, siempre visible, arriba de todo, default hoy) — es el único que ahora alimenta `fechaMovimiento` en `_confirmarCobroInquilinoImpl` (antes leía `gp-fecha-pago`), o sea la fecha que queda en Caja, historial y recibo.
+
+### Pendiente de mejora anotado, sin resolver
+Mismo patrón dual (fecha de cálculo vs. fecha de registro) puede existir en otros lados que usan `calcularIntereses()` — no se auditó el resto de la app en esta sesión, solo la pantalla de Ingresar Pago que fue el caso reportado.
+
+---
+
+## PARTE 6 — PENDIENTES / TEMAS ABIERTOS
 - Dividir `locaciones/index.html` en módulos (ver Parte 3)
 - Optimizar `loadAll()` para no recargar toda la base en cada guardado
 - Mejorar responsive de la tabla de pagos del portal en celular
