@@ -12642,7 +12642,15 @@ function renderCierreMensual() {
 
     ${(() => {
       const bloques = Object.keys(totalesPorMoneda).sort().map(moneda => {
-        const filasSocios = filas.filter(f => f.moneda === moneda && f.titular.tipo === 'socio');
+        // Completar con $0 los socios activos que no tuvieron NINGÚN
+        // movimiento en esta moneda puntual — si no, quedaban afuera del
+        // reparto de esa moneda (ej: un socio sin movimientos en USD hacía
+        // que la compensación en USD nunca se calculara, aunque el otro
+        // socio sí tuviera actividad ahí).
+        const sociosActivos = titularesActivos.filter(t => t.tipo === 'socio');
+        const filasSocios = sociosActivos.map(t =>
+          filas.find(f => f.moneda === moneda && f.titular.id === t.id) || { titular: t, moneda, ing: 0, egr: 0, neto: 0 }
+        );
         if (filasSocios.length < 2) return '';
         const { transferencias, objetivos, pesosFaltantes } = calcularCompensacion(filasSocios, nombreNegocio);
         if (!transferencias.length) return '';
