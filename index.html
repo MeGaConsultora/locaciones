@@ -14842,7 +14842,17 @@ async function renderRecibosEmitidos() {
 
   const opcionesTitular = CAJA_TITULARES.filter(t => t.activo !== false).map(t => `<option value="${t.id}">${(t.nombre||'').replace(/</g,'&lt;')}</option>`).join('');
 
-  cont.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed">
+  // Suma de lo que falta pagarle a los propietarios en este período — se
+  // recalcula solo con cada render (marcarPagoPropietario y
+  // revertirPagoPropietario ya vuelven a llamar a renderRecibosEmitidos),
+  // así que se actualiza sola a medida que se van confirmando pagos.
+  const totalPendientePago = redondear2(filas.reduce((s,f) => s + Math.max(0, f.saldo), 0));
+
+  cont.innerHTML = `<div style="background:#fff8e1;border-radius:8px;padding:0.7rem 1.1rem;margin-bottom:0.9rem;display:flex;justify-content:space-between;align-items:center">
+    <span style="font-size:0.88rem;color:#856404">💰 Total pendiente de pago a propietarios este período</span>
+    <strong style="font-size:1.05rem;color:#856404">${formatMoney(totalPendientePago)}</strong>
+  </div>
+  <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed">
     <colgroup>
       <col style="width:19%"><col style="width:16%"><col style="width:11%"><col style="width:11%">
       <col style="width:13%"><col style="width:14%"><col style="width:10%"><col style="width:6%">
