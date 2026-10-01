@@ -10282,7 +10282,10 @@ function imprimirRecibo(data, ventanaPreabierta) {
   const inmInq = data.contrato?.inmueble_id ? DB_INMUEBLES?.find(x => x.id === data.contrato.inmueble_id) : null;
   const inmuebleDirInq = inmInq ? formatDireccion(inmInq) : (data.contrato?.titulo || '—');
 
-  const recibo = `
+  // El duplicado queda siempre en poder de la inmobiliaria (nunca sale de
+  // la oficina), así que no tiene sentido pedirle firma ahí — solo el
+  // original (que se lleva el inquilino) la necesita.
+  const reciboHtml = (conFirma) => `
     <div style="font-family:'DM Sans',Arial,sans-serif;width:100%;padding:0;border:1.5px solid #1a1a2e;border-radius:4px">
       ${previewBanner}
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;border-bottom:1.5px solid #1a1a2e;padding:10px 14px 8px">
@@ -10330,9 +10333,9 @@ function imprimirRecibo(data, ventanaPreabierta) {
       </div>` : '<div style="background:#d4edda;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#155724">✓ Mes cancelado en su totalidad</div>'}
         ${data.saldoHonorarios > 0 ? `<div style="background:#f5f0e8;border-radius:4px;padding:5px 10px;font-size:0.72rem;color:#856404;margin-top:4px">📌 Honorarios pendientes: <strong>${formatMoney(data.saldoHonorarios)}</strong></div>` : ''}
       </div>
-      <div style="padding:8px 14px 10px;border-top:1px dashed #ccc;margin:6px 14px 0">
+      ${conFirma ? `<div style="padding:8px 14px 10px;border-top:1px dashed #ccc;margin:6px 14px 0">
         <div style="text-align:center;max-width:200px;margin:0 auto"><div style="border-top:1px solid #333;padding-top:4px;font-size:0.7rem;color:#666;margin-top:20px">Firma MeGa Consultora</div></div>
-      </div>
+      </div>` : ''}
     </div>
   `;
 
@@ -10375,9 +10378,9 @@ function imprimirRecibo(data, ventanaPreabierta) {
       }</style>
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
-    <div class="recibo-mitad recibo-original"><div class="recibo-label">Original</div><div class="recibo-inner" id="ri1">${recibo}</div></div>
+    <div class="recibo-mitad recibo-original"><div class="recibo-label">Original</div><div class="recibo-inner" id="ri1">${reciboHtml(true)}</div></div>
     <div class="separador"></div>
-    <div class="recibo-mitad"><div class="recibo-label">Duplicado</div><div class="recibo-inner" id="ri2">${recibo}</div></div>
+    <div class="recibo-mitad"><div class="recibo-label">Duplicado</div><div class="recibo-inner" id="ri2">${reciboHtml(false)}</div></div>
     <script>
       function ajustarEscala(mitad, printPx) {
         const inner = mitad.querySelector('.recibo-inner');
@@ -16895,7 +16898,10 @@ function imprimirReciboRapido() {
   const fechaRaw = document.getElementById('rr-fecha')?.value;
   const fecha = fechaRaw ? (() => { const [y,m,d]=fechaRaw.split('-'); return `${d}/${m}/${y}`; })() : '';
 
-  const recibo = `
+  // El duplicado queda siempre en poder de la inmobiliaria (nunca sale de
+  // la oficina), así que no tiene sentido pedirle firma ahí — solo el
+  // original (que se lleva el inquilino) la necesita.
+  const reciboHtml = (conFirma) => `
     <div style="font-family:'DM Sans',Arial,sans-serif;width:100%;padding:0;border:1.5px solid #1a1a2e;border-radius:4px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;border-bottom:1.5px solid #1a1a2e;padding:10px 14px 8px">
         <div>
@@ -16933,9 +16939,9 @@ function imprimirReciboRapido() {
       <div style="padding:0 14px 6px">
         <div style="background:#d4edda;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#155724">✓ Cancelado en su totalidad</div>
       </div>
-      <div style="padding:8px 14px 10px;border-top:1px dashed #ccc;margin:6px 14px 0">
+      ${conFirma ? `<div style="padding:8px 14px 10px;border-top:1px dashed #ccc;margin:6px 14px 0">
         <div style="text-align:center;max-width:200px;margin:0 auto"><div style="border-top:1px solid #333;padding-top:4px;font-size:0.7rem;color:#666;margin-top:20px">Firma MeGa Consultora</div></div>
-      </div>
+      </div>` : ''}
     </div>`;
 
   const ventana = window.open('', 'Recibo Rápido');
@@ -16962,8 +16968,8 @@ function imprimirReciboRapido() {
     </style>
   </head><body>
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir (A4)</button></div>
-    <div class="recibo-mitad recibo-original"><div class="recibo-label">Original</div><div class="recibo-inner" id="rr1">${recibo}</div></div>
-    <div class="recibo-mitad"><div class="recibo-label">Duplicado</div><div class="recibo-inner" id="rr2">${recibo}</div></div>
+    <div class="recibo-mitad recibo-original"><div class="recibo-label">Original</div><div class="recibo-inner" id="rr1">${reciboHtml(true)}</div></div>
+    <div class="recibo-mitad"><div class="recibo-label">Duplicado</div><div class="recibo-inner" id="rr2">${reciboHtml(false)}</div></div>
     <script>
       function ajustarEscala(mitad, printPx) {
         const inner = mitad.querySelector('.recibo-inner');
