@@ -1968,6 +1968,9 @@ function formatMoney(n) {
   if (n == null || isNaN(n)) return '—';
   return '$\u00A0' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+function formatMoneyMoneda(n, moneda) {
+  return (moneda && moneda !== 'ARS' ? moneda + ' ' : '') + formatMoney(n);
+}
 function redondear2(n) {
   // Evita residuos de punto flotante (ej: 0.000000002) que hacen reaparecer
   // items ya pagados como pendientes en la pantalla de Generar Pago.
@@ -12445,7 +12448,7 @@ function renderCajaMovimientos() {
       bloques.push(`<div style="background:#f0fff4;border:1px solid #b2dfdb;border-radius:10px;padding:0.85rem 1rem">
         <div style="font-size:0.75rem;color:#888;text-transform:uppercase;margin-bottom:4px">${(t.nombre||'').replace(/</g,'&lt;')} <span style="border:1px solid #b2dfdb;border-radius:8px;padding:0 5px;font-size:0.68rem">${moneda}</span></div>
         <div style="font-size:1.15rem;font-weight:700;color:${neto>=0?'var(--green)':'var(--accent)'}">${moneda!=='ARS'?moneda+' ':''}${formatMoney(neto)}</div>
-        <div style="font-size:0.72rem;color:#888;margin-top:4px">Ingresos ${formatMoney(ing)} · Egresos ${formatMoney(egr)}</div>
+        <div style="font-size:0.72rem;color:#888;margin-top:4px">Ingresos ${formatMoneyMoneda(ing, moneda)} · Egresos ${formatMoneyMoneda(egr, moneda)}</div>
       </div>`);
     });
   });
@@ -12486,7 +12489,7 @@ function renderCajaMovimientos() {
           <td style="padding:7px 10px">${etiquetaMovimientoCaja(m)}</td>
           <td style="padding:7px 10px">${m.categoria||'—'}</td>
           <td style="padding:7px 10px;color:#666">${m.concepto||'—'}</td>
-          <td style="padding:7px 10px;text-align:right;font-family:'Roboto Mono','Courier New',monospace;font-weight:500;font-size:0.82rem;white-space:nowrap;color:${esIngreso?'var(--green)':'var(--accent)'}">${esIngreso?'+':'-'} ${formatMoney(m.monto)}</td>
+          <td style="padding:7px 10px;text-align:right;font-family:'Roboto Mono','Courier New',monospace;font-weight:500;font-size:0.92rem;white-space:nowrap;color:${esIngreso?'var(--green)':'var(--accent)'}">${esIngreso?'+':'-'} ${formatMoneyMoneda(m.monto, monedaDelMovimiento(m))}</td>
           <td style="padding:7px 10px;text-align:center"><button onclick="eliminarMovimientoCaja(${m.id})" style="background:none;border:none;color:#c8483a;cursor:pointer;font-size:0.85rem" title="Eliminar">🗑️</button></td>
         </tr>`;
       }).join('')}
@@ -12586,7 +12589,7 @@ function renderCierreMensual() {
   filas.forEach(f => { totalesPorMoneda[f.moneda] = (totalesPorMoneda[f.moneda]||0) + f.neto; });
 
   const cont = document.getElementById('caja-cierre-contenido');
-  const fmt = n => `<span style="color:${n>=0?'var(--green)':'var(--accent)'}">${formatMoney(n)}</span>`;
+  const fmt = (n, moneda) => `<span style="color:${n>=0?'var(--green)':'var(--accent)'}">${formatMoneyMoneda(n, moneda)}</span>`;
 
   if (!titularesActivos.length) {
     cont.innerHTML = `<p style="color:#aaa;font-size:0.85rem">Todavía no cargaste ningún titular — andá a "Titulares y cuentas" para empezar a registrar movimientos.</p>`;
@@ -12619,9 +12622,9 @@ function renderCierreMensual() {
             return `<tr style="border-bottom:1px solid #eee">
               <td style="padding:7px 10px">${(r.titular.nombre||'').replace(/</g,'&lt;')}</td>
               <td style="padding:7px 10px;text-align:center"><span style="border:1px solid var(--border);border-radius:8px;padding:1px 7px;font-size:0.72rem">${r.moneda}</span></td>
-              <td style="padding:7px 10px;text-align:right;color:var(--green)">${formatMoney(r.ing)}</td>
-              <td style="padding:7px 10px;text-align:right;color:var(--accent)">${formatMoney(r.egr)}</td>
-              <td style="padding:7px 10px;text-align:right;font-weight:600">${fmt(r.neto)}</td>
+              <td style="padding:7px 10px;text-align:right;color:var(--green)">${formatMoneyMoneda(r.ing, r.moneda)}</td>
+              <td style="padding:7px 10px;text-align:right;color:var(--accent)">${formatMoneyMoneda(r.egr, r.moneda)}</td>
+              <td style="padding:7px 10px;text-align:right;font-weight:600">${fmt(r.neto, r.moneda)}</td>
               <td style="padding:7px 10px;font-size:0.82rem">${situacion}</td>
             </tr>`;
           }).join('')}
@@ -12632,7 +12635,7 @@ function renderCierreMensual() {
               <td style="padding:8px 10px">Resultado total del negocio</td>
               <td style="padding:8px 10px;text-align:center"><span style="border:1px solid var(--ink);border-radius:8px;padding:1px 7px;font-size:0.72rem">${moneda}</span></td>
               <td colspan="2"></td>
-              <td style="padding:8px 10px;text-align:right">${fmt(totalesPorMoneda[moneda])}</td>
+              <td style="padding:8px 10px;text-align:right">${fmt(totalesPorMoneda[moneda], moneda)}</td>
               <td></td>
             </tr>`).join('')}
         </tfoot>
