@@ -12486,7 +12486,7 @@ function renderCajaMovimientos() {
           <td style="padding:7px 10px">${etiquetaMovimientoCaja(m)}</td>
           <td style="padding:7px 10px">${m.categoria||'—'}</td>
           <td style="padding:7px 10px;color:#666">${m.concepto||'—'}</td>
-          <td style="padding:7px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${esIngreso?'var(--green)':'var(--accent)'}">${esIngreso?'+':'-'} ${formatMoney(m.monto)}</td>
+          <td style="padding:7px 10px;text-align:right;font-family:'Roboto Mono','Courier New',monospace;font-weight:500;font-size:0.82rem;white-space:nowrap;color:${esIngreso?'var(--green)':'var(--accent)'}">${esIngreso?'+':'-'} ${formatMoney(m.monto)}</td>
           <td style="padding:7px 10px;text-align:center"><button onclick="eliminarMovimientoCaja(${m.id})" style="background:none;border:none;color:#c8483a;cursor:pointer;font-size:0.85rem" title="Eliminar">🗑️</button></td>
         </tr>`;
       }).join('')}
