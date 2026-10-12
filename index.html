@@ -3800,14 +3800,14 @@ async function abrirAccesoPropietario(personaId) {
   document.getElementById('modal-title').textContent = 'Acceso al portal de propietarios';
   document.getElementById('modal-subtitle').textContent = formatNombrePersona(p);
   let cuerpo;
-  if (usuario && usuario.rol !== 'propietario') {
-    cuerpo = `<div style="background:#f8d7da;border:1px solid #f5c6cb;border-radius:10px;padding:1rem;font-size:0.85rem;color:#721c24">
-      ⚠ Esta persona ya tiene un usuario como <strong>${usuario.rol === 'admin' ? 'administrador' : 'inquilino'}</strong> (${usuario.email}). Un mismo usuario no puede ser a la vez inquilino y propietario — si necesita los dos accesos, hace falta que use otro email para el de propietario (cargalo en otra ficha de persona).
-    </div>`;
-  } else if (usuario) {
+  if (usuario) {
+    // Un mismo usuario puede tener varios roles (se detectan por los datos):
+    // si ya tiene usuario, entra al portal de propietarios con ese mismo email.
+    const rolActual = usuario.rol === 'admin' ? 'administrador' : usuario.rol === 'propietario' ? 'propietario' : 'inquilino';
     cuerpo = `<div style="background:#f0fff4;border:1px solid var(--green);border-radius:10px;padding:1rem;margin-bottom:1rem">
-        <div style="font-weight:600;color:#155724;margin-bottom:0.3rem">✓ Ya tiene acceso al portal</div>
+        <div style="font-weight:600;color:#155724;margin-bottom:0.3rem">✓ Ya tiene un usuario (${rolActual}) — no hace falta crear otro</div>
         <div style="font-size:0.85rem;color:#155724">Email: <strong>${usuario.email}</strong>${usuario.aprobado ? '' : ' — pendiente de aprobación'}</div>
+        <div style="font-size:0.8rem;color:#155724;margin-top:0.4rem">Con ese mismo email y contraseña puede entrar a <strong>megaconsultora.github.io/propietarios</strong>. Si además es inquilino o administrador, va a ver el selector "Ver como…" para pasar de un portal a otro.</div>
       </div>
       ${usuario.temp_password
         ? `<button class="btn btn-green" onclick="reenviarAcceso('${usuario.email}','${(usuario.nombre||'').replace(/'/g,'')}','${usuario.temp_password}','propietario')">📤 Reenviar acceso</button>`
