@@ -3,6 +3,7 @@
 ## Proyecto
 - **Admin app**: `index.html` de este repo — hosteado en `megaconsultora.github.io/locaciones/`
 - **Portal inquilino**: repo separado `github.com/MeGaConsultora/inquilinos` — hosteado en `megaconsultora.github.io/inquilinos/`
+- **Portal propietario** (solo lectura, ver Parte 6): repo `github.com/MeGaConsultora/propietarios` — hosteado en `megaconsultora.github.io/propietarios/`
 - **Landing/raíz**: repo `github.com/MeGaConsultora/MeGaConsultora.github.io` — solo redirige a inquilinos o locaciones según el link
 - **Backend**: Supabase, proyecto `hpufcseedvdmcoamundr` (nombre visible en dashboard: "Gestión de Alquileres")
 - Admins actuales: **Hugo** (Meringi), **Gregorio** (Gardella) y **Paulina/Pauli** (Marconetti) — comparten a veces la misma IP/dispositivo de oficina
@@ -112,7 +113,32 @@ Mismo patrón dual (fecha de cálculo vs. fecha de registro) puede existir en ot
 
 ---
 
-## PARTE 6 — PENDIENTES / TEMAS ABIERTOS
+## PARTE 6 — PORTAL DE PROPIETARIOS (nuevo, solo lectura)
+
+Repo nuevo `MeGaConsultora/propietarios` → `megaconsultora.github.io/propietarios/`. Mismo Supabase, mismo estilo que el portal de inquilinos (se armó copiando su CSS y su manejo de login/contraseña temporal/inactividad de 1 hora). Claves de sesión propias en localStorage (`prop_token`, `prop_email`, `prop_refresh_token`) porque las tres apps comparten origen.
+
+**Qué ve el propietario, por contrato:** tarjetas de encabezado (Total percibido, Próximo vencimiento, Vencimiento del contrato, Próxima actualización) y un detalle mensual con dos pasos: *Cobro al inquilino* (pagó / parcial / pendiente / vencido / próximo) y *Abonado a vos* (abonado / abonado parcial / cobrado directo / pendiente de abono / esperando cobro). A propósito NO se muestra el paso "rendido / recibo emitido" (es un control interno).
+
+**Seguridad:** no se abrió ninguna tabla con RLS. Una única función `portal_propietario_datos()` (SECURITY DEFINER, `sql_historial_local/10_portal_propietarios.sql`) devuelve un JSON solo con lo del propietario logueado (usuario con `rol='propietario'`, `aprobado`, vinculado a su `persona_id`): sus contratos con su % (`contrato_personas.pct_alquiler`), los pagos de esos contratos, los movimientos "Pago a propietario" de ESA persona, y si hubo cobro directo. Probada en una Postgres local (PGlite) con propietarios, inquilino, usuario sin aprobar y sin sesión: cada uno ve solo lo suyo. Ejecutable solo por `authenticated`.
+
+**Definiciones (réplica de la lógica del admin):**
+- *Pagó el mes*: `pagado_importe + créditos al inquilino >= importe_alquiler` (mismo criterio que "alquiler cubierto" en Recibos Propietarios). Mes sin alquiler cargado → "—".
+- *Abonado*: suma de `caja_movimientos` con `categoria='Pago a propietario'` de ese `pago_id` y esa persona (en contratos de un solo propietario, `persona_id` null). "Parcial" si es menor al neto rendido (alquiler − comisión ± extras/servicios, igual que "Ya emitidos").
+- *Cobrado directo*: fila `recibos_propietario_emitidos.via_caja=false` (varios propietarios) o `rendido_prop_items` con `recibo_prop_emitido` falso (uno solo). Se cuenta como bruto: alquiler + servicios que se rinden.
+- *Total percibido* = abonado por MeGa + cobrado directo (ARS) y, aparte, cada otra moneda (ej. USD).
+- Constante `ABONOS_DESDE = '2026-09'` en el portal: el registro de "Pago a propietario" empezó en septiembre 2026, así que los meses anteriores sin abono cargado dicen "Sin registro" en vez de "pendiente de abono". Si se cargan abonos viejos, se muestran igual.
+
+**Alta de un propietario (admin):** Clientes → ficha de la persona → "🔑 Acceso al portal de propietarios" (aparece si es propietario en algún contrato). Crea el usuario de Supabase Auth con contraseña temporal + fila en `usuarios` (`rol='propietario'`) y muestra el mensaje para WhatsApp. En la solapa Usuarios aparece el rol "Propietario" y "Reenviar acceso" con el link correcto. Una persona no puede tener a la vez usuario de inquilino y de propietario (un usuario = una `persona_id`).
+
+**Configuración manual necesaria (una vez):**
+1. Correr `10_portal_propietarios.sql` en el SQL Editor de Supabase.
+2. Supabase → Authentication → URL Configuration → Redirect URLs: agregar `https://megaconsultora.github.io/propietarios/` (para que "¿Olvidaste tu contraseña?" vuelva al portal correcto; si no, el link cae en el portal de inquilinos).
+3. Si al crear un acceso falla por una restricción de `usuarios.rol`, hay que permitir el valor `propietario` (no se pudo verificar desde acá si existe un CHECK).
+
+---
+
+## PARTE 7 — PENDIENTES / TEMAS ABIERTOS
+- Portal de propietarios: sin PWA/notificaciones push todavía (el de inquilinos sí); evaluar avisarles cuando se les abona un alquiler
 - Dividir `locaciones/index.html` en módulos (ver Parte 3)
 - Optimizar `loadAll()` para no recargar toda la base en cada guardado
 - Mejorar responsive de la tabla de pagos del portal en celular

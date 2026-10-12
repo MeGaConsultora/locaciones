@@ -3774,6 +3774,100 @@ Ante cualquier duda, comunicate con nosotros.`;
 }
 
 
+// ============================================================
+// ACCESO AL PORTAL DE PROPIETARIOS
+// Un propietario entra a megaconsultora.github.io/propietarios con un usuario
+// de rol 'propietario' vinculado a su persona. Ve solo sus contratos (la
+// base le devuelve únicamente lo suyo, ver sql_historial_local/10_...).
+// ============================================================
+async function abrirAccesoPropietario(personaId) {
+  const p = DB_PERSONAS.find(x => x.id === personaId);
+  if (!p) return;
+  const contratosProp = DB_CONTRATO_PERSONAS
+    .filter(x => x.persona_id === personaId && x.rol === 'propietario')
+    .map(cp => DB.contratos.find(c => c.id === cp.contrato_id)).filter(Boolean);
+  let usuario = null;
+  try {
+    const rows = await sbGet('usuarios', `persona_id=eq.${personaId}&limit=1`);
+    if (rows.length) usuario = rows[0];
+  } catch(e) {}
+  const primerNombre = (() => {
+    const full = formatNombrePersona(p) || '';
+    return full.includes(',') ? (full.split(',')[1]?.trim().split(' ')[0] || full) : (full.split(' ')[0] || full);
+  })();
+  const listaContratos = contratosProp.map(c => `<li>${c.titulo || c.hoja}</li>`).join('');
+
+  document.getElementById('modal-title').textContent = 'Acceso al portal de propietarios';
+  document.getElementById('modal-subtitle').textContent = formatNombrePersona(p);
+  let cuerpo;
+  if (usuario && usuario.rol !== 'propietario') {
+    cuerpo = `<div style="background:#f8d7da;border:1px solid #f5c6cb;border-radius:10px;padding:1rem;font-size:0.85rem;color:#721c24">
+      ⚠ Esta persona ya tiene un usuario como <strong>${usuario.rol === 'admin' ? 'administrador' : 'inquilino'}</strong> (${usuario.email}). Un mismo usuario no puede ser a la vez inquilino y propietario — si necesita los dos accesos, hace falta que use otro email para el de propietario (cargalo en otra ficha de persona).
+    </div>`;
+  } else if (usuario) {
+    cuerpo = `<div style="background:#f0fff4;border:1px solid var(--green);border-radius:10px;padding:1rem;margin-bottom:1rem">
+        <div style="font-weight:600;color:#155724;margin-bottom:0.3rem">✓ Ya tiene acceso al portal</div>
+        <div style="font-size:0.85rem;color:#155724">Email: <strong>${usuario.email}</strong>${usuario.aprobado ? '' : ' — pendiente de aprobación'}</div>
+      </div>
+      ${usuario.temp_password
+        ? `<button class="btn btn-green" onclick="reenviarAcceso('${usuario.email}','${(usuario.nombre||'').replace(/'/g,'')}','${usuario.temp_password}','propietario')">📤 Reenviar acceso</button>`
+        : `<p style="font-size:0.82rem;color:#666">Ya cambió su contraseña. Si la olvidó, que use "¿Olvidaste tu contraseña?" en el portal (que revise Spam / No deseados si no le llega el email).</p>`}`;
+  } else {
+    cuerpo = `<p style="font-size:0.85rem;color:#666;margin-bottom:1rem">Creá el usuario para que pueda entrar al portal y ver el estado de sus alquileres. Luego enviále el mensaje y la contraseña temporal.</p>
+      <div class="form-grid">
+        <div class="form-group"><label>Email *</label><input id="accp-email" type="email" value="${p.email || ''}" placeholder="email@ejemplo.com" autocomplete="new-password" style="margin-top:4px"></div>
+        <div class="form-group"><label>Nombre (para el mensaje)</label><input id="accp-nombre" type="text" value="${primerNombre}" autocomplete="new-password" style="margin-top:4px"></div>
+      </div>
+      <div class="form-actions" style="margin-top:1rem"><button class="btn btn-green" onclick="crearAccesoPropietario(${personaId})">🔑 Crear acceso</button></div>`;
+  }
+  document.getElementById('modal-body').innerHTML = `
+    <div style="background:var(--cream);border-radius:8px;padding:0.7rem 1rem;margin-bottom:1rem;font-size:0.82rem;color:#666">
+      Verá solo sus propiedades:<ul style="margin:4px 0 0 1.1rem">${listaContratos || '<li>(sin contratos como propietario)</li>'}</ul>
+    </div>
+    ${cuerpo}
+    <div class="form-actions" style="margin-top:1rem"><button class="btn btn-secondary" onclick="openPersona(${personaId})">← Volver</button></div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function crearAccesoPropietario(personaId) {
+  try { await refreshAdminToken(); } catch(e) {}
+  const email = document.getElementById('accp-email').value.trim();
+  const nombre = document.getElementById('accp-nombre').value.trim();
+  if (!email) { toast('Ingresá el email', 'error'); return; }
+  try {
+    // ¿Ya hay un usuario con este email? (otra ficha, o rol distinto)
+    const existente = await sbGet('usuarios', `email=eq.${encodeURIComponent(email)}&limit=1`);
+    if (existente.length) {
+      toast(`Ese email ya tiene un usuario (${existente[0].rol || 'sin rol'}). Usá otro email o gestionalo desde la solapa Usuarios.`, 'error');
+      return;
+    }
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let tempPass = '';
+    for (let i = 0; i < 8; i++) tempPass += chars[Math.floor(Math.random() * chars.length)];
+    tempPass += '!1';
+
+    const signupR = await fetch(`${SB_URL}/auth/v1/signup`, {
+      method: 'POST', headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: tempPass })
+    });
+    const signupData = await signupR.json();
+    const authUserId = signupData?.user?.id || signupData?.id || null;
+    if (!signupR.ok || !authUserId) {
+      // Si la cuenta ya existía en Supabase Auth (de un acceso anterior dado de
+      // baja) la contraseña temporal NO quedó activa: no se guarda ninguna.
+      toast('⚠ No se pudo crear la cuenta: ' + (signupData?.msg || signupData?.error_description || 'es probable que ese email ya tenga una cuenta de acceso anterior. Que use "¿Olvidaste tu contraseña?" en el portal, o usá otro email.'), 'error');
+      return;
+    }
+    await sbPost('usuarios', {
+      email, nombre: nombre || email, aprobado: true, admin: false,
+      rol: 'propietario', persona_id: personaId, user_id: authUserId, temp_password: tempPass
+    });
+    toast('Acceso creado ✓');
+    await reenviarAcceso(email, nombre, tempPass, 'propietario');
+    document.getElementById('modal-title').textContent = 'Acceso creado';
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
 async function proyectarPeriodo(hoja, desdeKey, importe, periodicidad, diaVenc, modalidad) {
   const mesesPeriodo = {
     'Mensual': 1, 'Bimestral': 2, 'Trimestral': 3,
@@ -12724,6 +12818,7 @@ function openPersona(id) {
   document.getElementById('modal-body').innerHTML = `
     <div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="openEditPersona(${id})">✏️ Editar datos</button>
+      ${cpRows.some(cp => cp.rol === 'propietario') ? `<button class="btn btn-secondary" style="color:var(--green);border-color:var(--green)" onclick="abrirAccesoPropietario(${id})">🔑 Acceso al portal de propietarios</button>` : ''}
       <button class="btn btn-secondary" style="color:#721c24;border-color:#721c24" onclick="eliminarPersona(${id})">🗑 Eliminar</button>
     </div>
     <div class="detail-grid">
@@ -13126,16 +13221,16 @@ async function loadUsuarios() {
         <td>${u.email}</td>
         <td style="font-size:0.78rem;color:#888">${u.created_at ? new Date(u.created_at).toLocaleDateString('es-AR') : '—'}</td>
         <td><span class="badge ${u.aprobado?'badge-green':'badge-yellow'}">${u.aprobado?'Aprobado':'Pendiente'}</span></td>
-        <td><span class="badge ${u.rol==='admin'?'badge-blue':'badge-gray'}">${u.rol==='admin'?'Admin':'Inquilino'}</span></td>
+        <td><span class="badge ${u.rol==='admin'?'badge-blue':'badge-gray'}">${u.rol==='admin'?'Admin':u.rol==='propietario'?'Propietario':'Inquilino'}</span></td>
         <td>
           ${persona 
             ? `<span style="font-size:0.82rem;color:var(--green)">✓ ${persona.apellido}, ${persona.nombre}</span>
                <button class="btn btn-secondary" style="padding:2px 8px;font-size:0.72rem;margin-left:6px" onclick="abrirVincularPersona('${u.id}','${u.rol}')">Cambiar</button>`
-            : `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="abrirVincularPersona('${u.id}','${u.rol}')">🔗 Vincular inquilino</button>`
+            : `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="abrirVincularPersona('${u.id}','${u.rol}')">🔗 Vincular persona</button>`
           }
         </td>
         <td>
-          ${u.rol==='inquilino'
+          ${(u.rol==='inquilino' || u.rol==='propietario')
             ? (u.temp_password
                 ? `<span class="badge badge-yellow" title="Todavía puede entrar con la temporal${fechaIngreso ? ' — último ingreso: '+fechaIngreso : ''}">🔑 Puede usar temporal</span>`
                 : `<span class="badge badge-green" title="Ya cambió su contraseña — solo puede entrar con la suya o recuperándola por email${fechaIngreso ? ' · último ingreso: '+fechaIngreso : ''}">✓ Ya cambiada</span>`)
@@ -13145,7 +13240,7 @@ async function loadUsuarios() {
           ${!u.aprobado ? `<button class="btn btn-green" style="padding:4px 10px;font-size:0.75rem" onclick="aprobarUsuario('${u.id}')">✓ Aprobar</button>` : ''}
           ${u.aprobado && u.rol!=='admin' ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="toggleAdmin('${u.id}',true)">↑ Admin</button>` : ''}
           ${u.rol==='admin' && u.email !== currentUsuario?.email ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="toggleAdmin('${u.id}',false)">↓ Quitar admin</button>` : ''}
-          ${u.aprobado && u.rol==='inquilino' && u.temp_password ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;color:var(--green);border-color:var(--green)" onclick="reenviarAcceso('${u.email}','${u.nombre||''}','${u.temp_password||''}')">📤 Reenviar acceso</button>` : ''}
+          ${u.aprobado && (u.rol==='inquilino' || u.rol==='propietario') && u.temp_password ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;color:var(--green);border-color:var(--green)" onclick="reenviarAcceso('${u.email}','${u.nombre||''}','${u.temp_password||''}','${u.rol}')">📤 Reenviar acceso</button>` : ''}
           ${u.email !== currentUsuario?.email && u.rol!=='admin' ? `<button class="btn" style="padding:4px 10px;font-size:0.75rem;background:#f8d7da;color:#721c24" onclick="darDeBaja('${u.id}','${u.email}')">✕ Baja</button>` : u.email === currentUsuario?.email ? '<span style="font-size:0.75rem;color:#aaa">(vos)</span>' : '<span style="font-size:0.75rem;color:#aaa">Admin</span>'}
         </td>
       </tr>`;
@@ -13154,7 +13249,7 @@ async function loadUsuarios() {
     // Update table header
     const thead = document.querySelector('#panel-admin table thead tr');
     if (thead && thead.children.length < 8) {
-      thead.innerHTML = '<th>Nombre</th><th>Email</th><th>Registrado</th><th>Estado</th><th>Rol</th><th>Inquilino vinculado</th><th>Contraseña</th><th>Acciones</th>';
+      thead.innerHTML = '<th>Nombre</th><th>Email</th><th>Registrado</th><th>Estado</th><th>Rol</th><th>Persona vinculada</th><th>Contraseña</th><th>Acciones</th>';
     }
   } catch(e) { toast('Error al cargar usuarios: ' + e.message, 'error'); }
 }
@@ -13176,7 +13271,8 @@ function abrirVincularPersona(usuarioId, rolActual) {
     <div class="form-group" style="margin-bottom:1rem">
       <label>Rol</label>
       <select id="vinc-rol" class="filter-select" style="width:100%;margin-top:4px">
-        <option value="inquilino" ${rolActual!=='admin'?'selected':''}>Inquilino (solo ve sus datos)</option>
+        <option value="inquilino" ${rolActual!=='admin' && rolActual!=='propietario'?'selected':''}>Inquilino (solo ve sus datos)</option>
+        <option value="propietario" ${rolActual==='propietario'?'selected':''}>Propietario (ve sus contratos y cobros)</option>
         <option value="admin" ${rolActual==='admin'?'selected':''}>Admin (ve todo)</option>
       </select>
     </div>
@@ -13237,7 +13333,7 @@ function selPersonaVinc(id, apellido, nombre) {
 async function guardarVinculacion(usuarioId) {
   const personaId = document.getElementById('vinc-persona-id').value;
   const rol = document.getElementById('vinc-rol').value;
-  if (!personaId && rol !== 'admin') { toast('Seleccioná un inquilino','error'); return; }
+  if (!personaId && rol !== 'admin') { toast('Seleccioná una persona','error'); return; }
   try {
     // Get current user to find old persona_id
     const usuariosActual = await sbGet('usuarios', `id=eq.${usuarioId}&select=persona_id`);
@@ -13271,7 +13367,7 @@ async function guardarVinculacion(usuarioId) {
         body: JSON.stringify({ inquilino_id: null })
       });
     }
-    if (personaId) {
+    if (personaId && rol === 'inquilino') {
       // Find contratos from contrato_personas for this new persona and set inquilino_id
       const cpRows = await sbGet('contrato_personas', `persona_id=eq.${personaId}&rol=eq.inquilino`);
       for (const cp of cpRows) {
@@ -13289,7 +13385,8 @@ async function guardarVinculacion(usuarioId) {
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
-async function reenviarAcceso(email, nombre, tempPass) {
+async function reenviarAcceso(email, nombre, tempPass, rol) {
+  const esProp = rol === 'propietario';
   // IMPORTANTE: reenviar la contraseña temporal YA EXISTENTE (la que
   // realmente quedó configurada en Supabase Auth cuando se creó el acceso
   // por primera vez) — antes se generaba una NUEVA acá mismo y solo se
@@ -13307,9 +13404,9 @@ async function reenviarAcceso(email, nombre, tempPass) {
   })();
   const mensaje = `Hola, ${nombreMostrar}!
 
-Ya podés acceder a tu portal de inquilino en MeGa Consultora.
+Ya podés acceder a tu portal de ${esProp ? 'propietario' : 'inquilino'} en MeGa Consultora.
 
-🌐 https://megaconsultora.github.io/inquilinos
+🌐 https://megaconsultora.github.io/${esProp ? 'propietarios' : 'inquilinos'}
 📧 Email: ${email}
 
 Te enviamos la contraseña temporal en el siguiente mensaje. Por seguridad, al ingresar por primera vez el sistema te va a pedir que la cambies.
