@@ -3838,7 +3838,25 @@ async function crearAccesoPropietario(personaId) {
     // ¿Ya hay un usuario con este email? (otra ficha, o rol distinto)
     const existente = await sbGet('usuarios', `email=eq.${encodeURIComponent(email)}&limit=1`);
     if (existente.length) {
-      toast(`Ese email ya tiene un usuario (${existente[0].rol || 'sin rol'}). Usá otro email o gestionalo desde la solapa Usuarios.`, 'error');
+      const u = existente[0];
+      if (u.persona_id && String(u.persona_id) !== String(personaId)) {
+        toast(`Ese email ya tiene un usuario (${u.rol || 'sin rol'}) vinculado a otra persona. Usá otro email o gestionalo desde la solapa Usuarios.`, 'error');
+        return;
+      }
+      // Mismo email, usuario existente sin ficha vinculada: se vincula a esta persona
+      // (no se toca su rol ni su contraseña) y así detecta que además es propietario.
+      if (!u.persona_id) {
+        if (!confirm(`Ese email ya tiene un usuario (${u.rol || 'sin rol'}). ¿Vincularlo a esta persona?\n\nNo se cambia su rol ni su contraseña: con el mismo email va a poder entrar al portal de propietarios y verá el selector "Ver como…".`)) return;
+        await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${u.id}`, {
+          method: 'PATCH',
+          headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${currentUser.token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ persona_id: personaId })
+        });
+        toast('Usuario vinculado a la persona ✓');
+        abrirAccesoPropietario(personaId);
+        return;
+      }
+      abrirAccesoPropietario(personaId);
       return;
     }
     const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
