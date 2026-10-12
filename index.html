@@ -11668,9 +11668,35 @@ function formatNombrePersona(p) {
   return apellido || nombre || '—';
 }
 
+// Contratos de una persona y en qué rol. Se toman las DOS fuentes: las
+// columnas viejas del contrato (propietario_id / inquilino_id, que guardan
+// UNA sola persona) y la tabla contrato_personas (todas las personas de cada
+// contrato). Mirar solo las columnas viejas dejaba como "Sin contrato" a los
+// copropietarios (ej: el segundo propietario de Gardella-Trutali).
+function getRelacionesPersona(p) {
+  const rel = new Map();
+  const marcar = (c, campo) => {
+    if (!c) return;
+    const r = rel.get(c.id) || { c, prop: false, inq: false };
+    r[campo] = true;
+    rel.set(c.id, r);
+  };
+  DB.contratos.forEach(c => {
+    if (c.propietario_id == p.id) marcar(c, 'prop');
+    if (c.inquilino_id == p.id) marcar(c, 'inq');
+  });
+  DB_CONTRATO_PERSONAS.filter(x => x.persona_id == p.id).forEach(cp => {
+    const c = DB.contratos.find(cc => cc.id == cp.contrato_id);
+    if (cp.rol === 'propietario') marcar(c, 'prop');
+    if (cp.rol === 'inquilino') marcar(c, 'inq');
+  });
+  return [...rel.values()];
+}
+
 function getRolPersona(p) {
-  const esProp = DB.contratos.some(c => c.propietario_id == p.id);
-  const esInq = DB.contratos.some(c => c.inquilino_id == p.id);
+  const rels = getRelacionesPersona(p);
+  const esProp = rels.some(r => r.prop);
+  const esInq = rels.some(r => r.inq);
   if (esProp && esInq) return 'ambos';
   if (esProp) return 'propietario';
   if (esInq) return 'inquilino';
@@ -11707,7 +11733,7 @@ function renderClientes() {
     ? `<tr><td colspan="6"><div class="empty-state"><div class="icon">🧑‍🤝‍🧑</div><p>Sin resultados</p></div></td></tr>`
     : slice.map(p => {
         const rol = getRolPersona(p);
-        const contratos = DB.contratos.filter(c => c.propietario_id == p.id || c.inquilino_id == p.id);
+        const contratos = getRelacionesPersona(p).map(r => r.c);
         return `<tr onclick="openPersona(${p.id})">
           <td><strong>${formatNombrePersona(p)}</strong></td>
           <td>${p.dni||'—'}</td>
