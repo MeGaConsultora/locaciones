@@ -15661,27 +15661,73 @@ async function generarRecibosSeleccionados() {
   } catch(e) { console.warn('No se pudo guardar en localStorage:', e); }
 }
 
-async function confirmarRecibosEmitidos() {
-  let pagoIds = [], detalleRendido = [];
+// Pendiente de confirmar (localStorage): lo que se imprimió pero todavía no se
+// marcó como emitido. Cada entrada {pagoId, personaId, itemsRendidos} se
+// "reclama" (se saca de acá) ANTES de aplicarse, para que una misma entrada
+// no se pueda sumar dos veces a lo rendido — ni por un doble clic, ni por
+// el botón de la ventana de impresión + el aviso "Confirmar ahora" a la
+// vez, ni por reintentar un lote que había quedado a medias. Si falla, la
+// entrada vuelve a quedar pendiente (solo esa, no todo el lote).
+const _CLAVE_PEND_RECIBOS = 'recibosPendientesMarcar';
+function _leerPendRecibos() {
+  try { return JSON.parse(localStorage.getItem(_CLAVE_PEND_RECIBOS) || 'null'); } catch(e) { return null; }
+}
+function _escribirPendRecibos(g) {
   try {
-    const guardado = JSON.parse(localStorage.getItem('recibosPendientesMarcar') || 'null');
-    if (guardado) { pagoIds = guardado.pagoIds || []; detalleRendido = guardado.detalleRendido || []; }
+    if (g && (g.detalleRendido||[]).length) {
+      g.pagoIds = [...new Set(g.detalleRendido.map(e => e.pagoId))];
+      localStorage.setItem(_CLAVE_PEND_RECIBOS, JSON.stringify(g));
+    } else {
+      localStorage.removeItem(_CLAVE_PEND_RECIBOS);
+    }
   } catch(e) {}
-  if (!pagoIds.length) return false;
+}
+const _mismaEntradaRecibo = (a, b) => a.pagoId === b.pagoId && String(a.personaId||'') === String(b.personaId||'');
+
+let _confirmandoRecibos = false;
+
+async function confirmarRecibosEmitidos() {
+  // Si ya hay una confirmación corriendo en esta pestaña, no arrancar otra
+  // en paralelo (la que está en curso ya se ocupa de todo).
+  if (_confirmandoRecibos) return true;
+  _confirmandoRecibos = true;
+  try {
+    return await _confirmarRecibosEmitidosImpl();
+  } finally {
+    _confirmandoRecibos = false;
+  }
+}
+
+async function _confirmarRecibosEmitidosImpl() {
+  const inicial = _leerPendRecibos();
+  const entradas = inicial?.detalleRendido || [];
+  if (!entradas.length) return false;
   const now = new Date().toISOString();
   const errores = [];
+  const pagoIdsMarcados = new Set();
+  let entradasOk = 0;
 
   // Para contratos con UN propietario: sigue usando el campo de siempre en
   // `pagos`. Para contratos con MÁS de un propietario: marca cada uno en la
   // tabla nueva (recibos_propietario_emitidos), igual criterio que el GP
   // individual — así los dos caminos quedan siempre consistentes entre sí.
-  // Se recorre detalleRendido (no todos los propietarios del contrato a
+  // Se recorre el detalle (no todos los propietarios del contrato a
   // ciegas) para marcar como emitido solo lo que realmente se incluyó en
   // esta tanda de impresión, y para poder acumular items_rendidos.
   // IMPORTANTE: cada iteración va en su propio try/catch — si UN contrato
   // falla (ej: columna nueva no encontrada en Supabase), no debe frenar el
   // resto del lote ni fallar en silencio sin avisar nada.
-  for (const { pagoId, personaId, itemsRendidos } of detalleRendido) {
+  for (const entrada of entradas) {
+    const { pagoId, personaId, itemsRendidos } = entrada;
+
+    // Reclamar la entrada: si ya no está, otra ejecución (otra pestaña u otro
+    // clic) ya la tomó — no se vuelve a aplicar.
+    const vigente = _leerPendRecibos();
+    const idx = (vigente?.detalleRendido || []).findIndex(e => _mismaEntradaRecibo(e, entrada));
+    if (idx < 0) continue;
+    vigente.detalleRendido.splice(idx, 1);
+    _escribirPendRecibos(vigente);
+
     const p = DB.pagos.find(x => x.id === pagoId);
     try {
       if (personaId) {
@@ -15695,15 +15741,25 @@ async function confirmarRecibosEmitidos() {
           await sbPost('recibos_propietario_emitidos', { pago_id: pagoId, persona_id: personaId, fecha: now, items_rendidos: rendidoNuevo, via_caja: true });
         }
       } else {
-        const rendidoPrevio = p?.rendido_prop_items || {};
+        // Se relee el pago desde la base (no del caché local de esta
+        // pestaña): si otra pestaña ya sumó algo, no se pisa ni se pierde.
+        const frescos = await sbGet('pagos', `id=eq.${pagoId}&select=rendido_prop_items&limit=1`);
+        const rendidoPrevio = frescos[0]?.rendido_prop_items || {};
         const rendidoNuevo = { ...rendidoPrevio };
         Object.entries(itemsRendidos || {}).forEach(([k,v]) => { const prevMonto = _rendidoMonto(rendidoNuevo[k]); rendidoNuevo[k] = { monto: Math.round((prevMonto + v) * 100) / 100, fecha: now }; });
         await sbPatch('pagos', pagoId, { recibo_prop_emitido: true, recibo_prop_fecha: now, rendido_prop_items: rendidoNuevo });
         if (p) { p.recibo_prop_emitido = true; p.recibo_prop_fecha = now; p.rendido_prop_items = rendidoNuevo; }
       }
+      pagoIdsMarcados.add(pagoId);
+      entradasOk++;
     } catch(e) {
       console.error('No se pudo marcar como emitido:', pagoId, personaId, e);
       errores.push({ pagoId, mensaje: e.message || String(e) });
+      // Devolverla a pendiente — solo esta entrada, no todo el lote — así un
+      // reintento no vuelve a sumar las que sí se marcaron bien.
+      const v2 = _leerPendRecibos() || { fecha: inicial.fecha, detalleRendido: [] };
+      v2.detalleRendido.push(entrada);
+      _escribirPendRecibos(v2);
     }
   }
 
@@ -15711,7 +15767,8 @@ async function confirmarRecibosEmitidos() {
   // descontaron en el recibo (mismo efecto que el GP individual aplica al
   // imprimir), ya que el recibo masivo no tiene checkbox interactivo — se
   // asume que si se dio el saldo, se dio por cobrado en su totalidad.
-  for (const pagoId of pagoIds) {
+  // Solo para los pagos que ESTA ejecución marcó (no los que tomó otra).
+  for (const pagoId of pagoIdsMarcados) {
     try {
       const p = DB.pagos.find(x => x.id === pagoId);
       const c = p ? DB.contratos.find(x => x.hoja === p.hoja) : null;
@@ -15731,14 +15788,12 @@ async function confirmarRecibosEmitidos() {
     } catch(e) { console.warn('Error marcando honorarios propietario como pagados:', pagoId, e); }
   }
 
-  const exitosos = detalleRendido.length - errores.length;
   if (errores.length) {
-    toast(`⚠ ${exitosos} marcado/s ✓, pero ${errores.length} fallaron: ${errores.map(e=>e.mensaje).slice(0,2).join(' / ')}${errores.length>2?'…':''}`, 'error');
-    // No limpiar localStorage si hubo errores — así, si se reintenta, no se
-    // pierde el detalle de lo que faltó marcar.
-  } else {
-    try { localStorage.removeItem('recibosPendientesMarcar'); } catch(e) {}
-    toast(`${pagoIds.length} recibo/s marcados como emitidos ✓`);
+    toast(`⚠ ${entradasOk} marcado/s ✓, pero ${errores.length} fallaron: ${errores.map(e=>e.mensaje).slice(0,2).join(' / ')}${errores.length>2?'…':''}`, 'error');
+    // Las que fallaron quedan pendientes (ya se reescribió el localStorage con
+    // solo esas) para poder reintentarlas sin duplicar las que sí salieron.
+  } else if (pagoIdsMarcados.size) {
+    toast(`${pagoIdsMarcados.size} recibo/s marcados como emitidos ✓`);
   }
   renderRecibosEmitir();
   return errores.length === 0;
