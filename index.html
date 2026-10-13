@@ -12346,7 +12346,7 @@ async function renderComisionesPendientes() {
               <td style="padding:8px 12px">${x.mes ? x.mes.substring(0,7) : ''}</td>
               <td style="padding:8px 12px">${x.fecha ? new Date(x.fecha).toLocaleDateString('es-AR') : '—'}</td>
               <td style="padding:8px 12px;text-align:right;font-weight:600;color:#c0392b">${formatMoney(x.monto)}</td>
-              <td style="padding:8px 12px;text-align:right"><button class="btn btn-green" style="padding:5px 12px;font-size:0.78rem" onclick="abrirCobrarComisionPendiente(${x.pagoId},${x.personaId||'null'})">✓ Marcar cobrada</button></td>
+              <td style="padding:8px 12px;text-align:right;white-space:nowrap"><button class="btn btn-green" style="padding:5px 12px;font-size:0.78rem" onclick="abrirCobrarComisionPendiente(${x.pagoId},${x.personaId||'null'})">✓ Marcar cobrada</button> <button class="btn btn-secondary" style="padding:5px 12px;font-size:0.78rem" title="Se compensó con otro cobro o pago al propietario: no entra plata a Caja" onclick="abrirCobrarComisionPendiente(${x.pagoId},${x.personaId||'null'},true)">Compensada</button></td>
             </tr>`).join('')}
         </tbody>
         <tfoot><tr style="background:#f5f5f5;font-weight:700;font-size:0.85rem">
@@ -12358,7 +12358,7 @@ async function renderComisionesPendientes() {
     </div>`;
 }
 
-function abrirCobrarComisionPendiente(pagoId, personaId = null) {
+function abrirCobrarComisionPendiente(pagoId, personaId = null, sinCaja = false) {
   const p = DB.pagos.find(x => x.id === pagoId);
   const filaMulti = personaId ? (window._comisionesMulti||[]).find(f => f.pago_id === pagoId && parseInt(f.persona_id) === personaId) : null;
   const entry = personaId ? filaMulti?.items_rendidos?.alquiler : p?.rendido_prop_items?.alquiler;
@@ -12369,8 +12369,16 @@ function abrirCobrarComisionPendiente(pagoId, personaId = null) {
   document.getElementById('modal-title').textContent = 'Cobrar comisión pendiente';
   document.getElementById('modal-subtitle').textContent = `${c?.titulo||p?.hoja||''}${per ? ' — ' + formatNombrePersona(per) : ''} — ${formatMoney(pendiente)}`;
   document.getElementById('modal-body').innerHTML = `
-    <p style="font-size:0.85rem;color:#666;margin-bottom:1rem">Registrá acá dónde entró la plata cuando el propietario efectivamente te pagó esta comisión.</p>
-    <div class="form-grid">
+    <p style="font-size:0.85rem;color:#666;margin-bottom:0.8rem">Registrá acá dónde entró la plata cuando el propietario efectivamente te pagó esta comisión.</p>
+    <label style="display:flex;align-items:flex-start;gap:8px;font-size:0.85rem;background:var(--cream);border-radius:8px;padding:0.6rem 0.8rem;margin-bottom:1rem;cursor:pointer">
+      <input type="checkbox" id="ccp-sin-caja" ${sinCaja ? 'checked' : ''} onchange="alternarComisionSinCaja()" style="margin-top:3px">
+      <span><strong>Se compensó, sin movimiento de Caja</strong><br><span style="color:#777;font-size:0.8rem">Por ejemplo, se descontó del alquiler de otro contrato del mismo propietario que se cobra en efectivo. Queda como cobrada pero no se registra ningún ingreso en Caja.</span></span>
+    </label>
+    <div id="ccp-nota-wrap" style="display:none;margin-bottom:1rem">
+      <label style="font-size:0.78rem;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:.04em">Nota <span style="font-weight:400;text-transform:none;color:#aaa">(opc.)</span></label>
+      <input type="text" id="ccp-nota" placeholder="Ej.: descontada del alquiler de otro contrato (oct 2026)" style="margin-top:4px;width:100%">
+    </div>
+    <div class="form-grid" id="ccp-campos-caja">
       <div class="form-group">
         <label>Titular</label>
         <select id="ccp-titular" onchange="actualizarCuentasComisionPendiente()" style="margin-top:4px">
@@ -12397,6 +12405,19 @@ function abrirCobrarComisionPendiente(pagoId, personaId = null) {
     </div>`;
   document.getElementById('modal-overlay').dataset.contratoId = '';
   document.getElementById('modal-overlay').classList.add('open');
+  alternarComisionSinCaja();
+}
+
+// Con "sin movimiento de Caja" se ocultan titular/cuenta/monto (no hay ingreso
+// que registrar) y aparece una nota opcional.
+function alternarComisionSinCaja() {
+  const sinCaja = !!document.getElementById('ccp-sin-caja')?.checked;
+  const campos = document.getElementById('ccp-campos-caja');
+  const nota = document.getElementById('ccp-nota-wrap');
+  if (campos) campos.style.display = sinCaja ? 'none' : '';
+  if (nota) nota.style.display = sinCaja ? 'block' : 'none';
+  const btn = document.querySelector('#modal-body .form-actions .btn-green');
+  if (btn) btn.textContent = sinCaja ? '✓ Marcar como cobrada' : '✓ Registrar cobro';
 }
 
 function actualizarCuentasComisionPendiente() {
@@ -12415,8 +12436,12 @@ async function confirmarCobroComisionPendiente(pagoId, personaId = null) {
   const cuentaId = parseInt(document.getElementById('ccp-cuenta')?.value) || null;
   const fecha = document.getElementById('ccp-fecha')?.value || TODAY;
   const monto = parseMonto(document.getElementById('ccp-monto')?.value);
-  if (!titularId) { toast('Elegí un titular', 'error'); return; }
-  if (!monto || monto <= 0) { toast('Ingresá un monto válido', 'error'); return; }
+  const sinCaja = !!document.getElementById('ccp-sin-caja')?.checked;
+  const nota = (document.getElementById('ccp-nota')?.value || '').trim();
+  if (!sinCaja && !titularId) { toast('Elegí un titular', 'error'); return; }
+  if (!sinCaja && (!monto || monto <= 0)) { toast('Ingresá un monto válido', 'error'); return; }
+  // Si se compensó sin pasar por Caja, queda constancia en el propio registro
+  const extraSinCaja = sinCaja ? { comisionSinCaja: true, ...(nota ? { comisionNota: nota } : {}) } : {};
 
   const p = DB.pagos.find(x => x.id === pagoId);
   if (!p) { toast('No se encontró el pago', 'error'); return; }
@@ -12434,26 +12459,26 @@ async function confirmarCobroComisionPendiente(pagoId, personaId = null) {
       const fila = filas[0];
       if (!fila?.items_rendidos?.alquiler) { toast('No se encontró la comisión pendiente de este propietario', 'error'); return; }
       if (fila.items_rendidos.alquiler.comisionCobrada) { toast('Esta comisión ya figura como cobrada', 'error'); renderComisionesPendientes(); return; }
-      await sbPost('caja_movimientos', {
+      if (!sinCaja) await sbPost('caja_movimientos', {
         fecha, tipo: 'ingreso', titular_id: titularId, cuenta_id: cuentaId, moneda,
         categoria: 'Honorarios', concepto: `Comisión (cobro directo) — ${c?.titulo||p.hoja}${sufijoPropietario}`, monto, pago_id: p.id, persona_id: personaId
       });
-      const nuevoItems = { ...fila.items_rendidos, alquiler: { ...fila.items_rendidos.alquiler, comisionCobrada: true, comisionFechaCobro: fecha } };
+      const nuevoItems = { ...fila.items_rendidos, alquiler: { ...fila.items_rendidos.alquiler, comisionCobrada: true, comisionFechaCobro: fecha, ...extraSinCaja } };
       await sbPatch('recibos_propietario_emitidos', fila.id, { items_rendidos: nuevoItems });
     } else {
-      await sbPost('caja_movimientos', {
+      if (!sinCaja) await sbPost('caja_movimientos', {
         fecha, tipo: 'ingreso', titular_id: titularId, cuenta_id: cuentaId, moneda,
         categoria: 'Honorarios', concepto: `Comisión (cobro directo) — ${c?.titulo||p.hoja}`, monto, pago_id: p.id
       });
       const rendidoPrevio = p.rendido_prop_items || {};
-      const nuevoRendido = { ...rendidoPrevio, alquiler: { ...rendidoPrevio.alquiler, comisionCobrada: true, comisionFechaCobro: fecha } };
+      const nuevoRendido = { ...rendidoPrevio, alquiler: { ...rendidoPrevio.alquiler, comisionCobrada: true, comisionFechaCobro: fecha, ...extraSinCaja } };
       await sbPatch('pagos', p.id, { rendido_prop_items: nuevoRendido });
       p.rendido_prop_items = nuevoRendido;
     }
     closeModal();
-    toast('Comisión registrada ✓');
+    toast(sinCaja ? 'Comisión marcada como cobrada (sin movimiento de Caja) ✓' : 'Comisión registrada ✓');
     renderComisionesPendientes();
-    if (document.getElementById('caja-subtab-movimientos')?.style.display !== 'none') { await cargarCajaMovimientos(); renderCajaMovimientos(); }
+    if (!sinCaja && document.getElementById('caja-subtab-movimientos')?.style.display !== 'none') { await cargarCajaMovimientos(); renderCajaMovimientos(); }
   } catch(e) { toast('Error al registrar: ' + e.message, 'error'); }
 }
 
