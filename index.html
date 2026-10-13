@@ -9014,7 +9014,9 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
   const yaRendidoHtmlImpreso = _construirYaRendidoHtml(window._gpRendidoPropItems, extrasPropParaNota, comisionPct, true);
 
   const ventana = window.open('', '_blank', 'width=780,height=600');
-  const reciboHtml = `
+  // El Duplicado es el ejemplar que se le entrega al propietario, así que no
+  // lleva espacio de firma — solo el Original (que queda en la inmobiliaria).
+  const reciboHtml = (conFirma) => `
     <div style="font-family:'DM Sans',Arial,sans-serif;width:100%;max-width:680px;margin:0 auto;padding:24px;border:2px solid #1a1a2e;border-radius:8px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:2px solid #1a1a2e;padding-bottom:12px">
         <div><div style="font-size:1.4rem;font-weight:700;color:#1a1a2e">MeGa Consultora</div><div style="font-size:0.8rem;color:#666">Recibo de Rendición al Propietario</div></div>
@@ -9034,9 +9036,9 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
         </tbody>
         <tfoot><tr style="border-top:2px solid #1a1a2e"><td style="padding:10px;font-weight:700">TOTAL A RECIBIR</td><td style="padding:10px;text-align:right;font-weight:700;font-size:1.1rem;color:#2d7a4f">${formatMoney(totalRendir)}</td></tr></tfoot>
       </table>
-      <div style="margin-top:16px;padding-top:12px;border-top:1px dashed #ccc;max-width:220px;margin-left:auto;margin-right:auto;text-align:center">
+      ${conFirma ? `<div style="margin-top:16px;padding-top:12px;border-top:1px dashed #ccc;max-width:220px;margin-left:auto;margin-right:auto;text-align:center">
         <div style="border-top:1px solid #333;padding-top:6px;font-size:0.78rem;color:#666;margin-top:24px">Firma propietario</div>
-      </div>
+      </div>` : ''}
     </div>`;
 
   ventana.document.write(`<!DOCTYPE html><html><head>
@@ -9065,10 +9067,10 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     <div class="no-print"><button onclick="window.print()">🖨️ Imprimir original y duplicado (A4)</button></div>
     <div class="recibo-mitad recibo-original">
       <div class="recibo-label">▶ ORIGINAL &nbsp;·&nbsp; <span style="font-size:0.85rem;letter-spacing:0.05em">${propietarioNombre}</span></div>
-      <div class="recibo-inner" id="rp1">${reciboHtml}</div>
+      <div class="recibo-inner" id="rp1">${reciboHtml(true)}</div>
     </div>
     <div class="separador"></div>
-    <div class="recibo-mitad"><div class="recibo-label">▶ DUPLICADO</div><div class="recibo-inner" id="rp2">${reciboHtml}</div></div>
+    <div class="recibo-mitad"><div class="recibo-label">▶ DUPLICADO</div><div class="recibo-inner" id="rp2">${reciboHtml(false)}</div></div>
     <script>
       function ajustarEscala(mitad, printPx) {
         const inner = mitad.querySelector('.recibo-inner');
@@ -15547,7 +15549,7 @@ async function generarRecibosSeleccionados() {
     for (const cp of propsToRender) {
       const propPersonaId = cp ? cp.persona_id : null;
       const rendidoMap = propPersonaId ? rendidoDeEsePropietario(pagoId, propPersonaId) : (p.rendido_prop_items || {});
-      const { html: reciboHtml, itemsRendidos } = generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPersonaId, rendidoMap);
+      const { html: reciboHtml, htmlSinFirma: reciboHtmlSinFirma, itemsRendidos } = generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPersonaId, rendidoMap);
       if (!reciboHtml) continue; // nada pendiente de rendir para este propietario este mes
       if (!pagoIds.includes(pagoId)) pagoIds.push(pagoId);
       detalleRendido.push({ pagoId, personaId: propPersonaId, itemsRendidos });
@@ -15558,7 +15560,7 @@ async function generarRecibosSeleccionados() {
           <div class="recibo-label">▶ ORIGINAL &nbsp;·&nbsp; <span style="font-size:0.85rem;letter-spacing:0.05em">${propNombreLabel}</span></div>
           <div class="recibo-inner">${reciboHtml}</div>
         </div>
-        <div class="recibo-mitad"><div class="recibo-label">▶ DUPLICADO</div><div class="recibo-inner">${reciboHtml}</div></div>`;
+        <div class="recibo-mitad"><div class="recibo-label">▶ DUPLICADO</div><div class="recibo-inner">${reciboHtmlSinFirma}</div></div>`;
     }
   }
   if (!allHtml) {
@@ -15885,7 +15887,9 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPers
     }
   }
 
-  const htmlRecibo = `<div style="font-family:'DM Sans',Arial,sans-serif;width:100%;max-width:680px;margin:0 auto;padding:18px;border:2px solid #1a1a2e;border-radius:8px">
+  // El Duplicado es el ejemplar que se le entrega al propietario, así que no
+  // lleva espacio de firma — solo el Original (que queda en la inmobiliaria).
+  const armarHtmlRecibo = (conFirma) => `<div style="font-family:'DM Sans',Arial,sans-serif;width:100%;max-width:680px;margin:0 auto;padding:18px;border:2px solid #1a1a2e;border-radius:8px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;border-bottom:2px solid #1a1a2e;padding-bottom:10px">
       <div><div style="font-size:1.2rem;font-weight:700;color:#1a1a2e">MeGa Consultora</div><div style="font-size:0.75rem;color:#666">Recibo de Rendición al Propietario</div></div>
       <div style="text-align:right">${nroRecibo ? `<div style="font-size:0.68rem;color:#888">Recibo mes N°</div><div style="font-size:1rem;font-weight:700;color:#c8483a">${String(nroRecibo).padStart(2,'0')}${totalMesesContrato ? `<span style="font-size:0.58rem;font-weight:600;color:#888"> de ${String(totalMesesContrato).padStart(2,'0')}</span>` : ''}</div>` : ''}<div style="font-size:0.68rem;color:#888;margin-top:3px">Fecha</div><div style="font-size:0.92rem;font-weight:700">${fechaHoy}</div></div>
@@ -15902,14 +15906,18 @@ function generarHtmlReciboProp(p, extrasProp, comisionPct, c, fechaMes, propPers
       <tbody>${items.map((it,i)=>`<tr style="background:${i%2===0?'#f5f0e8':'white'}"><td style="padding:6px 10px">${it.label}</td><td style="padding:6px 10px;text-align:right;${it.monto<0?'color:#c8483a':''}">${formatMoney(it.monto)}</td></tr>`).join('')}</tbody>
       <tfoot><tr style="border-top:2px solid #1a1a2e"><td style="padding:8px 10px;font-weight:700">TOTAL A RECIBIR</td><td style="padding:8px 10px;text-align:right;font-weight:700;font-size:1rem;color:#2d7a4f">${formatMoney(totalRendir)}</td></tr></tfoot>
     </table>
-    <div style="padding-top:10px;border-top:1px dashed #ccc;max-width:200px;margin:0 auto;text-align:center">
+    ${conFirma ? `<div style="padding-top:10px;border-top:1px dashed #ccc;max-width:200px;margin:0 auto;text-align:center">
       <div style="border-top:1px solid #333;padding-top:4px;font-size:0.7rem;color:#666;margin-top:20px">Firma propietario</div>
-    </div>
+    </div>` : ''}
   </div>`;
   // Si no quedó ningún ítem con saldo pendiente de rendir (todo ya se rindió
   // en una emisión anterior de este mismo mes), no hay nada que imprimir acá
   // — el llamador debe saltear este (pago, propietario).
-  return { html: items.length ? htmlRecibo : null, itemsRendidos, totalRendir };
+  return {
+    html: items.length ? armarHtmlRecibo(true) : null,
+    htmlSinFirma: items.length ? armarHtmlRecibo(false) : null,
+    itemsRendidos, totalRendir
+  };
 }
 
 
