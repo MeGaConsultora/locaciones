@@ -12596,7 +12596,22 @@ async function guardarTransferenciaCaja() {
 }
 
 async function eliminarMovimientoCaja(id) {
-  if (!confirm('¿Eliminar este movimiento de caja? No se puede deshacer.')) return;
+  // Borrar acá solo saca la fila de Caja, sin efecto en cascada. Si el
+  // movimiento viene de un cobro de inquilino o de una comisión (tienen su
+  // propio registro aparte: lo abonado en el pago del mes, el historial, la
+  // marca de "cobrada"), eso queda como estaba y se descuadra con Caja — se
+  // avisa antes de confirmar. Un "Pago a propietario" no lleva aviso: su
+  // estado se calcula sumando estos mismos movimientos, así que borrarlo sí lo
+  // revierte.
+  const mov = CAJA_MOVIMIENTOS.find(m => m.id === id);
+  let mensaje = '¿Eliminar este movimiento de caja? No se puede deshacer.';
+  if (mov?.pago_id && mov.categoria !== 'Pago a propietario') {
+    const esComision = (mov.concepto || '').startsWith('Comisión (cobro directo)');
+    mensaje = esComision
+      ? '⚠ Este movimiento es el cobro de una comisión pendiente.\n\nEliminarlo de Caja NO la vuelve a dejar como pendiente: en Comisiones pendientes seguiría figurando como cobrada, pero la plata ya no estaría en Caja.\n\n¿Eliminarlo igual? No se puede deshacer.'
+      : '⚠ Este movimiento corresponde al cobro de un inquilino.\n\nEliminarlo de Caja NO revierte el cobro: el mes seguiría figurando como pagado y con su recibo, pero la plata ya no estaría en Caja y quedarían descuadrados.\n\nPara deshacer el cobro usá "Revertir cobro" en Gestión de Pago (ese sí borra también el movimiento de Caja).\n\n¿Eliminarlo igual? No se puede deshacer.';
+  }
+  if (!confirm(mensaje)) return;
   try {
     await sbDelete('caja_movimientos', id);
     CAJA_MOVIMIENTOS = CAJA_MOVIMIENTOS.filter(m => m.id !== id);
