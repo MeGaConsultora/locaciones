@@ -15533,8 +15533,15 @@ async function generarRecibosSeleccionados() {
     const comisionPct = c.comision_porcentaje ?? 8;
     // Generar un recibo por propietario (igual que GP)
     const propsCp = DB_CONTRATO_PERSONAS.filter(x => parseInt(x.contrato_id) === parseInt(c?.id) && x.rol === 'propietario');
-    // Si hay más de un propietario, saltear los que ya se emitieron
-    // individualmente desde el GP (para no reimprimir ni remarcar de más).
+    // Con más de un propietario NO alcanza con que ya tenga una emisión para
+    // saltearlo: puede haber rendido solo una parte (ej: el alquiler) y
+    // quedarle algo pendiente (ej: un extra a su cargo, caso real
+    // Bertolino-Rodríguez agosto). Por eso se arma el recibo con lo ya
+    // rendido de cada uno (rendidoDeEsePropietario) y generarHtmlReciboProp
+    // devuelve null si no queda nada — mismo criterio que el listado. La
+    // única excepción: una emisión de ANTES del seguimiento por ítem (fila
+    // sin items_rendidos) se da por terminada, igual que en el listado, para
+    // no reimprimirla completa.
     // IMPORTANTE: con UN solo propietario (el caso normal), propPersonaId
     // tiene que quedar en null — igual criterio que usa el GP individual
     // (esMultiPropGP = propsCp.length > 1) y el filtro de la lista. Antes,
@@ -15543,9 +15550,9 @@ async function generarRecibosSeleccionados() {
     // en vez del campo simple del contrato — quedando invisible tanto para
     // el GP individual como para el listado, que siguen mirando ese campo.
     const propsToRender = propsCp.length > 1
-      ? propsCp.filter(cp => !yaEmitido(pagoId, cp.persona_id))
+      ? propsCp.filter(cp => !(yaEmitido(pagoId, cp.persona_id) && !Object.keys(rendidoDeEsePropietario(pagoId, cp.persona_id)).length))
       : [null];
-    if (propsCp.length > 1 && !propsToRender.length) continue; // ya se emitieron todos individualmente
+    if (propsCp.length > 1 && !propsToRender.length) continue; // todos con emisión vieja ya terminada
     for (const cp of propsToRender) {
       const propPersonaId = cp ? cp.persona_id : null;
       const rendidoMap = propPersonaId ? rendidoDeEsePropietario(pagoId, propPersonaId) : (p.rendido_prop_items || {});
