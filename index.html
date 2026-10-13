@@ -464,6 +464,7 @@
   <div style="display:flex;align-items:center;gap:1rem">
     <span class="sync-status" id="sync-status">Cargando...</span>
     <span id="user-name" style="font-size:0.8rem;color:rgba(245,240,232,0.7)"></span>
+    <select id="sel-portal" style="display:none;background:rgba(255,255,255,0.12);border:none;color:var(--cream);padding:6px 8px;border-radius:8px;font-family:inherit;font-size:0.82rem;cursor:pointer;max-width:140px" onchange="cambiarPortal(this.value)" aria-label="Ver como"></select>
     <button id="btn-notif" onclick="toggleNotificaciones()" style="position:relative;background:rgba(255,255,255,0.12);border:none;color:var(--cream);width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:1.1rem;display:flex;align-items:center;justify-content:center" title="Notificaciones">
       🔔
       <span id="notif-badge" style="display:none;position:absolute;top:2px;right:2px;background:#c8483a;color:white;font-size:0.6rem;font-weight:700;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;line-height:1"></span>
@@ -13036,6 +13037,7 @@ async function verificarAprobacion() {
     hideLoginScreen();
     iniciarTimerInactividad();
     loadAll();
+    cargarSelectorPortal();
   } catch(e) {
     showLoginScreen();
   }
@@ -13084,9 +13086,68 @@ async function doRegistro() {
   }
 }
 
+// ============================================================
+// VARIOS ROLES EN UN MISMO USUARIO ("Ver como…")
+// Los roles se detectan por los datos (función mis_roles() de la base): un
+// mismo email puede ser administrador, propietario y/o inquilino. Los portales
+// viven en el mismo dominio, así que el cambio pasa la sesión por localStorage.
+// Se pasa SOLO el token de acceso, nunca el de renovación (Supabase puede
+// invalidar la sesión si dos apps usan el mismo token de renovación).
+// ============================================================
+const PORTALES = {
+  inquilinos:   { nombre: 'Inquilino',      ruta: '/inquilinos/',   claves: { token: 'inq_token',  email: 'inq_email',  refresh: 'inq_refresh_token' } },
+  propietarios: { nombre: 'Propietario',    ruta: '/propietarios/', claves: { token: 'prop_token', email: 'prop_email', refresh: 'prop_refresh_token' } },
+  locaciones:   { nombre: 'Administración', ruta: '/locaciones/',   claves: { token: 'sb_token',   email: 'sb_email',   refresh: 'sb_refresh_token', uid: 'sb_uid' } }
+};
+const PORTAL_ACTUAL = 'locaciones';
+
+async function cargarSelectorPortal() {
+  const sel = document.getElementById('sel-portal');
+  if (!sel) return;
+  sel.style.display = 'none';
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/rpc/mis_roles`, {
+      method: 'POST',
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${currentUser.token}`, 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    if (!r.ok) return;
+    const roles = await r.json();
+    const disponibles = [];
+    if (roles.inquilino) disponibles.push('inquilinos');
+    if (roles.propietario) disponibles.push('propietarios');
+    if (roles.admin) disponibles.push('locaciones');
+    if (disponibles.length < 2) return;
+    sel.innerHTML = '<option value="">Ver como…</option>' +
+      disponibles.filter(d => d !== PORTAL_ACTUAL).map(d => `<option value="${d}">${PORTALES[d].nombre}</option>`).join('');
+    sel.style.display = '';
+  } catch(e) { /* sin selector: no afecta el uso normal */ }
+}
+
+function cambiarPortal(destino) {
+  const p = PORTALES[destino];
+  if (!p || !currentUser?.token) return;
+  localStorage.removeItem(p.claves.refresh);
+  localStorage.setItem(p.claves.token, currentUser.token);
+  localStorage.setItem(p.claves.email, currentUser.email);
+  window.location.href = p.ruta;
+}
+
+// Al salir, también se cierra la sesión de los otros portales, pero solo si
+// es del mismo usuario (otra persona podría estar usando otro portal).
+function cerrarSesionesDelUsuario(email) {
+  Object.values(PORTALES).forEach(p => {
+    if (email && localStorage.getItem(p.claves.email) === email) {
+      Object.values(p.claves).forEach(k => localStorage.removeItem(k));
+    }
+  });
+}
+
 function doLogout() {
   detenerPollingCaja();
   detenerTimerInactividad();
+  cerrarSesionesDelUsuario(currentUser?.email || localStorage.getItem('sb_email'));
+  const selP = document.getElementById('sel-portal'); if (selP) selP.style.display = 'none';
   localStorage.removeItem('sb_token');
   localStorage.removeItem('sb_uid');
   localStorage.removeItem('sb_email');
