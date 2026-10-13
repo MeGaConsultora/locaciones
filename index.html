@@ -15078,12 +15078,58 @@ async function renderRecibosEmitidos() {
     return redondear2(total);
   };
 
+  // Lo que se cobró DIRECTO al propietario (el inquilino le pagó a él sin pasar
+  // por la agencia) también queda sumado en items_rendidos, mezclado con lo
+  // que sí se emitió por recibo — pero esa plata nunca pasó por la agencia,
+  // así que no hay nada que girar por ella (caso real: Bertolino-Rodríguez
+  // octubre, alquiler pagado directo + extra emitido después, y "Ya emitidos"
+  // mostraba como pendiente de pago casi todo el alquiler). La fuente exacta
+  // de cuánto fue directo es el movimiento 'RendidoDirectoPropietario' de
+  // movimientos_pagos (ver confirmarCobroInquilino), que se borra si se
+  // revierte el cobro.
+  const directoPorPago = {}; // pagoId -> { total: {itemKey: monto}, partes: {itemKey: [{monto, personaDirectoId}]} }
+  try {
+    const movsDir = await sbGet('movimientos_pagos', `pago_id=in.(${idsDelMes.join(',')})&concepto=eq.RendidoDirectoPropietario&select=pago_id,items`);
+    movsDir.forEach(m => {
+      try {
+        const d = JSON.parse(m.items || '{}');
+        const acc = directoPorPago[m.pago_id] || (directoPorPago[m.pago_id] = { total: {}, partes: {} });
+        Object.entries(d.porItem || {}).forEach(([k, v]) => { acc.total[k] = redondear2((acc.total[k]||0) + (parseFloat(v)||0)); });
+        Object.entries(d.porItemConPersona || {}).forEach(([k, partes]) => { acc.partes[k] = (acc.partes[k]||[]).concat(partes || []); });
+      } catch(e) {}
+    });
+  } catch(e) { console.warn('No se pudo cargar el rendido directo para descontarlo:', e); }
+
+  // items_rendidos de esta entrada SIN la parte cobrada directo.
+  const itemsSinDirecto = (en, c) => {
+    const dir = directoPorPago[en.pagoId];
+    if (!dir) return en.itemsRendidos || {};
+    const resultado = {};
+    Object.entries(en.itemsRendidos || {}).forEach(([k, val]) => {
+      let directo = 0;
+      if (!en.personaId) {
+        directo = dir.total[k] || 0; // un solo propietario: todo lo directo es de él
+      } else if (k === 'alquiler') {
+        // Con varios propietarios el alquiler directo se reparte por % entre
+        // TODOS (la agencia no recibió nada de esa plata) — mismo reparto que
+        // usa confirmarCobroInquilino al marcarlo.
+        const cp = DB_CONTRATO_PERSONAS.find(x => parseInt(x.contrato_id) === parseInt(c?.id) && x.rol === 'propietario' && parseInt(x.persona_id) === en.personaId);
+        directo = redondear2((dir.total[k] || 0) * (cp?.pct_alquiler ?? 100) / 100);
+      } else {
+        directo = redondear2((dir.partes[k] || []).filter(pp => parseInt(pp.personaDirectoId) === en.personaId).reduce((s, pp) => s + (parseFloat(pp.monto)||0), 0));
+      }
+      const resto = redondear2(_rendidoMonto(val) - directo);
+      if (resto > 0.004) resultado[k] = { monto: resto };
+    });
+    return resultado;
+  };
+
   if (!CAJA_TITULARES.length) await cargarCajaTitularesYCuentas();
 
   const filas = entradas.map(en => {
     const p = DB.pagos.find(x => x.id === en.pagoId);
     const c = DB.contratos.find(x => x.hoja === p.hoja);
-    const totalRendido = calcularTotalRendidoNeto(en.itemsRendidos, c);
+    const totalRendido = calcularTotalRendidoNeto(itemsSinDirecto(en, c), c);
     const movs = pagosCaja.filter(m => m.pago_id === en.pagoId && (en.personaId ? parseInt(m.persona_id) === en.personaId : !m.persona_id));
     const totalPagado = redondear2(movs.reduce((s,m) => s + (m.monto||0), 0));
     const saldo = redondear2(totalRendido - totalPagado);
@@ -15162,7 +15208,9 @@ async function renderRecibosEmitidos() {
         </td>
         <td style="padding:7px 6px;text-align:center">
           <button class="btn btn-primary" title="Marcar como pagado" style="font-size:0.75rem;padding:4px 8px;white-space:nowrap" onclick="marcarPagoPropietario(${f.pagoId},${f.personaId||'null'})">💰</button>
-        </td>` : `<td colspan="4" style="padding:7px 10px;color:#2d7a4f;font-weight:600">✓ Pagado</td>`}
+        </td>` : (f.totalRendido < -0.004
+          ? `<td colspan="4" style="padding:7px 10px;color:#856404;font-weight:600">Sin giro — queda a cargo del propietario (${formatMoney(-f.totalRendido)})</td>`
+          : `<td colspan="4" style="padding:7px 10px;color:#2d7a4f;font-weight:600">✓ Pagado</td>`)}
       </tr>`;
       }).join('')}
     </tbody>
