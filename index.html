@@ -3788,6 +3788,10 @@ async function abrirAccesoPropietario(personaId) {
   const contratosProp = DB_CONTRATO_PERSONAS
     .filter(x => x.persona_id === personaId && x.rol === 'propietario')
     .map(cp => DB.contratos.find(c => c.id === cp.contrato_id)).filter(Boolean);
+  // El portal muestra los contratos vigentes; los vencidos o rescindidos solo
+  // mientras tengan algo pendiente de abono (eso lo decide el portal según los pagos).
+  const vigentesProp = contratosProp.filter(c => ['vigente','indefinido'].includes(getEstado(c)));
+  const finalizadosProp = contratosProp.length - vigentesProp.length;
   let usuario = null;
   try {
     const rows = await sbGet('usuarios', `persona_id=eq.${personaId}&limit=1`);
@@ -3797,7 +3801,10 @@ async function abrirAccesoPropietario(personaId) {
     const full = formatNombrePersona(p) || '';
     return full.includes(',') ? (full.split(',')[1]?.trim().split(' ')[0] || full) : (full.split(' ')[0] || full);
   })();
-  const listaContratos = contratosProp.map(c => `<li>${c.titulo || c.hoja}</li>`).join('');
+  const listaContratos = vigentesProp.map(c => `<li>${c.titulo || c.hoja}</li>`).join('');
+  const notaFinalizados = finalizadosProp
+    ? `<div style="margin-top:6px;font-size:0.78rem;color:#888">${finalizadosProp} contrato${finalizadosProp === 1 ? '' : 's'} vencido${finalizadosProp === 1 ? '' : 's'} o rescindido${finalizadosProp === 1 ? '' : 's'}: solo ${finalizadosProp === 1 ? 'lo' : 'los'} verá mientras tenga${finalizadosProp === 1 ? '' : 'n'} algo pendiente de abono.</div>`
+    : '';
 
   document.getElementById('modal-title').textContent = 'Acceso al portal de propietarios';
   document.getElementById('modal-subtitle').textContent = formatNombrePersona(p);
@@ -3824,7 +3831,7 @@ async function abrirAccesoPropietario(personaId) {
   }
   document.getElementById('modal-body').innerHTML = `
     <div style="background:var(--cream);border-radius:8px;padding:0.7rem 1rem;margin-bottom:1rem;font-size:0.82rem;color:#666">
-      Verá solo sus propiedades:<ul style="margin:4px 0 0 1.1rem">${listaContratos || '<li>(sin contratos como propietario)</li>'}</ul>
+      Verá solo sus propiedades:<ul style="margin:4px 0 0 1.1rem">${listaContratos || '<li>(sin contratos vigentes)</li>'}</ul>${notaFinalizados}
     </div>
     ${cuerpo}
     <div class="form-actions" style="margin-top:1rem"><button class="btn btn-secondary" onclick="openPersona(${personaId})">← Volver</button></div>`;
