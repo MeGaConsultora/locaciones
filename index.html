@@ -9079,7 +9079,7 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
         inner.style.zoom = '1';
         void inner.offsetHeight; // force reflow before measuring
         const avail = printPx
-          ? Math.floor(148.5 * printPx) - (label ? label.offsetHeight : 0) - 4
+          ? Math.floor(143 * printPx) - (label ? label.offsetHeight : 0) - 4
           : mitad.clientHeight - (label ? label.offsetHeight : 0) - 2;
         const actual = inner.scrollHeight;
         if (actual > avail + 2) {
@@ -15605,7 +15605,7 @@ async function generarRecibosSeleccionados() {
         inner.style.zoom = '1';
         void inner.offsetHeight;
         const avail = printPx
-          ? Math.floor(148.5 * printPx) - (label ? label.offsetHeight : 0) - 4
+          ? Math.floor(143 * printPx) - (label ? label.offsetHeight : 0) - 4
           : mitad.clientHeight - (label ? label.offsetHeight : 0) - 2;
         const actual = inner.scrollHeight;
         if (actual > avail + 2) {
