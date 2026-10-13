@@ -13099,8 +13099,8 @@ async function doRegistro() {
 // Los roles se detectan por los datos (función mis_roles() de la base): un
 // mismo email puede ser administrador, propietario y/o inquilino. Los portales
 // viven en el mismo dominio, así que el cambio pasa la sesión por localStorage.
-// Se pasa SOLO el token de acceso, nunca el de renovación (Supabase puede
-// invalidar la sesión si dos apps usan el mismo token de renovación).
+// El token de renovación se MUEVE al portal de destino (nunca lo usan dos apps
+// a la vez: Supabase puede invalidar la sesión si lo ve usado dos veces).
 // ============================================================
 const PORTALES = {
   inquilinos:   { nombre: 'Inquilino',      ruta: '/inquilinos/',   claves: { token: 'inq_token',  email: 'inq_email',  refresh: 'inq_refresh_token' } },
@@ -13135,7 +13135,15 @@ async function cargarSelectorPortal() {
 function cambiarPortal(destino) {
   const p = PORTALES[destino];
   if (!p || !currentUser?.token) return;
-  localStorage.removeItem(p.claves.refresh);
+  // La sesión se MUEVE, no se copia: el token de renovación pasa al portal de
+  // destino y se borra del de origen, así nunca lo usan dos apps a la vez
+  // (Supabase invalida la sesión si lo ve usado dos veces). Sin esto, la
+  // sesión del destino se caía al vencer el token de acceso (~1 hora). Si el
+  // destino tenía otro token de renovación (de otro usuario), se pisa.
+  const origen = PORTALES[PORTAL_ACTUAL].claves;
+  const refresh = localStorage.getItem(origen.refresh);
+  if (refresh) localStorage.setItem(p.claves.refresh, refresh); else localStorage.removeItem(p.claves.refresh);
+  localStorage.removeItem(origen.refresh);
   localStorage.setItem(p.claves.token, currentUser.token);
   localStorage.setItem(p.claves.email, currentUser.email);
   window.location.href = p.ruta;
@@ -13195,6 +13203,19 @@ const INACTIVIDAD_LIMITE_MS = 60 * 60 * 1000; // 1 hora
 const INACTIVIDAD_EVENTOS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
 let _inactividadTimer = null;
 let _inactividadUltimoReset = 0;
+// La última actividad se guarda en localStorage y se comparte entre TODAS las
+// pestañas y los tres portales (mismo origen): una pestaña olvidada no cierra
+// la sesión (que es la misma para todas) mientras se esté usando otra. Sigue
+// sin tocar Supabase ni los tokens: solo lee/escribe esta marca de tiempo.
+const ACTIVIDAD_KEY = 'mega_ultima_actividad';
+function _inactividadVencer() {
+  let ultima = 0;
+  try { ultima = parseInt(localStorage.getItem(ACTIVIDAD_KEY)) || 0; } catch(e) {}
+  const restante = INACTIVIDAD_LIMITE_MS - (Date.now() - ultima);
+  if (restante > 5000) { _inactividadTimer = setTimeout(_inactividadVencer, restante); return; }
+  toast('Se cerró la sesión por inactividad (1 hora sin uso)', 'error');
+  doLogout();
+}
 function _resetTimerInactividad() {
   const ahora = Date.now();
   // Throttle: no hace falta reiniciar el timer en cada mousemove
@@ -13203,11 +13224,9 @@ function _resetTimerInactividad() {
   // frente a una hora de límite.
   if (ahora - _inactividadUltimoReset < 5000) return;
   _inactividadUltimoReset = ahora;
+  try { localStorage.setItem(ACTIVIDAD_KEY, String(ahora)); } catch(e) {}
   if (_inactividadTimer) clearTimeout(_inactividadTimer);
-  _inactividadTimer = setTimeout(() => {
-    toast('Se cerró la sesión por inactividad (1 hora sin uso)', 'error');
-    doLogout();
-  }, INACTIVIDAD_LIMITE_MS);
+  _inactividadTimer = setTimeout(_inactividadVencer, INACTIVIDAD_LIMITE_MS);
 }
 function iniciarTimerInactividad() {
   INACTIVIDAD_EVENTOS.forEach(ev => document.addEventListener(ev, _resetTimerInactividad, { passive: true }));
