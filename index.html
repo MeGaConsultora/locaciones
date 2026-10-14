@@ -6192,6 +6192,31 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEst
         oninput="document.getElementById('cobro-chk-honorarios').value=this.value||0;recalcCobro()">
     </div>` : '';
 
+  // Plata ya abonada que no quedó imputada a ningún ítem ni a un extra ya
+  // cobrado (típico: se pagó de más — o se pagó antes de cargar un extra
+  // nuevo — y ese sobrante quedó "a favor" dentro de pagado_importe). Ese
+  // sobrante ya cubre en parte los extras pendientes, así que se descuenta de
+  // lo que se ofrece cobrar de ellos: si no, "Total a cobrar" pedía el extra
+  // completo aunque el saldo real fuera menor, y al confirmar el excedente se
+  // iba en cascada al mes siguiente.
+  // (Caso real: sep 2026, pagado 480.000 con alquiler+agua+TGIU = 363.333,88 y
+  // un extra de 168.261,22: saldo real 51.595,10, pero se ofrecía cobrar todo.)
+  const brutoItems = (p.importe_alquiler||0) + epe + agua + tgiu + seguro + internet + expensas;
+  const pendienteItems = items.reduce((s, it) => s + (it.val||0), 0);
+  const imputadoAItems = Math.max(0, brutoItems - pendienteItems);
+  const extrasCubiertosNeto = extrasInqCubiertos.reduce((s, e) => s + (e.tipo === 'credito' ? -1 : 1) * Math.abs(parseFloat(e.importe)||0), 0);
+  const pagadoBase = (p.pagado_importe === null || p.pagado_importe === undefined)
+    ? Math.max(0, (p.total||0) - (p.saldo||0))
+    : (parseFloat(p.pagado_importe)||0);
+  let sobranteSinImputar = redondear2(Math.max(0, pagadoBase - imputadoAItems - extrasCubiertosNeto));
+  const extrasInqInfo = extrasInq.map(e => {
+    const importe = Math.abs(parseFloat(e.importe)||0);
+    if (e.tipo === 'credito') return { e, importe, aplicado: 0, resta: importe };
+    const aplicado = redondear2(Math.min(sobranteSinImputar, importe));
+    sobranteSinImputar = redondear2(sobranteSinImputar - aplicado);
+    return { e, importe, aplicado, resta: redondear2(importe - aplicado) };
+  });
+
   return paidSection + ((p.saldo||0) > 0 ? items.map(it => `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem;flex:1">
@@ -6202,16 +6227,19 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEst
         ? `<input type="number" id="val-${it.id}" value="${it.val}" min="0" max="${it.val}" style="width:120px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:0.85rem;text-align:right" oninput="document.getElementById('cobro-chk-${it.id}').value=this.value;recalcCobro()">`
         : `<span id="cobro-lbl-${it.id}" style="font-size:0.85rem;color:#666">${formatMoney(it.val)}</span>`}
     </div>
-  `).join('') + extrasInq.map(e => {
+  `).join('') + extrasInqInfo.map(({e, importe, aplicado, resta}) => {
     const signo = e.tipo==='credito' ? -1 : 1;
     const color = e.tipo==='credito' ? 'var(--green)' : 'var(--accent)';
     const signoLabel = e.tipo==='credito' ? '−' : '+';
+    const notaParcial = aplicado > 0.004
+      ? `<small style="display:block;font-size:0.7rem;color:#888;text-align:right">de ${formatMoney(importe)} — ya se imputaron ${formatMoney(aplicado)} de un pago anterior</small>`
+      : '';
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ece4">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
-        <input type="checkbox" id="cobro-chk-extra-${e.id}" value="${Math.abs(e.importe||0)}" data-signo="${signo}" checked onchange="recalcCobro()" style="width:15px;height:15px">
+        <input type="checkbox" id="cobro-chk-extra-${e.id}" value="${resta}" data-signo="${signo}" checked onchange="recalcCobro()" style="width:15px;height:15px">
         ${e.concepto||'Extra'} <span style="font-size:0.72rem;color:${color}">(${e.tipo==='credito'?'crédito':'débito'})</span>
       </label>
-      <span style="font-size:0.85rem;color:${color}">${signoLabel} ${formatMoney(Math.abs(e.importe||0))}</span>
+      <span style="font-size:0.85rem;color:${color}">${signoLabel} ${formatMoney(resta)}${notaParcial}</span>
     </div>`;
   }).join('') : '') + honorariosItem;
 }
