@@ -490,7 +490,6 @@
   <div class="tab-dropdown" id="dropdown-servicios">
     <button class="tab-btn" onclick="toggleServiciosMenu(event)">⚡ Servicios ▾</button>
     <div class="tab-dropdown-menu" id="servicios-menu" style="display:none">
-      <button onclick="abrirServiciosAbonar()">💳 Servicios a abonar</button>
       <button onclick="abrirCargarServicios()">⚡ Cargar servicios del mes</button>
       <div class="submenu-wrap">
         <div class="submenu-header" onclick="toggleSubmenuMobile(event)">📥 Importar ▸</div>
@@ -500,6 +499,7 @@
           <button onclick="abrirImportarEPE()">⚡ EPE</button>
         </div>
       </div>
+      <button onclick="abrirServiciosAbonar()">💳 Servicios a abonar</button>
       <button onclick="selectInforme('numeracion-servicios')">🔢 Numeración de servicios</button>
     </div>
   </div>
@@ -639,14 +639,14 @@
         <option value="09">Septiembre</option><option value="10">Octubre</option>
         <option value="11">Noviembre</option><option value="12">Diciembre</option>
       </select>
-      <select class="filter-select" id="srv-inf-estado" style="width:auto" onchange="renderSrvInforme()">
+      <select class="filter-select" id="srv-inf-estado" style="width:190px;max-width:190px" onchange="renderSrvInforme()">
         <option value="">Todos</option>
         <option value="abonado">Abonados por inquilino</option>
         <option value="adeudado">No abonados por inquilino</option>
         <option value="no_pagado_proveedor">Pendientes de pago a proveedor (ya cobrados al inquilino)</option>
         <option value="pagado_proveedor">Pagados a proveedor</option>
       </select>
-      <input type="text" class="search-input" id="srv-inf-buscar" placeholder="Buscar contrato o N° cuenta…" style="width:220px" oninput="renderSrvInforme()">
+      <input type="text" class="search-input" id="srv-inf-buscar" placeholder="Buscar contrato o N° cuenta…" style="width:200px" oninput="renderSrvInforme()">
       <button class="btn btn-secondary" onclick="srvInfSelAll(true)" style="font-size:0.78rem">✓ Todos</button>
       <button class="btn btn-secondary" onclick="srvInfSelAll(false)" style="font-size:0.78rem">✕ Ninguno</button>
       <button class="btn btn-secondary" onclick="imprimirSrvInforme()" style="font-size:0.78rem">🖨️ Imprimir</button>
