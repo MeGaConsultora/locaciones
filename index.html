@@ -481,42 +481,40 @@
   <div class="tab-dropdown" id="dropdown-informes">
     <button class="tab-btn" onclick="toggleInformesMenu(event)">⚙️ Gestión ▾</button>
     <div class="tab-dropdown-menu" id="informes-menu" style="display:none">
-      <div class="submenu-wrap">
-        <div class="submenu-header" onclick="toggleSubmenuMobile(event)">📊 Informes ▸</div>
-        <div class="submenu-items">
-          <div class="submenu-wrap submenu-nivel3">
-            <div class="submenu-header" onclick="toggleSubmenuMobile(event)">📅 Reportes mensuales ▸</div>
-            <div class="submenu-items">
-              <button onclick="selectInforme('mensual')">📋 Totalizados</button>
-              <button onclick="selectInforme('firmas')">📄 Estado de firma</button>
-              <button onclick="selectInforme('srv-epe')">⚡ EPE a abonar</button>
-              <button onclick="selectInforme('srv-agua')">💧 Agua a abonar</button>
-              <button onclick="selectInforme('srv-tgiu')">🏛️ TGIU a abonar</button>
-              <button onclick="selectInforme('srv-seguro')">🛡️ Seguros</button>
-            </div>
-          </div>
-          <button onclick="selectInforme('reporte-total')">📋 Reportes totales</button>
-        </div>
-      </div>
-      <div class="submenu-wrap">
-        <div class="submenu-header" onclick="toggleSubmenuMobile(event)">⚡ Servicios ▸</div>
-        <div class="submenu-items">
-          <button onclick="abrirCargarServicios()">⚡ Cargar servicios del mes</button>
-          <div class="submenu-wrap submenu-nivel3">
-            <div class="submenu-header" onclick="toggleSubmenuMobile(event)">📥 Importar ▸</div>
-            <div class="submenu-items">
-              <button onclick="abrirImportarAgua()">💧 Agua</button>
-              <button onclick="abrirImportarExcel()">🏛️ TGIU</button>
-              <button onclick="abrirImportarEPE()">⚡ EPE</button>
-            </div>
-          </div>
-          <button onclick="selectInforme('numeracion-servicios')">🔢 Numeración de servicios</button>
-        </div>
-      </div>
       <button onclick="selectInforme('vencimientos')">📋 Vencimientos de contratos</button>
       <button onclick="abrirActualizacionAlquileres()">🔄 Actualizar alquileres</button>
       <button onclick="selectInforme('recibos-emitir')">🖨️ Recibos Propietarios</button>
       <button onclick="abrirReciboRapido()">🧾 Recibo rápido</button>
+    </div>
+  </div>
+  <div class="tab-dropdown" id="dropdown-servicios">
+    <button class="tab-btn" onclick="toggleServiciosMenu(event)">⚡ Servicios ▾</button>
+    <div class="tab-dropdown-menu" id="servicios-menu" style="display:none">
+      <button onclick="abrirServiciosAbonar()">💳 Servicios a abonar</button>
+      <button onclick="abrirCargarServicios()">⚡ Cargar servicios del mes</button>
+      <div class="submenu-wrap">
+        <div class="submenu-header" onclick="toggleSubmenuMobile(event)">📥 Importar ▸</div>
+        <div class="submenu-items">
+          <button onclick="abrirImportarAgua()">💧 Agua</button>
+          <button onclick="abrirImportarExcel()">🏛️ TGIU</button>
+          <button onclick="abrirImportarEPE()">⚡ EPE</button>
+        </div>
+      </div>
+      <button onclick="selectInforme('numeracion-servicios')">🔢 Numeración de servicios</button>
+    </div>
+  </div>
+  <div class="tab-dropdown" id="dropdown-informes-rep">
+    <button class="tab-btn" onclick="toggleInformesRepMenu(event)">📊 Informes ▾</button>
+    <div class="tab-dropdown-menu" id="informes-rep-menu" style="display:none">
+      <div class="submenu-wrap">
+        <div class="submenu-header" onclick="toggleSubmenuMobile(event)">📅 Reportes mensuales ▸</div>
+        <div class="submenu-items">
+          <button onclick="selectInforme('mensual')">📋 Totalizados</button>
+          <button onclick="selectInforme('firmas')">📄 Estado de firma</button>
+          <button onclick="selectInforme('srv-seguro')">🛡️ Seguros</button>
+        </div>
+      </div>
+      <button onclick="selectInforme('reporte-total')">📋 Reportes totales</button>
       <button onclick="selectInforme('historial-pagos')">📝 Historial de pagos</button>
       <button onclick="selectInforme('historial-notas')">🗒️ Historial de Notas</button>
     </div>
@@ -623,7 +621,12 @@
   <!-- INFORMES DE SERVICIOS (EPE / AGUA / TGIU) -->
   <div id="panel-srv-informe" class="panel" style="display:none">
     <div class="toolbar" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
-      <strong style="font-size:0.95rem" id="srv-inf-titulo">⚡ EPE a abonar</strong>
+      <strong style="font-size:0.95rem" id="srv-inf-titulo">💳 Servicios a abonar</strong>
+      <select class="filter-select" id="srv-inf-servicio" style="width:auto;font-weight:600" onchange="cambiarServicioInforme(this.value)" aria-label="Servicio">
+        <option value="srv-epe">⚡ EPE</option>
+        <option value="srv-agua">💧 Agua</option>
+        <option value="srv-tgiu">🏛️ TGIU</option>
+      </select>
       <select class="filter-select" id="srv-inf-anio" style="width:auto" onchange="renderSrvInforme()">
         <option value="">-- Año --</option>
       </select>
@@ -1882,6 +1885,20 @@ function cerrarBuscadorHeader() {
 
 document.addEventListener('click', e => {
   if (!e.target.closest('.header-search')) cerrarBuscadorHeader();
+});
+
+// Servicios e Informes (menús nuevos): se cierran al hacer click fuera, y al
+// elegir una opción (varias opciones abren pantallas que antes solo sabían
+// cerrar el menú Gestión).
+document.addEventListener('click', e => {
+  const enMenu = e.target.closest('.tab-dropdown-menu');
+  if (enMenu && e.target.closest('button')) { setTimeout(cerrarMenusNav, 0); return; }
+  ['servicios','informes-rep'].forEach(k => {
+    if (!e.target.closest('#dropdown-' + k) && !e.target.closest('#' + k + '-menu')) {
+      const m = document.getElementById(k + '-menu');
+      if (m) m.style.display = 'none';
+    }
+  });
 });
 
 // Cerrar todos los dropdowns de nav al hacer click fuera
@@ -10726,6 +10743,31 @@ function toggleInformesMenu(e) {
   }
 }
 
+// Servicios e Informes: mismo comportamiento que Gestión (ver arriba).
+function _toggleMenuNav(e, menuId, wrapId) {
+  e.stopPropagation();
+  const menu = document.getElementById(menuId);
+  const btn = document.querySelector('#' + wrapId + ' .tab-btn');
+  if (!menu || !btn) return;
+  const isOpen = menu.style.display !== 'none';
+  document.querySelectorAll('.tab-dropdown-menu').forEach(m => m.style.display='none');
+  if (!isOpen) {
+    const rect = btn.getBoundingClientRect();
+    menu.style.display = 'block';
+    menu.style.position = 'fixed';
+    menu.style.top = rect.bottom + 'px';
+    if (window.innerWidth <= 640) { menu.style.left = 'auto'; menu.style.right = '8px'; }
+    else { menu.style.left = rect.left + 'px'; menu.style.right = 'auto'; }
+    menu.style.zIndex = '99999';
+    document.body.appendChild(menu);
+  }
+}
+function toggleServiciosMenu(e) { _toggleMenuNav(e, 'servicios-menu', 'dropdown-servicios'); }
+function toggleInformesRepMenu(e) { _toggleMenuNav(e, 'informes-rep-menu', 'dropdown-informes-rep'); }
+function cerrarMenusNav() {
+  document.querySelectorAll('.tab-dropdown-menu').forEach(m => m.style.display = 'none');
+}
+
 function toggleSubmenuMobile(e) {
   if (window.innerWidth > 640) return; // en desktop se maneja con :hover
   e.stopPropagation();
@@ -10738,8 +10780,7 @@ function toggleSubmenuMobile(e) {
 }
 
 function selectInforme(tipo) {
-  document.getElementById('informes-menu').style.display = 'none';
-  document.getElementById('informes-menu').style.display = 'none';
+  cerrarMenusNav();
 
   // First hide ALL main panels (same as showTab)
   const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
@@ -10748,10 +10789,13 @@ function selectInforme(tipo) {
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
   });
 
-  // Update nav buttons - highlight Informes
+  // Update nav buttons - resaltar el menú al que pertenece este informe
+  const grupoNav = ['srv-epe','srv-agua','srv-tgiu','numeracion-servicios'].includes(tipo) ? 'Servicios'
+    : ['mensual','firmas','srv-seguro','reporte-total','historial-pagos','historial-notas'].includes(tipo) ? 'Informes'
+    : 'Gestión';
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => {
-    if (b.textContent.includes('Informes')) b.classList.add('active');
+    if (b.textContent.includes(grupoNav)) b.classList.add('active');
   });
 
   // Show the correct sub-panel
@@ -10779,9 +10823,16 @@ function selectInforme(tipo) {
   else if (tipo === 'historial-notas') renderHistorialNotas();
   else if (tipo === 'srv-epe' || tipo === 'srv-agua' || tipo === 'srv-tgiu') {
     window._srvInformeTipo = tipo;
-    const labels = { 'srv-epe':'⚡ EPE a abonar', 'srv-agua':'💧 Agua a abonar', 'srv-tgiu':'🏛️ TGIU a abonar' };
-    document.getElementById('srv-inf-titulo').textContent = labels[tipo];
+    const selServicio = document.getElementById('srv-inf-servicio');
+    if (selServicio) selServicio.value = tipo;
     populateSrvInformeAnios();
+    // Al abrir el informe siempre arranca en el mes corriente
+    const selAnio = document.getElementById('srv-inf-anio');
+    const selMes = document.getElementById('srv-inf-mes');
+    const anioHoy = TODAY.substring(0,4), mesHoy = TODAY.substring(5,7);
+    if (selAnio && ![...selAnio.options].some(o => o.value === anioHoy)) selAnio.add(new Option(anioHoy, anioHoy));
+    if (selAnio) selAnio.value = anioHoy;
+    if (selMes) selMes.value = mesHoy;
     renderSrvInforme();
   }
   else if (tipo === 'srv-seguro') {
@@ -10797,6 +10848,18 @@ function selectInforme(tipo) {
   }
   else if (tipo === 'firmas') renderInformeFirmas();
   else { populateInformeAnios(); renderInforme(); }
+}
+
+// Entrada del menú Servicios > "Servicios a abonar": un solo formulario con
+// selector de servicio (EPE / Agua / TGIU). Abre en el último servicio usado.
+function abrirServiciosAbonar() {
+  selectInforme(window._srvInformeTipo || 'srv-epe');
+}
+// Cambio de servicio dentro del formulario: conserva el año/mes elegidos.
+function cambiarServicioInforme(tipo) {
+  if (!['srv-epe','srv-agua','srv-tgiu'].includes(tipo)) return;
+  window._srvInformeTipo = tipo;
+  renderSrvInforme();
 }
 
 function populateSrvInformeAnios() {
