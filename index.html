@@ -9117,32 +9117,7 @@ async function imprimirReciboPropGP(hoja, contratoId, mesKey, comisionPct) {
     <div class="separador"></div>
     <div class="recibo-mitad"><div class="recibo-label">▶ DUPLICADO</div><div class="recibo-inner" id="rp2">${reciboHtml(false)}</div></div>
     <script>
-      function ajustarEscala(mitad, printPx) {
-        const inner = mitad.querySelector('.recibo-inner');
-        const label = mitad.querySelector('.recibo-label');
-        if (!inner) return;
-        inner.style.zoom = '1';
-        void inner.offsetHeight; // force reflow before measuring
-        const avail = printPx
-          ? Math.floor(143 * printPx) - (label ? label.offsetHeight : 0) - 4
-          : mitad.clientHeight - (label ? label.offsetHeight : 0) - 2;
-        const actual = inner.scrollHeight;
-        if (actual > avail + 2) {
-          inner.style.zoom = String(avail / actual);
-        } else {
-          inner.style.zoom = '1';
-        }
-      }
-      window.addEventListener('load', () => {
-        document.querySelectorAll('.recibo-mitad').forEach(m => ajustarEscala(m, null));
-      });
-      window.addEventListener('beforeprint', () => {
-        const PX = 96 / 25.4;
-        document.querySelectorAll('.recibo-mitad').forEach(m => ajustarEscala(m, PX));
-      });
-      window.addEventListener('afterprint', () => {
-        document.querySelectorAll('.recibo-mitad').forEach(m => ajustarEscala(m, null));
-      });
+      ${_SCRIPT_AJUSTE_ESCALA_RECIBOS}
     <\/script>
   </body></html>`);
   ventana.document.close();
@@ -10476,6 +10451,40 @@ async function actualizarContrato(id) {
 }
 
 
+// Los recibos se imprimen en dos mitades (Original y Duplicado) y cada una se
+// achica con zoom si no entra en su alto. Las dos de un MISMO par tienen que
+// quedar con el MISMO zoom (el menor): como el Original lleva el espacio de
+// firma y el Duplicado no, el Original es más alto y, si cada mitad se
+// ajustara por su cuenta, saldría más chico y angosto que el Duplicado. Se
+// comparte entre las 4 ventanas de impresión de recibos (inquilino, recibo
+// rápido, propietario individual y propietario masivo). En el masivo hay
+// varios pares seguidos (uno por propietario): se agrupan de a dos, en orden.
+const _SCRIPT_AJUSTE_ESCALA_RECIBOS = `
+      function medirZoomMitad(mitad, printPx) {
+        const inner = mitad.querySelector('.recibo-inner');
+        const label = mitad.querySelector('.recibo-label');
+        if (!inner) return 1;
+        inner.style.zoom = '1';
+        void inner.offsetHeight; // force reflow before measuring
+        const avail = printPx
+          ? Math.floor(143 * printPx) - (label ? label.offsetHeight : 0) - 4
+          : mitad.clientHeight - (label ? label.offsetHeight : 0) - 2;
+        const actual = inner.scrollHeight;
+        return actual > avail + 2 ? avail / actual : 1;
+      }
+      function ajustarEscalaPares(printPx) {
+        const mitades = Array.from(document.querySelectorAll('.recibo-mitad'));
+        for (let i = 0; i < mitades.length; i += 2) {
+          const par = mitades.slice(i, i + 2);
+          const zoom = Math.min(...par.map(m => medirZoomMitad(m, printPx)));
+          par.forEach(m => { const inner = m.querySelector('.recibo-inner'); if (inner) inner.style.zoom = String(zoom); });
+        }
+      }
+      window.addEventListener('load', () => ajustarEscalaPares(null));
+      window.addEventListener('beforeprint', () => ajustarEscalaPares(96 / 25.4));
+      window.addEventListener('afterprint', () => ajustarEscalaPares(null));
+`;
+
 function imprimirRecibo(data, ventanaPreabierta) {
   const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const fechaMes = data.mes ? (() => { const [y,m,d]=data.mes.split('-'); return `${meses[parseInt(m)-1]} ${y}`; })() : '';
@@ -10585,32 +10594,7 @@ function imprimirRecibo(data, ventanaPreabierta) {
     <div class="separador"></div>
     <div class="recibo-mitad"><div class="recibo-label">Duplicado</div><div class="recibo-inner" id="ri2">${reciboHtml(false)}</div></div>
     <script>
-      function ajustarEscala(mitad, printPx) {
-        const inner = mitad.querySelector('.recibo-inner');
-        const label = mitad.querySelector('.recibo-label');
-        if (!inner) return;
-        inner.style.zoom = '1';
-        void inner.offsetHeight; // force reflow before measuring
-        const avail = printPx
-          ? Math.floor(143 * printPx) - (label ? label.offsetHeight : 0) - 4
-          : mitad.clientHeight - (label ? label.offsetHeight : 0) - 2;
-        const actual = inner.scrollHeight;
-        if (actual > avail + 2) {
-          inner.style.zoom = String(avail / actual);
-        } else {
-          inner.style.zoom = '1';
-        }
-      }
-      window.addEventListener('load', () => {
-        document.querySelectorAll('.recibo-mitad').forEach(m => ajustarEscala(m, null));
-      });
-      window.addEventListener('beforeprint', () => {
-        const PX = 96 / 25.4;
-        document.querySelectorAll('.recibo-mitad').forEach(m => ajustarEscala(m, PX));
-      });
-      window.addEventListener('afterprint', () => {
-        document.querySelectorAll('.recibo-mitad').forEach(m => ajustarEscala(m, null));
-      });
+      ${_SCRIPT_AJUSTE_ESCALA_RECIBOS}
     <\/script>
   </body></html>`);
   ventana.document.close();
@@ -15830,32 +15814,7 @@ async function generarRecibosSeleccionados() {
     </div>
     ${allHtml}
     <script>
-      function ajustarEscala(mitad, printPx) {
-        const inner = mitad.querySelector('.recibo-inner');
-        const label = mitad.querySelector('.recibo-label');
-        if (!inner) return;
-        inner.style.zoom = '1';
-        void inner.offsetHeight;
-        const avail = printPx
-          ? Math.floor(143 * printPx) - (label ? label.offsetHeight : 0) - 4
-          : mitad.clientHeight - (label ? label.offsetHeight : 0) - 2;
-        const actual = inner.scrollHeight;
-        if (actual > avail + 2) {
-          inner.style.zoom = String(avail / actual);
-        } else {
-          inner.style.zoom = '1';
-        }
-      }
-      window.addEventListener('load', () => {
-        document.querySelectorAll('.recibo-mitad').forEach(m => ajustarEscala(m, null));
-      });
-      window.addEventListener('beforeprint', () => {
-        const PX = 96 / 25.4;
-        document.querySelectorAll('.recibo-mitad').forEach(m => ajustarEscala(m, PX));
-      });
-      window.addEventListener('afterprint', () => {
-        document.querySelectorAll('.recibo-mitad').forEach(m => ajustarEscala(m, null));
-      });
+      ${_SCRIPT_AJUSTE_ESCALA_RECIBOS}
       function confirmar() {
         const btn = document.querySelector('.btn-confirmar');
         if (btn) { btn.disabled = true; btn.textContent = '⏳ Marcando...'; }
@@ -17548,18 +17507,7 @@ function imprimirReciboRapido() {
     <div class="recibo-mitad recibo-original"><div class="recibo-label">Original</div><div class="recibo-inner" id="rr1">${reciboHtml(true)}</div></div>
     <div class="recibo-mitad"><div class="recibo-label">Duplicado</div><div class="recibo-inner" id="rr2">${reciboHtml(false)}</div></div>
     <script>
-      function ajustarEscala(mitad, printPx) {
-        const inner = mitad.querySelector('.recibo-inner');
-        const label = mitad.querySelector('.recibo-label');
-        if (!inner) return;
-        inner.style.zoom = '1'; void inner.offsetHeight;
-        const avail = printPx ? Math.floor(143 * printPx) - (label ? label.offsetHeight : 0) - 4 : mitad.clientHeight - (label ? label.offsetHeight : 0) - 2;
-        const actual = inner.scrollHeight;
-        if (actual > avail + 2) inner.style.zoom = String(avail / actual); else inner.style.zoom = '1';
-      }
-      window.addEventListener('load', () => document.querySelectorAll('.recibo-mitad').forEach(m => ajustarEscala(m, null)));
-      window.addEventListener('beforeprint', () => { const PX=96/25.4; document.querySelectorAll('.recibo-mitad').forEach(m => ajustarEscala(m, PX)); });
-      window.addEventListener('afterprint', () => document.querySelectorAll('.recibo-mitad').forEach(m => ajustarEscala(m, null)));
+      ${_SCRIPT_AJUSTE_ESCALA_RECIBOS}
     <\/script>
   </body></html>`);
   ventana.document.close();
