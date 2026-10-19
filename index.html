@@ -3370,10 +3370,33 @@ async function confirmarRescision(contratoId, hoja) {
   try {
     await sbPatch('contratos', contratoId, { fecha_rescision: fechaRescision });
 
+    // Se leen los pagos frescos de la base (no los de memoria, que pueden estar
+    // desactualizados) y se borran los meses POSTERIORES al de la rescisión.
+    // Un mes con cobros registrados NO se borra solo (se perdería plata ya
+    // cobrada de Caja): queda a la vista y se avisa. Si un borrado falla, se
+    // sigue con los demás y al final se informa cuáles quedaron, en vez de dejar
+    // el contrato "a medias" sin que nadie se entere.
     const mesRescision = fechaRescision.substring(0, 7);
-    const pagosContrato = DB.pagos.filter(p => p.hoja === hoja && p.mes && p.mes.substring(0,7) > mesRescision);
+    const pagosFrescos = await sbGet('pagos', `hoja=eq.${encodeURIComponent(hoja)}&select=id,mes,pagado_importe&limit=1000`);
+    const pagosContrato = pagosFrescos.filter(p => p.mes && p.mes.substring(0,7) > mesRescision);
+    const noBorrados = [];
     for (const p of pagosContrato) {
-      await sbDelete('pagos', p.id);
+      const mesTxt = formatDate(p.mes);
+      if ((parseFloat(p.pagado_importe) || 0) > 0.004) {
+        noBorrados.push(`${mesTxt}: tiene cobros registrados`);
+        continue;
+      }
+      try {
+        // Datos dependientes sin plata (extras / importes de servicios del mes)
+        try { await sbDeleteWhere('pagos_extras', `pago_id=eq.${p.id}`); } catch(e) {}
+        try { await sbDeleteWhere('pagos_suministros', `pago_id=eq.${p.id}`); } catch(e) {}
+        await sbDelete('pagos', p.id);
+      } catch(e) {
+        noBorrados.push(`${mesTxt}: ${e.message || 'no se pudo borrar'}`);
+      }
+    }
+    if (noBorrados.length) {
+      alert('El contrato quedó rescindido, pero estos meses posteriores a la fecha de rescisión NO se borraron y hay que revisarlos a mano (botón 🗑 de cada mes):\n\n• ' + noBorrados.join('\n• '));
     }
 
     // Revocar acceso al inquilino si no tiene otro contrato vigente
@@ -3400,6 +3423,15 @@ async function confirmarRescision(contratoId, hoja) {
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
+// Último mes (YYYY-MM) hasta el que se pueden generar meses de un contrato: el
+// fin de la vigencia o, si fue rescindido antes, el mes de la rescisión.
+function _limiteMesesContrato(c, hastaKey) {
+  const hasta = (hastaKey || '').substring(0,7);
+  const resc = c?.fecha_rescision ? String(c.fecha_rescision).substring(0,7) : null;
+  if (resc && (!hasta || resc < hasta)) return resc;
+  return hasta;
+}
+
 async function regenerarMeses(contratoId, hoja) {
   const c = DB.contratos.find(x => x.id === contratoId);
   if (!c) return;
@@ -3415,7 +3447,9 @@ async function regenerarMeses(contratoId, hoja) {
 
     const importe = c.importe_inicial || 0;
     let [y, m] = c.vigencia_desde.substring(0,7).split('-').map(Number);
-    const [fy, fm] = c.vigencia_hasta.substring(0,7).split('-').map(Number);
+    // Un contrato rescindido solo tiene meses hasta el de la rescisión
+    const finGeneracion = _limiteMesesContrato(c, c.vigencia_hasta);
+    const [fy, fm] = finGeneracion.substring(0,7).split('-').map(Number);
 
     // Solo el primer mes que se genera lleva el importe inicial, y únicamente
     // si el contrato no tenía NINGÚN pago cargado todavía (arranque desde
@@ -3924,7 +3958,7 @@ async function proyectarPeriodo(hoja, desdeKey, importe, periodicidad, diaVenc, 
 
   // Obtener vigencia_hasta del contrato para no excederla
   const contratoVig = DB.contratos.find(x => x.hoja === hoja);
-  const vigHastaKey = contratoVig?.vigencia_hasta?.substring(0,7) || '9999-12';
+  const vigHastaKey = _limiteMesesContrato(contratoVig, contratoVig?.vigencia_hasta?.substring(0,7)) || '9999-12';
 
   // Create missing pagos in range if they don't exist
   const nuevos = [];
@@ -7177,6 +7211,13 @@ async function guardarImportesYExtras(hoja, contratoId, mesKey, comisionPct) {
       } catch(e) {}
       await recalcularFilaPago(pagoId);
     } else {
+      {
+        const cGP = DB.contratos.find(x => x.id === contratoId);
+        if (cGP?.fecha_rescision && mesKey > String(cGP.fecha_rescision).substring(0,7)) {
+          toast('Este contrato fue rescindido el ' + formatDate(cGP.fecha_rescision, true) + ': no se pueden cargar meses posteriores', 'error');
+          return;
+        }
+      }
       const patchNew = {
         hoja, mes, corresponde_a_mes:mes,
         importe_alquiler:alq, total,
@@ -9189,6 +9230,13 @@ async function guardarNuevoMes(hoja, contratoId) {
   const mesVal = document.getElementById('nm-mes-sel').value;
   if (!mesVal) { toast('El mes es obligatorio','error'); return; }
   const mes = mesVal+'-01';
+  {
+    const cNM = DB.contratos.find(x => x.id === contratoId);
+    if (cNM?.fecha_rescision && mesVal > String(cNM.fecha_rescision).substring(0,7)) {
+      toast('Este contrato fue rescindido el ' + formatDate(cNM.fecha_rescision, true) + ': no se pueden agregar meses posteriores', 'error');
+      return;
+    }
+  }
   const alq = parseFloat(document.getElementById('nm-alquiler').value)||0;
   const epe = parseFloat(document.getElementById('nm-epe').value)||0;
   const agua = parseFloat(document.getElementById('nm-agua').value)||0;
@@ -10363,11 +10411,12 @@ async function actualizarContrato(id) {
         const inicioGen = ultimoMes
           ? (() => { let [y,m] = ultimoMes.split('-').map(Number); m++; if (m>12){m=1;y++;} return `${y}-${String(m).padStart(2,'0')}`; })()
           : (nuevaDesde ? nuevaDesde.substring(0,7) : null);
-        if (inicioGen && inicioGen <= nuevaHasta.substring(0,7)) {
+        const finGenEdit = _limiteMesesContrato(contratoOriginal, nuevaHasta);
+        if (inicioGen && inicioGen <= finGenEdit) {
           // Generate months from inicioGen to new end
           const mesesNuevos = [];
           let [y, m] = inicioGen.split('-').map(Number);
-          const [ey, em] = nuevaHasta.substring(0,7).split('-').map(Number);
+          const [ey, em] = finGenEdit.split('-').map(Number);
           const impNuevo = parseMonto(document.getElementById('f-importe-inicial')?.value) || 0;
           // El importe inicial solo va en el primer mes generado si es la
           // primera carga de meses del contrato (sin pago previo); si ya
