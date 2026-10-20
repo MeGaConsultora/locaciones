@@ -6217,7 +6217,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEst
     ${excedenteVisible > 0.004 ? `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:4px 0;border-bottom:1px solid #f5f0e8;background:#fff8e1">
         <span style="font-size:0.85rem;color:#856404;flex:1">↑ Excedente (a favor, sin imputar) — ${formatMoney(excedenteVisible)}</span>
-        <button onclick="revertirExcedenteMes('${p.id}',${excedenteVisible},'${_gpHoja}',${contratoId},'${mesKey}',${_gpComision??8})" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.75rem">↩</button>
+        <button onclick="aplicarExcedenteAlSiguiente('${p.id}','${_gpHoja}',${contratoId},'${mesKey}',${_gpComision??8})" title="Pasar este excedente al mes siguiente" style="background:#d4edda;border:none;color:#155724;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.75rem;margin-right:4px">→ Mes siguiente</button><button onclick="revertirExcedenteMes('${p.id}',${excedenteVisible},'${_gpHoja}',${contratoId},'${mesKey}',${_gpComision??8})" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.75rem">↩</button>
       </div>
     ` : ''}
     ${(p.saldo||0) > 0 ? '<div style="margin:0.5rem 0;font-size:0.75rem;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Pendiente</div>' : '<div style="background:#d4edda;border-radius:4px;padding:5px 10px;font-size:0.75rem;color:#155724;margin-top:0.5rem">✓ Mes cancelado en su totalidad</div>'}
@@ -6961,6 +6961,35 @@ async function distribuirExcedenteEnCascada(hojaEncoded, mesInicialKey, excedent
     const yaAbonadoSig = sp.pagado_importe || 0;
     const pendienteSig = Math.max(0, Math.round((totalSig - yaAbonadoSig) * 100) / 100);
 
+    // Mes YA CREADO pero todavía SIN importes (total en 0: típico de los meses
+    // que restan hasta el fin del contrato): el excedente se le acredita igual,
+    // como saldo a favor. Antes se salteaba (parecía "ya cubierto") y, si no
+    // había otro mes con deuda, el excedente quedaba sin acreditar aunque el mes
+    // existiera. Cuando después se cargue el alquiler, el saldo se calcula como
+    // total − pagado_importe y ya descuenta lo acreditado.
+    if (totalSig <= 0.004 && sp.pagado !== 'RESCINDIDO') {
+      const aFavor = restanteGlobal;
+      const nuevoPagadoVacio = Math.round((yaAbonadoSig + aFavor) * 100) / 100;
+      await sbPatch('pagos', sp.id, { pagado_importe: nuevoPagadoVacio });
+      if (contratoId && aFavor > 0.004) {
+        try {
+          await sbPost('movimientos_pagos', {
+            pago_id: sp.id,
+            contrato_id: contratoId,
+            hoja: decodeURIComponent(hojaEncoded),
+            mes: sp.mes,
+            fecha: new Date().toISOString().substring(0,10),
+            monto: aFavor,
+            concepto: 'Excedente de mes anterior (saldo a favor: el mes todavía no tiene importes)',
+            items: JSON.stringify([{ label: 'Saldo a favor', monto: Math.round(aFavor*100)/100 }])
+          });
+        } catch(e) { console.warn('No se pudo registrar el movimiento de saldo a favor:', e); }
+      }
+      mesesAfectados.push({ mes: sp.mes, aplicado: aFavor, aFavor: true });
+      restanteGlobal = 0;
+      break;
+    }
+
     if (pendienteSig <= 0) {
       // Este mes ya está cubierto (pagado por otra vía) — seguir al
       // subsiguiente sin tocarlo.
@@ -7030,7 +7059,7 @@ function mensajeExcedenteCascada(excedenteInicial, resultado) {
   if (!resultado.mesesAfectados.length) {
     return `⚠ Saldo a favor del inquilino: ${formatMoney(excedenteInicial)} — No hay mes siguiente para acreditar`;
   }
-  const detalle = resultado.mesesAfectados.map(m => `${mesLabel(m.mes)}: ${formatMoney(m.aplicado)}`).join(' · ');
+  const detalle = resultado.mesesAfectados.map(m => `${mesLabel(m.mes)}: ${formatMoney(m.aplicado)}${m.aFavor ? ' (saldo a favor, el mes aún no tiene importes)' : ''}`).join(' · ');
   let msg = `Excedente de ${formatMoney(excedenteInicial)} acreditado — ${detalle}`;
   if (resultado.restante > 0) {
     msg += ` · ⚠ Quedan ${formatMoney(resultado.restante)} sin acreditar (no hay más meses cargados)`;
@@ -7420,6 +7449,47 @@ async function revertirItem(pagoId, itemId, montoPagado, montoTotal, hoja, contr
       while (rsy < rey || (rsy === rey && rsm <= rem)) {
         const key = `${rsy}-${String(rsm).padStart(2,'0')}`;
         const pago = pagosActuales.find(p => p.mes && p.mes.startsWith(key));
+        meses.push({ key, label: formatDate(key+'-01'), pago });
+        rsm++; if (rsm > 12) { rsm = 1; rsy++; }
+      }
+      setTimeout(async () => {
+        await cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisionPct, 's2');
+        await loadAll();
+      }, 150);
+    }
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// Aplica al mes siguiente un excedente que ya quedó "a favor, sin imputar" en
+// este mes (por ejemplo, de cobros hechos antes de que existiera esta lógica).
+// Usa la misma cascada que el cobro: cubre meses con deuda y, si el mes
+// siguiente existe pero no tiene importes, se lo acredita como saldo a favor.
+async function aplicarExcedenteAlSiguiente(pagoId, hoja, contratoId, mesKey, comisionPct) {
+  try {
+    const existing = await sbGet('pagos', `id=eq.${pagoId}&limit=1`);
+    if (!existing.length) return;
+    const p = existing[0];
+    let extras = [];
+    try { extras = await sbGet('pagos_extras', `pago_id=eq.${pagoId}`); } catch(e) {}
+    const totalReal = calcularTotal(p, extras, window._pagosSuministros?.[p.id]);
+    const excedente = Math.round(((p.pagado_importe||0) - totalReal) * 100) / 100;
+    if (excedente <= 0.004) { toast('Este mes no tiene excedente sin imputar', 'error'); return; }
+    if (!confirm(`¿Aplicar el excedente de ${formatMoney(excedente)} al mes siguiente?\n\nSe descuenta de lo cobrado en este mes y se acredita en el próximo (si el mes todavía no tiene importes, queda como saldo a favor).`)) return;
+    const res = await distribuirExcedenteEnCascada(encodeURIComponent(hoja), p.mes, excedente, contratoId);
+    const aplicado = Math.round((excedente - res.restante) * 100) / 100;
+    if (aplicado > 0.004) {
+      await sbPatch('pagos', pagoId, { pagado_importe: Math.round(((p.pagado_importe||0) - aplicado) * 100) / 100 });
+    }
+    toast(mensajeExcedenteCascada(excedente, res));
+    const c = DB.contratos.find(x => x.id === contratoId);
+    if (c) {
+      await recargarGrilla(c);
+      const meses = [];
+      let [rsy, rsm] = c.vigencia_desde.substring(0,7).split('-').map(Number);
+      const [rey, rem] = (c.vigencia_hasta||c.vigencia_desde).substring(0,7).split('-').map(Number);
+      while (rsy < rey || (rsy === rey && rsm <= rem)) {
+        const key = `${rsy}-${String(rsm).padStart(2,'0')}`;
+        const pago = pagosActuales.find(pp => pp.mes && pp.mes.startsWith(key));
         meses.push({ key, label: formatDate(key+'-01'), pago });
         rsm++; if (rsm > 12) { rsm = 1; rsy++; }
       }
