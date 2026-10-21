@@ -9879,11 +9879,8 @@ function mostrarPersonaEnLista(rol, persona, pctAlquiler) {
 }
 
 function editarPersonaDesdeFormulario(personaId) {
-  // Save current modal state
-  window._formularioAnterior = {
-    titulo: document.getElementById('modal-title')?.textContent,
-    body: document.getElementById('modal-body')?.innerHTML
-  };
+  // Save current modal state (con lo escrito en los campos — ver capturarFormularioModal)
+  window._formularioAnterior = capturarFormularioModal();
 
   const p = DB_PERSONAS.find(x => x.id === personaId) || {};
   document.getElementById('modal-title').textContent = 'Editar persona';
@@ -17652,14 +17649,41 @@ function cancelarFormularioInmueble() {
   }
 }
 
+// Guarda una copia del formulario que está abierto en el modal para poder
+// volver a él después (ej: ir a cargar un inmueble o editar una persona desde
+// el formulario de un contrato nuevo). Copiar solo el innerHTML NO alcanza:
+// lo que la persona escribió o eligió en los campos vive en las propiedades
+// del DOM (input.value, select, checkbox), no en el HTML, así que al restaurar
+// el formulario volvía en blanco — se perdían el título y las fechas del
+// contrato (y cualquier otro campo). Por eso antes de copiar se pasa el
+// estado actual de cada campo a los atributos HTML, que sí viajan en el
+// innerHTML.
+function capturarFormularioModal() {
+  const body = document.getElementById('modal-body');
+  if (body) {
+    body.querySelectorAll('input, textarea, select').forEach(el => {
+      if (el.tagName === 'SELECT') {
+        Array.from(el.options).forEach(o => { if (o.selected) o.setAttribute('selected', ''); else o.removeAttribute('selected'); });
+      } else if (el.tagName === 'TEXTAREA') {
+        el.textContent = el.value;
+      } else if (el.type === 'checkbox' || el.type === 'radio') {
+        if (el.checked) el.setAttribute('checked', ''); else el.removeAttribute('checked');
+      } else if (el.type !== 'file' && el.type !== 'password') {
+        el.setAttribute('value', el.value);
+      }
+    });
+  }
+  return {
+    titulo: document.getElementById('modal-title')?.textContent,
+    body: body?.innerHTML
+  };
+}
+
 function editarInmuebleDesdeContrato(inmuebleId) {
   window._volverAContrato = true;
   window._contratoIdEditar = parseInt(document.getElementById('modal-overlay').dataset.contratoId) || null;
   if (!window._contratoIdEditar) {
-    window._contratoFormularioGuardado = {
-      titulo: document.getElementById('modal-title')?.textContent,
-      body: document.getElementById('modal-body')?.innerHTML
-    };
+    window._contratoFormularioGuardado = capturarFormularioModal();
   }
   document.getElementById('modal-overlay').classList.remove('open');
   const inm = DB_INMUEBLES.find(x => x.id === inmuebleId);
@@ -17674,10 +17698,7 @@ function abrirNuevoInmuebleDesdeContrato() {
   window._contratoIdEditar = parseInt(document.getElementById('modal-overlay').dataset.contratoId) || null;
   // If new contract (no contratoId), save modal content to restore
   if (!window._contratoIdEditar) {
-    window._contratoFormularioGuardado = {
-      titulo: document.getElementById('modal-title')?.textContent,
-      body: document.getElementById('modal-body')?.innerHTML
-    };
+    window._contratoFormularioGuardado = capturarFormularioModal();
   }
   document.getElementById('modal-overlay').classList.remove('open');
   _abrirFormularioInmueble(null);
