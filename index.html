@@ -1484,6 +1484,19 @@ let vencFiltro = '30';
 // ============================================================
 // LOAD DATA
 // ============================================================
+// Carga TODOS los suministros. El servidor devuelve como máximo 1000 filas por
+// consulta, y contrato_suministros ya pasó esa cifra: con un sbGet común (aunque
+// se pida limit=5000) se cortaba en las primeras 1000 ordenadas por contrato, y
+// los contratos más nuevos quedaban SIN suministros en memoria — el formulario
+// del contrato los mostraba vacíos (se volvían a cargar a mano y se guardaban
+// duplicados) y los importadores de EPE/Agua/TGIU no los encontraban. Por eso se
+// pagina con sbGetAll y después se reordena como antes (contrato, orden).
+async function recargarSuministros() {
+  const filas = await sbGetAll('contrato_suministros', 'select=*');
+  filas.sort((a, b) => (a.contrato_id - b.contrato_id) || ((a.orden||0) - (b.orden||0)) || (a.id - b.id));
+  DB_SUMINISTROS = filas;
+}
+
 async function loadAll() {
   // Verify user is still approved on every loadAll.
   // IMPORTANTE: este chequeo es secundario/informativo — nunca debe tener
@@ -1539,7 +1552,7 @@ async function loadAll() {
       ]);
     } catch(e) { console.error('Error loading consorcios:', e); }
     try {
-      DB_SUMINISTROS = await sbGet('contrato_suministros', 'select=*&order=contrato_id.asc,orden.asc');
+      await recargarSuministros();
     } catch(e) { console.error('Error loading suministros:', e); DB_SUMINISTROS = []; }
     // Titulares/cuentas de Caja — se cargan siempre acá (no solo al entrar a
     // la pestaña Caja) para que estén disponibles también en "Ingresar
@@ -11852,7 +11865,12 @@ let DB_CONTRATO_PERSONAS = [];
 
 async function loadContratosPersonas() {
   try {
-    const cp = await sbGet('contrato_personas', 'select=*,personas(id,apellido,nombre)&order=orden.asc&limit=5000');
+    // sbGetAll y no sbGet: el servidor corta en 1000 filas por consulta (ver
+    // recargarSuministros) y esta tabla ya anda por las 800 — al pasar las
+    // 1000 empezarían a faltar propietarios/inquilinos de los contratos más
+    // nuevos. Se reordena por "orden" como antes.
+    const cp = await sbGetAll('contrato_personas', 'select=*,personas(id,apellido,nombre)');
+    cp.sort((a, b) => ((a.orden||0) - (b.orden||0)) || (a.id - b.id));
     DB_CONTRATO_PERSONAS = cp;
     // Update contratos with formatted names
     DB.contratos.forEach(c => {
@@ -14546,7 +14564,7 @@ async function confirmarImportarEPE() {
 
   toast('Importando EPE...', 'info');
   // Reload suministros to ensure fresh data
-  try { window.DB_SUMINISTROS = await sbGet('contrato_suministros', 'select=*&limit=5000'); } catch(e) {}
+  try { await recargarSuministros(); } catch(e) {}
   let cargados = 0;
 
   for (const d of seleccionados) {
@@ -14762,7 +14780,7 @@ async function confirmarImportarExcel() {
   const mesStr = mesKey + '-01';
   let cargados = 0;
   toast('Importando...', 'info');
-  try { window.DB_SUMINISTROS = await sbGet('contrato_suministros', 'select=*&limit=5000'); } catch(e) {}
+  try { await recargarSuministros(); } catch(e) {}
 
   for (const r of seleccionados) {
     try {
@@ -15032,7 +15050,7 @@ async function confirmarImportarPDF() {
   });
   
   if (!seleccionados.length) { toast('Seleccioná al menos una boleta', 'error'); return; }
-  try { window.DB_SUMINISTROS = await sbGet('contrato_suministros', 'select=*&limit=5000'); } catch(e) {}
+  try { await recargarSuministros(); } catch(e) {}
   
   const btn = document.querySelector('#modal-body .btn-primary');
   if (btn) { btn.disabled = true; btn.textContent = 'Cargando...'; }
