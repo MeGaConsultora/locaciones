@@ -16348,6 +16348,7 @@ function abrirCrearInmuebleParaContrato(contratoId) {
   document.getElementById('modal2-overlay').classList.remove('open');
   window._volverAContrato = true;
   window._contratoIdEditar = contratoId;
+  window._contratoFormularioGuardado = null; // acá no hay formulario para restaurar: descartar cualquier copia vieja
   _abrirFormularioInmueble(null);
 }
 
@@ -17301,7 +17302,11 @@ async function guardarNuevoInmueble() {
     const nuevoId = Array.isArray(r) ? r[0]?.id : r?.id;
     toast('Inmueble guardado ✓');
     await loadAll();
-    if (window._volverAContrato && window._contratoIdEditar) {
+    if (hayFormularioContratoGuardado()) {
+      // Vuelve al formulario tal como estaba (con lo escrito) y deja elegido
+      // el inmueble recién creado.
+      restaurarFormularioContratoGuardado(nuevoId);
+    } else if (window._volverAContrato && window._contratoIdEditar) {
       window._volverAContrato = false;
       const cid = window._contratoIdEditar;
       window._contratoIdEditar = null;
@@ -17317,22 +17322,6 @@ async function guardarNuevoInmueble() {
           }
         }, 200);
       }, 100);
-    } else if (window._volverAContrato && window._contratoFormularioGuardado) {
-      window._volverAContrato = false;
-      const saved = window._contratoFormularioGuardado;
-      window._contratoFormularioGuardado = null;
-      document.getElementById('modal-title').textContent = saved.titulo;
-      document.getElementById('modal-body').innerHTML = saved.body;
-      document.getElementById('modal-overlay').classList.add('open');
-      // Auto-fill the new inmueble
-      setTimeout(() => {
-        if (nuevoId) {
-          const nuevo = DB_INMUEBLES.find(x => x.id === nuevoId);
-          const input = document.getElementById('f-inmueble-input');
-          const hidden = document.getElementById('f-inmueble-id');
-          if (input && hidden && nuevo) { hidden.value = nuevo.id; input.value = formatDireccion(nuevo); }
-        }
-      }, 100);
     } else {
       closeModal();
       renderInmuebles();
@@ -17347,23 +17336,20 @@ async function guardarInmueble(id) {
     await sbPatch('inmuebles', id, body);
     toast('Inmueble actualizado ✓');
     await loadAll();
-    if (window._volverAContrato && window._contratoIdEditar) {
+    if (window._volverAContrato && window._contratoIdEditar && body.tipo) {
       // Sincronizar tipo_inmueble en el contrato con el nuevo tipo del inmueble
-      if (body.tipo) {
-        try { await sbPatch('contratos', window._contratoIdEditar, { tipo_inmueble: body.tipo }); } catch(e) {}
-      }
+      try { await sbPatch('contratos', window._contratoIdEditar, { tipo_inmueble: body.tipo }); } catch(e) {}
+    }
+    if (hayFormularioContratoGuardado()) {
+      // Vuelve al formulario tal como estaba (con lo escrito) y actualiza la
+      // dirección del inmueble recién editado.
+      restaurarFormularioContratoGuardado(null, id);
+    } else if (window._volverAContrato && window._contratoIdEditar) {
       window._volverAContrato = false;
       const cid = window._contratoIdEditar;
       window._contratoIdEditar = null;
       closeModal();
       setTimeout(() => openEditContrato(cid), 100);
-    } else if (window._volverAContrato && window._contratoFormularioGuardado) {
-      window._volverAContrato = false;
-      const saved = window._contratoFormularioGuardado;
-      window._contratoFormularioGuardado = null;
-      document.getElementById('modal-title').textContent = saved.titulo;
-      document.getElementById('modal-body').innerHTML = saved.body;
-      document.getElementById('modal-overlay').classList.add('open');
     } else {
       closeModal(); renderInmuebles();
     }
@@ -17631,19 +17617,14 @@ function imprimirReciboRapido() {
 
 
 function cancelarFormularioInmueble() {
-  if (window._volverAContrato && window._contratoIdEditar) {
+  if (hayFormularioContratoGuardado()) {
+    restaurarFormularioContratoGuardado();
+  } else if (window._volverAContrato && window._contratoIdEditar) {
     const cid = window._contratoIdEditar;
     window._volverAContrato = false;
     window._contratoIdEditar = null;
     closeModal();
     setTimeout(() => openEditContrato(cid), 100);
-  } else if (window._volverAContrato && window._contratoFormularioGuardado) {
-    window._volverAContrato = false;
-    const saved = window._contratoFormularioGuardado;
-    window._contratoFormularioGuardado = null;
-    document.getElementById('modal-title').textContent = saved.titulo;
-    document.getElementById('modal-body').innerHTML = saved.body;
-    document.getElementById('modal-overlay').classList.add('open');
   } else {
     closeModal();
   }
@@ -17679,12 +17660,46 @@ function capturarFormularioModal() {
   };
 }
 
+// Vuelve al formulario del contrato guardado con capturarFormularioModal (sea
+// de un contrato nuevo o de uno que se estaba editando). Antes, con un contrato
+// EXISTENTE no se guardaba nada y al volver se reabría desde la base, así que
+// se perdía todo lo modificado y no guardado. inmuebleSeleccionarId: inmueble
+// recién creado que hay que dejar elegido en el formulario;
+// inmuebleRefrescarId: inmueble recién editado, para actualizar su dirección en
+// el formulario si es el que está elegido.
+// Solo se restaura si la copia guardada corresponde al mismo contrato que se
+// está volviendo a abrir (o ambos son "contrato nuevo") — así una copia vieja
+// que haya quedado (ej: se cerró el modal con la X) no se cuela en otro flujo.
+function hayFormularioContratoGuardado() {
+  const s = window._contratoFormularioGuardado;
+  return !!(window._volverAContrato && s && (s.contratoId || null) === (window._contratoIdEditar || null));
+}
+
+function restaurarFormularioContratoGuardado(inmuebleSeleccionarId = null, inmuebleRefrescarId = null) {
+  const saved = window._contratoFormularioGuardado;
+  window._contratoFormularioGuardado = null;
+  window._volverAContrato = false;
+  window._contratoIdEditar = null;
+  document.getElementById('modal-title').textContent = saved.titulo;
+  document.getElementById('modal-body').innerHTML = saved.body;
+  document.getElementById('modal-overlay').dataset.contratoId = saved.contratoId || '';
+  document.getElementById('modal-overlay').classList.add('open');
+  const input = document.getElementById('f-inmueble-input');
+  const hidden = document.getElementById('f-inmueble-id');
+  if (!input || !hidden) return;
+  if (inmuebleSeleccionarId) {
+    const nuevo = DB_INMUEBLES.find(x => x.id === inmuebleSeleccionarId);
+    if (nuevo) { hidden.value = nuevo.id; input.value = formatDireccion(nuevo); }
+  } else if (inmuebleRefrescarId && String(hidden.value) === String(inmuebleRefrescarId)) {
+    const editado = DB_INMUEBLES.find(x => x.id === inmuebleRefrescarId);
+    if (editado) input.value = formatDireccion(editado);
+  }
+}
+
 function editarInmuebleDesdeContrato(inmuebleId) {
   window._volverAContrato = true;
   window._contratoIdEditar = parseInt(document.getElementById('modal-overlay').dataset.contratoId) || null;
-  if (!window._contratoIdEditar) {
-    window._contratoFormularioGuardado = capturarFormularioModal();
-  }
+  window._contratoFormularioGuardado = { ...capturarFormularioModal(), contratoId: window._contratoIdEditar };
   document.getElementById('modal-overlay').classList.remove('open');
   const inm = DB_INMUEBLES.find(x => x.id === inmuebleId);
   _abrirFormularioInmueble(inm || null);
@@ -17696,10 +17711,8 @@ function abrirNuevoInmuebleDesdeContrato() {
   // Save form state to restore after
   window._volverAContrato = true;
   window._contratoIdEditar = parseInt(document.getElementById('modal-overlay').dataset.contratoId) || null;
-  // If new contract (no contratoId), save modal content to restore
-  if (!window._contratoIdEditar) {
-    window._contratoFormularioGuardado = capturarFormularioModal();
-  }
+  // Guardar el formulario (nuevo o existente) para restaurarlo al volver
+  window._contratoFormularioGuardado = { ...capturarFormularioModal(), contratoId: window._contratoIdEditar };
   document.getElementById('modal-overlay').classList.remove('open');
   _abrirFormularioInmueble(null);
 }
