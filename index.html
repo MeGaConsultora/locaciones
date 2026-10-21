@@ -8915,6 +8915,17 @@ async function renderInforme() {
   window._informeMesKey = mesKey;
 }
 
+function sortReporteTotal(col) {
+  if (window._repTotSortCol === col) {
+    window._repTotSortDir = window._repTotSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    window._repTotSortCol = col;
+    // Los importes arrancan de mayor a menor (lo habitual: ver primero lo más grande)
+    window._repTotSortDir = ['facturado', 'cobrado', 'saldo'].includes(col) ? 'desc' : 'asc';
+  }
+  renderReporteTotal();
+}
+
 function renderReporteTotal() {
   const deudaFiltro = document.getElementById('rep-deuda')?.value || '';
   const cont = document.getElementById('reporte-total-contenido');
@@ -8934,7 +8945,29 @@ function renderReporteTotal() {
   if (deudaFiltro === 'pendiente') rows = rows.filter(r => r.saldoPendiente > 0);
   else if (deudaFiltro === 'al-dia') rows = rows.filter(r => r.saldoPendiente <= 0);
 
-  rows.sort((a,b) => (a.c.titulo||'').localeCompare(b.c.titulo||''));
+  // Orden por encabezado (clic en la columna; otro clic invierte el sentido)
+  const sortCol = window._repTotSortCol || 'contrato';
+  const sortDir = window._repTotSortDir || 'asc';
+  const getters = {
+    contrato:    r => (r.c.titulo || r.c.hoja || '').toLowerCase(),
+    propietario: r => (r.c.locador || '').toLowerCase(),
+    inquilino:   r => (r.c.locatario || '').toLowerCase(),
+    facturado:   r => r.totalFacturado,
+    cobrado:     r => r.totalCobrado,
+    saldo:       r => r.saldoPendiente,
+    estado:      r => r.est || ''
+  };
+  const getter = getters[sortCol] || getters.contrato;
+  const cmp = (a, b) => {
+    const va = getter(a), vb = getter(b);
+    const r = (typeof va === 'string') ? va.localeCompare(vb, 'es', { sensitivity: 'base' }) : (va - vb);
+    if (r !== 0) return sortDir === 'asc' ? r : -r;
+    // Desempate estable: por nombre de contrato
+    return (a.c.titulo || '').localeCompare(b.c.titulo || '', 'es', { sensitivity: 'base' });
+  };
+  rows.sort(cmp);
+  const sortArrow = col => `<span class="sort-ind">${sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>`;
+  const thStyle = 'cursor:pointer;user-select:none;';
 
   const totFacturado = rows.reduce((s,r) => s+r.totalFacturado, 0);
   const totCobrado = rows.reduce((s,r) => s+r.totalCobrado, 0);
@@ -8962,13 +8995,13 @@ function renderReporteTotal() {
           <col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:10%">
         </colgroup>
         <thead><tr style="background:var(--ink2);color:white;position:sticky;top:0">
-          <th style="padding:6px 6px;text-align:left">Contrato</th>
-          <th style="padding:6px 6px;text-align:left">Propietario</th>
-          <th style="padding:6px 6px;text-align:left">Inquilino</th>
-          <th style="padding:6px 6px;text-align:right">Total facturado</th>
-          <th style="padding:6px 6px;text-align:right">Total cobrado</th>
-          <th style="padding:6px 6px;text-align:right">Saldo pendiente</th>
-          <th style="padding:6px 6px;text-align:center">Estado</th>
+          <th style="padding:6px 6px;text-align:left;${thStyle}" onclick="sortReporteTotal('contrato')">Contrato ${sortArrow('contrato')}</th>
+          <th style="padding:6px 6px;text-align:left;${thStyle}" onclick="sortReporteTotal('propietario')">Propietario ${sortArrow('propietario')}</th>
+          <th style="padding:6px 6px;text-align:left;${thStyle}" onclick="sortReporteTotal('inquilino')">Inquilino ${sortArrow('inquilino')}</th>
+          <th style="padding:6px 6px;text-align:right;${thStyle}" onclick="sortReporteTotal('facturado')">Total facturado ${sortArrow('facturado')}</th>
+          <th style="padding:6px 6px;text-align:right;${thStyle}" onclick="sortReporteTotal('cobrado')">Total cobrado ${sortArrow('cobrado')}</th>
+          <th style="padding:6px 6px;text-align:right;${thStyle}" onclick="sortReporteTotal('saldo')">Saldo pendiente ${sortArrow('saldo')}</th>
+          <th style="padding:6px 6px;text-align:center;${thStyle}" onclick="sortReporteTotal('estado')">Estado ${sortArrow('estado')}</th>
         </tr></thead>
         <tbody>
           ${rows.map(r => `<tr style="border-bottom:1px solid #eee;cursor:pointer;background:${r.saldoPendiente>0?'#fff8f0':''}" onclick="openContrato(${r.c.id})">
@@ -9058,8 +9091,10 @@ function verReporteMensual() {
 }
 
 function verReporteTotales() {
-  const contenido = document.getElementById('reporte-total-contenido')?.innerHTML;
-  if (!contenido || contenido.includes('empty-state') || contenido.includes('Calculando')) { toast('Generá el reporte primero', 'error'); return; }
+  const contenidoRaw = document.getElementById('reporte-total-contenido')?.innerHTML;
+  if (!contenidoRaw || contenidoRaw.includes('empty-state') || contenidoRaw.includes('Calculando')) { toast('Generá el reporte primero', 'error'); return; }
+  // En el papel salen en el orden elegido, pero sin las flechitas de los encabezados
+  const contenido = contenidoRaw.replace(/<span class="sort-ind">[^<]*<\/span>/g, '').replace(/ onclick="sortReporteTotal\('[a-z]+'\)"/g, '');
   const filtro = document.getElementById('rep-deuda')?.options[document.getElementById('rep-deuda').selectedIndex]?.text || 'Todos';
   const headerHTML = document.getElementById('rep-totales-header')?.innerHTML || '';
   const ventana = window.open('', '_blank');
