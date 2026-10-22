@@ -676,7 +676,7 @@
         <option value="09">Septiembre</option><option value="10">Octubre</option>
         <option value="11">Noviembre</option><option value="12">Diciembre</option>
       </select>
-      <button class="btn btn-primary" onclick="renderInformeSeguro()" style="font-size:0.82rem">📋 Generar Informe</button>
+      <button class="btn btn-primary" onclick="renderInformeSeguro(true)" style="font-size:0.82rem">📋 Generar Informe</button>
       <select class="filter-select" id="seg-inf-orden" style="width:auto" onchange="pintarTablaSeguro()">
         <option value="calle">Ordenar por Calle</option>
         <option value="nombre">Ordenar por Nombre Inquilino</option>
@@ -11340,35 +11340,47 @@ function populateSeguroAnios() {
   if (mesSel && !mesSel.value) mesSel.value = TODAY.substring(5,7);
 }
 
-async function renderInformeSeguro() {
+// conAviso=true cuando se toca el botón "Generar Informe": muestra un mensaje con
+// el resultado. Cada vez que se genera, los datos se leen de la base (no de lo
+// que quedó en memoria al abrir el sistema) y se piden SOLO los importes de
+// seguro, con paginado, para no toparse con el corte de 1000 filas del servidor.
+async function renderInformeSeguro(conAviso = false) {
   const anio = document.getElementById('seg-inf-anio')?.value;
   const mes = document.getElementById('seg-inf-mes')?.value;
   const cont = document.getElementById('seg-inf-contenido');
   const toolbarResultados = document.getElementById('seg-inf-toolbar-resultados');
   if (!anio || !mes) { toast('Seleccioná año y mes', 'error'); return; }
   const mesKey = `${anio}-${mes}`;
+  const mesSig = parseInt(mes) === 12 ? `${parseInt(anio) + 1}-01` : `${anio}-${String(parseInt(mes) + 1).padStart(2, '0')}`;
 
   cont.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>';
   if (toolbarResultados) toolbarResultados.style.display = 'none';
 
-  const pagos = DB.pagos.filter(p => p.mes?.startsWith(mesKey));
-  const pagoIds = pagos.map(p => p.id);
+  // Pagos del mes y cuentas de seguro, frescos de la base (si falla, lo que hay en memoria)
+  let pagos, seguros;
+  try { pagos = await sbGetAll('pagos', `select=id,hoja,mes&mes=gte.${mesKey}-01&mes=lt.${mesSig}-01`); }
+  catch(e) { pagos = DB.pagos.filter(p => p.mes?.startsWith(mesKey)); }
+  try { seguros = await sbGetAll('contrato_suministros', 'select=*&tipo=eq.seguro'); }
+  catch(e) { seguros = DB_SUMINISTROS.filter(s => s.tipo === 'seguro'); }
+  const pagoPorId = new Map(pagos.map(p => [p.id, p]));
+  const seguroPorId = new Map(seguros.map(sg => [sg.id, sg]));
 
   let psSuministros = [];
-  if (pagoIds.length) {
+  if (pagos.length && seguros.length) {
     try {
-      const raw = await sbGet('pagos_suministros', `pago_id=in.(${pagoIds.join(',')})&select=id,pago_id,suministro_id,importe,importe_propietario`);
-      psSuministros = raw.filter(ps => {
-        const sum = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
-        return sum?.tipo === 'seguro' && ((parseFloat(ps.importe)||0) > 0 || (parseFloat(ps.importe_propietario)||0) > 0);
-      });
-    } catch(e) { psSuministros = []; }
+      const raw = await sbGetAll('pagos_suministros', `select=id,pago_id,suministro_id,importe,importe_propietario&suministro_id=in.(${seguros.map(sg => sg.id).join(',')})`);
+      psSuministros = raw.filter(ps => pagoPorId.has(ps.pago_id) && ((parseFloat(ps.importe)||0) > 0 || (parseFloat(ps.importe_propietario)||0) > 0));
+    } catch(e) {
+      cont.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>No se pudieron leer los importes de seguros. Probá de nuevo.</p></div>';
+      toast('Error al leer los seguros: ' + e.message, 'error');
+      return;
+    }
   }
 
   const filas = [];
   psSuministros.forEach(ps => {
-    const seg = DB_SUMINISTROS.find(s => s.id === ps.suministro_id);
-    const pago = DB.pagos.find(p => p.id === ps.pago_id);
+    const seg = seguroPorId.get(ps.suministro_id);
+    const pago = pagoPorId.get(ps.pago_id);
     const c = pago ? DB.contratos.find(x => x.hoja === pago.hoja) : null;
     if (!c || c.fecha_rescision) return;
 
@@ -11391,6 +11403,7 @@ async function renderInformeSeguro() {
 
   window._seguroInformeFilas = filas;
   pintarTablaSeguro();
+  if (conAviso) toast(`Informe generado: ${filas.length} registro${filas.length === 1 ? '' : 's'}`);
 }
 
 function pintarTablaSeguro() {
