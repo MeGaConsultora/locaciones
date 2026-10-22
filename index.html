@@ -677,7 +677,8 @@
         <option value="11">Noviembre</option><option value="12">Diciembre</option>
       </select>
       <button class="btn btn-primary" onclick="renderInformeSeguro(true)" style="font-size:0.82rem">📋 Generar Informe</button>
-      <select class="filter-select" id="seg-inf-orden" style="width:auto" onchange="pintarTablaSeguro()">
+      <select class="filter-select" id="seg-inf-orden" style="width:auto" onchange="ordenSegurosDesdeSelect()">
+        <option value="" disabled hidden>Ordenar por columna…</option>
         <option value="calle">Ordenar por Calle</option>
         <option value="nombre">Ordenar por Nombre Inquilino</option>
       </select>
@@ -11406,17 +11407,48 @@ async function renderInformeSeguro(conAviso = false) {
   if (conAviso) toast(`Informe generado: ${filas.length} registro${filas.length === 1 ? '' : 's'}`);
 }
 
+function sortSeguros(col) {
+  if (window._segSortCol === col) {
+    window._segSortDir = window._segSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    window._segSortCol = col;
+    window._segSortDir = 'asc';
+  }
+  pintarTablaSeguro();
+}
+function ordenSegurosDesdeSelect() {
+  const v = document.getElementById('seg-inf-orden')?.value;
+  if (!v) return;
+  window._segSortCol = v;
+  window._segSortDir = 'asc';
+  pintarTablaSeguro();
+}
+
 function pintarTablaSeguro() {
   const cont = document.getElementById('seg-inf-contenido');
   const toolbarResultados = document.getElementById('seg-inf-toolbar-resultados');
-  const orden = document.getElementById('seg-inf-orden')?.value || 'calle';
+  // Columna y sentido: los del último clic en un encabezado, o los del selector
+  const sortCol = window._segSortCol || document.getElementById('seg-inf-orden')?.value || 'calle';
+  const sortDir = window._segSortDir || 'asc';
   const filas = [...(window._seguroInformeFilas || [])];
-
-  if (orden === 'nombre') {
-    filas.sort((a,b) => (a.nombre||'').localeCompare(b.nombre||''));
-  } else {
-    filas.sort((a,b) => (a.calle||'').localeCompare(b.calle||''));
-  }
+  const txt = v => String(v ?? '').trim();
+  const cmpTxt = (a, b) => txt(a).localeCompare(txt(b), 'es', { numeric: true, sensitivity: 'base' });
+  filas.sort((a, b) => {
+    const va = txt(a[sortCol]), vb = txt(b[sortCol]);
+    // Los vacíos siempre al final, sea cual sea el sentido
+    if (!va && vb) return 1;
+    if (va && !vb) return -1;
+    const r = cmpTxt(va, vb);
+    if (r !== 0) return sortDir === 'asc' ? r : -r;
+    // Desempate estable: calle, número, nombre
+    return cmpTxt(a.calle, b.calle) || cmpTxt(a.numero, b.numero) || cmpTxt(a.nombre, b.nombre);
+  });
+  // Lo que se imprime y se exporta sale en el mismo orden que en pantalla
+  window._seguroInformeFilasOrdenadas = filas;
+  const selOrden = document.getElementById('seg-inf-orden');
+  if (selOrden) selOrden.value = ['calle', 'nombre'].includes(sortCol) ? sortCol : '';
+  const sortArrow = col => `<span class="sort-ind">${sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>`;
+  const thS = (align) => `padding:8px 10px;text-align:${align};font-size:0.72rem;text-transform:uppercase;cursor:pointer;user-select:none`;
 
   if (!filas.length) {
     cont.innerHTML = '<div class="empty-state"><div class="icon">🛡️</div><p>No hay seguros con importe cargado para el período seleccionado</p></div>';
@@ -11442,14 +11474,14 @@ function pintarTablaSeguro() {
 
   cont.innerHTML = `<table style="width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)" id="seg-inf-tabla">
     <thead><tr style="background:#1877F2;color:white">
-      <th style="padding:8px 10px;text-align:left;font-size:0.72rem;text-transform:uppercase">Calle</th>
-      <th style="padding:8px 10px;text-align:center;font-size:0.72rem;text-transform:uppercase">N°</th>
-      <th style="padding:8px 10px;text-align:center;font-size:0.72rem;text-transform:uppercase">Piso</th>
-      <th style="padding:8px 10px;text-align:center;font-size:0.72rem;text-transform:uppercase">Dto</th>
-      <th style="padding:8px 10px;text-align:left;font-size:0.72rem;text-transform:uppercase">Nombre Inquilino / Razón Social</th>
-      <th style="padding:8px 10px;text-align:left;font-size:0.72rem;text-transform:uppercase">Mail inquilino</th>
-      <th style="padding:8px 10px;text-align:left;font-size:0.72rem;text-transform:uppercase">TE inquilino</th>
-      <th style="padding:8px 10px;text-align:center;font-size:0.72rem;text-transform:uppercase">Plan Seguro</th>
+      <th style="${thS('left')}" onclick="sortSeguros('calle')">Calle ${sortArrow('calle')}</th>
+      <th style="${thS('center')}" onclick="sortSeguros('numero')">N° ${sortArrow('numero')}</th>
+      <th style="${thS('center')}" onclick="sortSeguros('piso')">Piso ${sortArrow('piso')}</th>
+      <th style="${thS('center')}" onclick="sortSeguros('dpto')">Dto ${sortArrow('dpto')}</th>
+      <th style="${thS('left')}" onclick="sortSeguros('nombre')">Nombre Inquilino / Razón Social ${sortArrow('nombre')}</th>
+      <th style="${thS('left')}" onclick="sortSeguros('mail')">Mail inquilino ${sortArrow('mail')}</th>
+      <th style="${thS('left')}" onclick="sortSeguros('tel')">TE inquilino ${sortArrow('tel')}</th>
+      <th style="${thS('center')}" onclick="sortSeguros('plan')">Plan Seguro ${sortArrow('plan')}</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
@@ -11487,14 +11519,14 @@ function imprimirInformeSeguro() {
   </head><body>
     <h2>🛡️ Seguros — Listado de contratos</h2>
     <div class="sub">${fechaMes} · ${document.getElementById('seg-inf-count')?.textContent||0} registros</div>
-    ${tabla.outerHTML}
+    ${tabla.outerHTML.replace(/<span class="sort-ind">[^<]*<\/span>/g, '').replace(/ onclick="sortSeguros\('[a-z]+'\)"/g, '')}
   </body></html>`);
   doc.close();
   setTimeout(() => iframe.contentWindow.print(), 300);
 }
 
 function exportarInformeSeguroXLSX() {
-  const filas = window._seguroInformeFilas || [];
+  const filas = window._seguroInformeFilasOrdenadas || window._seguroInformeFilas || [];
   if (!filas.length) { toast('Generá el informe primero', 'error'); return; }
   const anio = document.getElementById('seg-inf-anio')?.value;
   const mes = document.getElementById('seg-inf-mes')?.value;
