@@ -6419,9 +6419,11 @@ function _labelItemKeyRendido(key, extrasProp) {
 function _construirYaRendidoHtml(rendidoMap, extrasProp, comisionPct, compacto = false) {
   rendidoMap = rendidoMap || {};
   const porFecha = {};
+  let totalRendido = 0; // suma firmada de exactamente las líneas que se listan abajo
   const agregar = (key, entry, signo) => {
     const monto = _rendidoMonto(entry);
     if (monto <= 0.01) return;
+    totalRendido += signo === '+' ? monto : -monto;
     const fecha = _rendidoFecha(entry);
     const fechaLabel = fecha ? new Date(fecha).toLocaleDateString('es-AR') : 'fecha no registrada';
     if (!porFecha[fechaLabel]) porFecha[fechaLabel] = [];
@@ -6455,7 +6457,10 @@ function _construirYaRendidoHtml(rendidoMap, extrasProp, comisionPct, compacto =
     </div>`;
   }
   return `<div style="background:#eef7f0;border:1px solid #b7dfc3;border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.75rem;font-size:0.8rem;color:#2d7a4f">
-    <strong>✓ Ya rendido este mes:</strong>
+    <div style="display:flex;align-items:baseline;gap:0.7rem;flex-wrap:wrap">
+      <strong>✓ Ya rendido este mes:</strong>
+      <strong style="font-size:1.1rem;color:#1e6b3f">${formatMoney(redondear2(totalRendido))}</strong>
+    </div>
     ${filas}
   </div>`;
 }
