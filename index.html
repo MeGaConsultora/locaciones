@@ -1446,6 +1446,28 @@ async function sbGetAll(table, params='') {
   return all;
 }
 
+// El servidor devuelve como máximo 1000 filas por consulta, aunque se pida un
+// limit mayor: con sbGet común, las tablas que pasan esa cifra se cortan EN
+// SILENCIO (se pierden los registros más nuevos). sbGetAll pagina de a 1000;
+// como descarta el "order" del pedido (pagina por id), acá se reordena en el
+// cliente con el comparador indicado.
+function cmpTexto(...campos) {
+  return (a, b) => {
+    for (const c of campos) {
+      const va = String(a[c] ?? '').trim(), vb = String(b[c] ?? '').trim();
+      if (!va && vb) return 1;   // vacíos al final, como el "asc" de la base
+      if (va && !vb) return -1;
+      const r = va.localeCompare(vb, 'es', { sensitivity: 'base', numeric: true });
+      if (r) return r;
+    }
+    return 0;
+  };
+}
+async function sbGetAllOrdenado(table, params, comparador) {
+  const filas = await sbGetAll(table, params);
+  return comparador ? filas.sort(comparador) : filas;
+}
+
 async function sbPost(table, body) {
   const r = await sbFetch(`${SB_URL}/rest/v1/${table}`, { method:'POST', body: JSON.stringify(body) });
   const text = await r.text();
@@ -1533,16 +1555,16 @@ async function loadAll() {
     // Refresh token if needed before loading
     if (currentUser?.token) updateAuthHeaders(currentUser.token);
     const [contratos, pagos, gastosCuotas] = await Promise.all([
-      sbGet('contratos', 'select=*&order=titulo.asc&limit=1000'),
+      sbGetAllOrdenado('contratos', 'select=*', cmpTexto('titulo')),
       sbGetAll('pagos', 'select=*,recibo_prop_emitido,recibo_prop_fecha&order=mes.desc'),
-      sbGet('gastos_inicio_cuotas', 'select=*&order=mes.asc&limit=5000').catch(() => [])
+      sbGetAllOrdenado('gastos_inicio_cuotas', 'select=*', cmpTexto('mes')).catch(() => [])
     ]);
     DB.contratos = contratos;
     DB.pagos = pagos;
     DB_GASTOS_CUOTAS = gastosCuotas;
     // Load inmuebles separately so a failure doesn't break everything
     try {
-      DB_INMUEBLES = await sbGet('inmuebles', 'select=*&order=localidad.asc,calle.asc&limit=2000');
+      DB_INMUEBLES = await sbGetAllOrdenado('inmuebles', 'select=*', cmpTexto('localidad', 'calle'));
     } catch(e) { console.error('Error loading inmuebles:', e); DB_INMUEBLES = []; }
     try {
       [DB_CONSORCIOS, DB_CONSORCIO_CONTRATOS, DB_CONSORCIO_GASTOS, DB_CONSORCIO_PAGOS] = await Promise.all([
@@ -11942,7 +11964,7 @@ const PG_CLIENTES = { page: 1 };
 
 async function loadPersonas() {
   try {
-    DB_PERSONAS = await sbGet('personas', 'select=*&order=apellido.asc&limit=2000');
+    DB_PERSONAS = await sbGetAllOrdenado('personas', 'select=*', cmpTexto('apellido'));
   } catch(e) {}
 }
 
@@ -12573,7 +12595,7 @@ function detenerPollingCaja() {
 window._comisionesMulti = window._comisionesMulti || [];
 async function cargarComisionesMulti() {
   try {
-    const filas = await sbGet('recibos_propietario_emitidos', 'select=id,pago_id,persona_id,items_rendidos&limit=5000');
+    const filas = await sbGetAll('recibos_propietario_emitidos', 'select=id,pago_id,persona_id,items_rendidos');
     window._comisionesMulti = filas.filter(f => {
       const e = f.items_rendidos?.alquiler;
       return e && typeof e === 'object' && !e.comisionCobrada && (parseFloat(e.comisionPendiente) || 0) > 0.004;
@@ -14044,12 +14066,12 @@ setInterval(async () => {
   if (hayFormularioAbierto) return;
   try {
     const [contratos, pagos] = await Promise.all([
-      sbGet('contratos', 'select=*&order=titulo.asc&limit=1000'),
+      sbGetAllOrdenado('contratos', 'select=*', cmpTexto('titulo')),
       sbGetAll('pagos', 'select=*,recibo_prop_emitido,recibo_prop_fecha&order=mes.desc')
     ]);
     DB.contratos = contratos;
     DB.pagos = pagos;
-    try { DB_INMUEBLES = await sbGet('inmuebles', 'select=*&order=localidad.asc,calle.asc&limit=2000'); } catch(e) {}
+    try { DB_INMUEBLES = await sbGetAllOrdenado('inmuebles', 'select=*', cmpTexto('localidad', 'calle')); } catch(e) {}
     document.getElementById('sync-status').textContent = `Actualizado ${new Date().toLocaleTimeString('es-AR', {timeZone:'America/Argentina/Buenos_Aires'})}`;
     await loadPersonas();
     await loadContratosPersonas();
@@ -15238,7 +15260,7 @@ async function generarGastosCuotas(contratoId, body) {
   if (!body.gastos_inicio || body.gastos_inicio <= 0) {
     const existing = await sbGet('gastos_inicio_cuotas', `contrato_id=eq.${contratoId}&order=mes.asc`);
     if (existing.length) await Promise.all(existing.map(r => sbDelete('gastos_inicio_cuotas', r.id)));
-    try { DB_GASTOS_CUOTAS = await sbGet('gastos_inicio_cuotas', 'select=*&order=mes.asc&limit=5000'); } catch(e) {}
+    try { DB_GASTOS_CUOTAS = await sbGetAllOrdenado('gastos_inicio_cuotas', 'select=*', cmpTexto('mes')); } catch(e) {}
     return;
   }
   const cuotas = body.gastos_cuotas || 1;
@@ -15276,7 +15298,7 @@ async function generarGastosCuotas(contratoId, body) {
   const toDelete = existing.filter(r => !mesKeys.some(k => r.mes?.startsWith(k)));
   if (toDelete.length) await Promise.all(toDelete.map(r => sbDelete('gastos_inicio_cuotas', r.id)));
   // Reload local cache so grid and GP reflect new values immediately
-  try { DB_GASTOS_CUOTAS = await sbGet('gastos_inicio_cuotas', 'select=*&order=mes.asc&limit=5000'); } catch(e) {}
+  try { DB_GASTOS_CUOTAS = await sbGetAllOrdenado('gastos_inicio_cuotas', 'select=*', cmpTexto('mes')); } catch(e) {}
 }
 
 // ============================================================
