@@ -139,6 +139,16 @@ Repo nuevo `MeGaConsultora/propietarios` → `megaconsultora.github.io/propietar
 
 ---
 
+## PARTE 6B — AMBIENTE DE PRUEBA (STAGING)
+Copia del sistema de gestión con su propia base de Supabase de prueba, para probar cambios antes de producción. El script `herramientas/build_staging.mjs` arma la copia desde esta carpeta (otra URL de Supabase, prefijo `stg:` en el almacenamiento del navegador porque comparte origen con producción, franja roja, sin service worker ni selector "Ver como…"). Rechaza la URL del proyecto real y toda clave que no sea la anon. Pasos de preparación y de uso: `herramientas/AMBIENTE_DE_PRUEBA.md`. Estado: el script está listo y probado; falta que Hugo cree el proyecto de Supabase de prueba, el repo `locaciones-staging` y `herramientas/staging.config.json`.
+
+---
+
+## PARTE 6C — PRUEBAS AUTOMÁTICAS
+Carpeta `pruebas/` en `locaciones-repo` y en `propietarios-repo` (ver su README). Se corren con `node --test`; extraen las funciones de cálculo de `index.html` y las prueban con datos armados a mano (total del mes, reparto entre propietarios, cascada de excedentes, recibo al propietario, cobranza, rescisión; el portal: total a cobrar y estados). `sql.test.mjs` prueba mis_roles, portal_propietario_datos y la auditoría en PGlite (`npm install --no-save @electric-sql/pglite`). Regla de trabajo: correr `node --test` ANTES de pedir confirmación para subir; si algo falla, no se sube. Al corregir un error, escribir primero la prueba que lo reproduce. También corren en GitHub Actions en cada push (avisan con ✗, no frenan Pages).
+
+---
+
 ## PARTE 7 — PENDIENTES / TEMAS ABIERTOS
 - Portal de propietarios: sin PWA/notificaciones push todavía (el de inquilinos sí); evaluar avisarles cuando se les abona un alquiler
 - Dividir `locaciones/index.html` en módulos (ver Parte 3)

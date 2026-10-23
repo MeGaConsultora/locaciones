@@ -1,0 +1,3 @@
+# Configuración local del ambiente de prueba (cada máquina tiene la suya)
+herramientas/staging.config.json
+node_modules/

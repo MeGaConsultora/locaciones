@@ -1,0 +1,5 @@
+{
+  "supabaseUrl": "https://TU-PROYECTO-DE-PRUEBA.supabase.co",
+  "anonKey": "PEGAR_ACA_LA_CLAVE_anon_PUBLICA_DEL_PROYECTO_DE_PRUEBA",
+  "outDir": "../locaciones-staging-repo"
+}
