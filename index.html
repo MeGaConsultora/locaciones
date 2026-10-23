@@ -527,6 +527,7 @@
     <button class="tab-btn" onclick="toggleMantenimientoMenu(event)">🔧 Mantenimiento ▾</button>
     <div class="tab-dropdown-menu" id="mantenimiento-menu" style="display:none">
       <button onclick="exportarBackup()">💾 Exportar backup</button>
+      <button id="btn-menu-auditoria" style="display:none" onclick="selectInforme('auditoria')">🕵️ Auditoría de cambios</button>
     </div>
   </div>
   <button class="tab-btn" id="tab-admin" onclick="showTab('admin',this)" style="display:none;margin-left:auto">👥 Usuarios</button>
@@ -691,6 +692,34 @@
     <div id="seg-inf-contenido">
       <div class="empty-state"><div class="icon">🛡️</div><p>Seleccioná año y mes, luego hacé clic en "Generar Informe"</p></div>
     </div>
+  </div>
+
+  <!-- AUDITORÍA DE CAMBIOS (solo administradores) -->
+  <div id="panel-auditoria" class="panel" style="display:none">
+    <div class="toolbar" style="margin-bottom:0.5rem;flex-wrap:wrap;gap:0.5rem">
+      <strong style="font-size:0.95rem">🕵️ Auditoría de cambios</strong>
+      <select class="filter-select" id="aud-tabla" style="width:auto" onchange="renderAuditoria()">
+        <option value="">Todas las tablas</option>
+        <option value="pagos">Pagos (importes y saldos)</option>
+        <option value="pagos_extras">Extras de pagos</option>
+        <option value="pagos_suministros">Importes de servicios</option>
+        <option value="movimientos_pagos">Movimientos de cobros</option>
+        <option value="caja_movimientos">Caja</option>
+        <option value="recibos_propietario_emitidos">Rendiciones a propietarios</option>
+        <option value="gastos_inicio_cuotas">Honorarios (cuotas)</option>
+        <option value="contratos">Contratos</option>
+        <option value="contrato_personas">Personas del contrato</option>
+        <option value="contrato_suministros">Cuentas de servicios</option>
+        <option value="usuarios">Usuarios y accesos</option>
+      </select>
+      <input type="text" class="search-input" id="aud-hoja" placeholder="Contrato (ej: Corroquer)" style="width:190px" onkeydown="if(event.key==='Enter')renderAuditoria()">
+      <input type="text" class="search-input" id="aud-usuario" placeholder="Usuario (email)" style="width:180px" onkeydown="if(event.key==='Enter')renderAuditoria()">
+      <label style="font-size:0.8rem;color:#666">Desde <input type="date" id="aud-desde" class="filter-select" style="width:auto" onchange="renderAuditoria()"></label>
+      <label style="font-size:0.8rem;color:#666">Hasta <input type="date" id="aud-hasta" class="filter-select" style="width:auto" onchange="renderAuditoria()"></label>
+      <button class="btn btn-primary" onclick="renderAuditoria()" style="font-size:0.82rem">🔎 Buscar</button>
+    </div>
+    <div id="aud-resumen" style="font-size:0.8rem;color:#888;margin-bottom:0.6rem"></div>
+    <div id="aud-contenido"><div class="empty-state"><div class="icon">🕵️</div><p>Elegí los filtros y tocá "Buscar"</p></div></div>
   </div>
 
   <!-- HISTORIAL DE PAGOS -->
@@ -10959,7 +10988,7 @@ function selectInforme(tipo) {
   cerrarMenusNav();
 
   // First hide ALL main panels (same as showTab)
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','auditoria','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -10968,6 +10997,7 @@ function selectInforme(tipo) {
   // Update nav buttons - resaltar el menú al que pertenece este informe
   const grupoNav = ['srv-epe','srv-agua','srv-tgiu','numeracion-servicios'].includes(tipo) ? 'Servicios'
     : ['mensual','firmas','srv-seguro','reporte-total','historial-pagos','historial-notas'].includes(tipo) ? 'Informes'
+    : tipo === 'auditoria' ? 'Mantenimiento'
     : 'Gestión';
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => {
@@ -10986,6 +11016,7 @@ function selectInforme(tipo) {
   else if (tipo === 'srv-seguro') panelId = 'panel-informe-seguro';
   else if (tipo === 'historial-pagos') panelId = 'panel-historial-pagos';
   else if (tipo === 'firmas') panelId = 'panel-informe-firmas';
+  else if (tipo === 'auditoria') panelId = 'panel-auditoria';
 
   const el = document.getElementById(panelId);
   if (el) { el.style.display = 'block'; el.classList.add('active'); }
@@ -11023,6 +11054,11 @@ function selectInforme(tipo) {
     renderHistorialPagos();
   }
   else if (tipo === 'firmas') renderInformeFirmas();
+  else if (tipo === 'auditoria') {
+    const d = document.getElementById('aud-desde');
+    if (d && !d.value) { const dt = new Date(TODAY + 'T12:00:00'); dt.setDate(dt.getDate() - 7); d.value = dt.toISOString().substring(0, 10); }
+    renderAuditoria();
+  }
   else { populateInformeAnios(); renderInforme(); }
 }
 
@@ -11429,6 +11465,102 @@ async function renderInformeSeguro(conAviso = false) {
   if (conAviso) toast(`Informe generado: ${filas.length} registro${filas.length === 1 ? '' : 's'}`);
 }
 
+// ============================================================
+// AUDITORÍA DE CAMBIOS (lee public.auditoria; solo la ven los administradores)
+// ============================================================
+const AUD_TABLAS = {
+  pagos: 'Pagos', pagos_extras: 'Extras', pagos_suministros: 'Importes de servicios',
+  movimientos_pagos: 'Movimientos de cobros', caja_movimientos: 'Caja',
+  recibos_propietario_emitidos: 'Rendiciones', gastos_inicio_cuotas: 'Honorarios',
+  contratos: 'Contratos', contrato_personas: 'Personas del contrato',
+  contrato_suministros: 'Cuentas de servicios', usuarios: 'Usuarios'
+};
+const AUD_PAGINA = 300;
+function _audEsc(v) {
+  return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function _audValor(v) {
+  if (v === null || v === undefined || v === '') return '<em style="color:#aaa">vacío</em>';
+  let t = (typeof v === 'object') ? JSON.stringify(v) : String(v);
+  if (t.length > 90) t = t.substring(0, 90) + '…';
+  return _audEsc(t);
+}
+function _audDetalle(f) {
+  let lineas = [];
+  if (f.operacion === 'UPDATE') {
+    const claves = Object.keys(f.despues || {});
+    lineas = claves.map(k => `<div><strong>${_audEsc(k)}</strong>: <span style="color:#a33;text-decoration:line-through">${_audValor((f.antes||{})[k])}</span> → <span style="color:#1b7a46">${_audValor(f.despues[k])}</span></div>`);
+  } else {
+    const obj = f.operacion === 'INSERT' ? f.despues : f.antes;
+    const etiqueta = f.operacion === 'INSERT' ? 'Nuevo' : 'Eliminado';
+    lineas = Object.entries(obj || {}).filter(([k]) => k !== 'id').map(([k, v]) => `<div><strong>${_audEsc(k)}</strong>: ${_audValor(v)}</div>`);
+    if (lineas.length) lineas.unshift(`<div style="color:#888">${etiqueta}:</div>`);
+  }
+  if (lineas.length <= 4) return lineas.join('');
+  return lineas.slice(0, 4).join('') + `<details><summary style="cursor:pointer;color:var(--blue)">ver ${lineas.length - 4} más</summary>${lineas.slice(4).join('')}</details>`;
+}
+async function renderAuditoria(mas = false) {
+  const cont = document.getElementById('aud-contenido');
+  const resumen = document.getElementById('aud-resumen');
+  if (!cont) return;
+  const tabla = document.getElementById('aud-tabla')?.value || '';
+  const hoja = (document.getElementById('aud-hoja')?.value || '').trim();
+  const usuario = (document.getElementById('aud-usuario')?.value || '').trim();
+  const desde = document.getElementById('aud-desde')?.value || '';
+  const hasta = document.getElementById('aud-hasta')?.value || '';
+  const filtros = [];
+  if (tabla) filtros.push(`tabla=eq.${encodeURIComponent(tabla)}`);
+  if (hoja) filtros.push(`${encodeURIComponent('contexto->>hoja')}=ilike.${encodeURIComponent('*' + hoja + '*')}`);
+  if (usuario) filtros.push(`usuario_email=ilike.${encodeURIComponent('*' + usuario + '*')}`);
+  if (desde) filtros.push(`fecha=gte.${desde}T00:00:00-03:00`);
+  if (hasta) {
+    const sig = new Date(hasta + 'T12:00:00'); sig.setDate(sig.getDate() + 1);
+    filtros.push(`fecha=lt.${sig.toISOString().substring(0, 10)}T00:00:00-03:00`);
+  }
+  const previas = mas ? (window._audFilas || []) : [];
+  if (!mas) cont.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Buscando...</p></div>';
+  let filas;
+  try {
+    const url = `${SB_URL}/rest/v1/auditoria?select=*&order=id.desc&limit=${AUD_PAGINA}&offset=${previas.length}${filtros.length ? '&' + filtros.join('&') : ''}`;
+    const r = await sbFetch(url, { headers: { 'Prefer': 'count=none' } });
+    filas = await r.json();
+    if (!Array.isArray(filas)) throw new Error(filas?.message || 'respuesta inesperada');
+  } catch(e) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>No se pudo leer la auditoría: ' + _audEsc(e.message) + '</p></div>';
+    return;
+  }
+  const todas = previas.concat(filas);
+  window._audFilas = todas;
+  if (resumen) resumen.textContent = todas.length ? `${todas.length} cambio${todas.length === 1 ? '' : 's'} (más recientes primero)` : '';
+  if (!todas.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">🕵️</div><p>No hay cambios registrados con esos filtros</p></div>';
+    return;
+  }
+  const opBadge = { INSERT: 'badge-green', UPDATE: 'badge-yellow', DELETE: 'badge-red' };
+  const opTxt = { INSERT: 'Alta', UPDATE: 'Cambio', DELETE: 'Baja' };
+  const filasHtml = todas.map(f => {
+    const cx = f.contexto || {};
+    const donde = [cx.hoja, cx.mes ? String(cx.mes).substring(0, 7) : ''].filter(Boolean).map(_audEsc).join(' · ') || '—';
+    return `<tr style="border-bottom:1px solid #eee;vertical-align:top">
+      <td style="padding:6px 8px;white-space:nowrap;font-size:0.78rem">${_audEsc(new Date(f.fecha).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</td>
+      <td style="padding:6px 8px;font-size:0.78rem">${_audEsc(f.usuario_email || '—')}</td>
+      <td style="padding:6px 8px;font-size:0.78rem">${_audEsc(AUD_TABLAS[f.tabla] || f.tabla)}</td>
+      <td style="padding:6px 8px"><span class="badge ${opBadge[f.operacion] || 'badge-gray'}">${opTxt[f.operacion] || _audEsc(f.operacion)}</span></td>
+      <td style="padding:6px 8px;font-size:0.78rem">${donde}</td>
+      <td style="padding:6px 8px;font-size:0.78rem;line-height:1.5">${_audDetalle(f)}</td>
+    </tr>`;
+  }).join('');
+  cont.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+    <thead><tr style="background:#1877F2;color:white">
+      <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Fecha</th>
+      <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Usuario</th>
+      <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Qué</th>
+      <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Tipo</th>
+      <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Contrato · mes</th>
+      <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Detalle</th>
+    </tr></thead><tbody>${filasHtml}</tbody></table></div>${filas.length === AUD_PAGINA ? '<div style="text-align:center;margin:12px"><button class="btn btn-secondary" onclick="renderAuditoria(true)">Cargar más</button></div>' : ''}`;
+}
+
 function sortSeguros(col) {
   if (window._segSortCol === col) {
     window._segSortDir = window._segSortDir === 'asc' ? 'desc' : 'asc';
@@ -11788,7 +11920,7 @@ function showTab(name, btn) {
   document.getElementById('informes-menu').style.display = 'none';
   if (name !== 'caja') detenerPollingCaja();
   // Hide ALL panels using both class and inline style
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','auditoria','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -13445,7 +13577,10 @@ async function verificarAprobacion() {
     // Use user token for all subsequent requests
     updateAuthHeaders(currentUser.token);
     document.getElementById('user-name').textContent = u.nombre || u.email;
-    if (u.admin || u.rol === 'admin') document.getElementById('tab-admin').style.display = 'block';
+    if (u.admin || u.rol === 'admin') {
+      document.getElementById('tab-admin').style.display = 'block';
+      const bAud = document.getElementById('btn-menu-auditoria'); if (bAud) bAud.style.display = 'block';
+    }
     hideLoginScreen();
     iniciarTimerInactividad();
     loadAll();
@@ -13578,6 +13713,7 @@ function doLogout() {
   document.getElementById('login-email').value = '';
   document.getElementById('login-pass').value = '';
   document.getElementById('tab-admin').style.display = 'none';
+  const bAudOut = document.getElementById('btn-menu-auditoria'); if (bAudOut) bAudOut.style.display = 'none';
   showLoginScreen();
 }
 
@@ -14045,7 +14181,7 @@ setInterval(async () => {
 // ============================================================
 // Initialize panel visibility
 (function() {
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','auditoria','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) el.style.display = id === 'dashboard' ? 'block' : 'none';
