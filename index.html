@@ -506,6 +506,7 @@
   <div class="tab-dropdown" id="dropdown-informes-rep">
     <button class="tab-btn" onclick="toggleInformesRepMenu(event)">📊 Informes ▾</button>
     <div class="tab-dropdown-menu" id="informes-rep-menu" style="display:none">
+      <button onclick="selectInforme('cobranza')">💳 Tablero de cobranza</button>
       <div class="submenu-wrap">
         <div class="submenu-header" onclick="toggleSubmenuMobile(event)">📅 Reportes mensuales ▸</div>
         <div class="submenu-items">
@@ -692,6 +693,21 @@
     <div id="seg-inf-contenido">
       <div class="empty-state"><div class="icon">🛡️</div><p>Seleccioná año y mes, luego hacé clic en "Generar Informe"</p></div>
     </div>
+  </div>
+
+  <!-- TABLERO DE COBRANZA -->
+  <div id="panel-cobranza" class="panel" style="display:none">
+    <div class="toolbar" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+      <strong style="font-size:0.95rem">💳 Tablero de cobranza</strong>
+      <select class="filter-select" id="cob-estado" style="width:auto" onchange="renderCobranza()">
+        <option value="">Todos los contratos</option>
+        <option value="vigente">Solo vigentes</option>
+        <option value="finalizados">Solo vencidos / rescindidos</option>
+      </select>
+      <input type="text" class="search-input" id="cob-buscar" placeholder="Buscar contrato o inquilino…" style="width:230px" oninput="renderCobranza()">
+      <button class="btn btn-secondary" onclick="exportarCobranzaXLSX()" style="font-size:0.78rem;margin-left:auto">📊 Exportar a Excel</button>
+    </div>
+    <div id="cob-contenido"><div class="loading">Calculando...</div></div>
   </div>
 
   <!-- AUDITORÍA DE CAMBIOS (solo administradores) -->
@@ -10988,7 +11004,7 @@ function selectInforme(tipo) {
   cerrarMenusNav();
 
   // First hide ALL main panels (same as showTab)
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','auditoria','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','auditoria','cobranza','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -10996,7 +11012,7 @@ function selectInforme(tipo) {
 
   // Update nav buttons - resaltar el menú al que pertenece este informe
   const grupoNav = ['srv-epe','srv-agua','srv-tgiu','numeracion-servicios'].includes(tipo) ? 'Servicios'
-    : ['mensual','firmas','srv-seguro','reporte-total','historial-pagos','historial-notas'].includes(tipo) ? 'Informes'
+    : ['mensual','firmas','srv-seguro','reporte-total','historial-pagos','historial-notas','cobranza'].includes(tipo) ? 'Informes'
     : tipo === 'auditoria' ? 'Mantenimiento'
     : 'Gestión';
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -11017,6 +11033,7 @@ function selectInforme(tipo) {
   else if (tipo === 'historial-pagos') panelId = 'panel-historial-pagos';
   else if (tipo === 'firmas') panelId = 'panel-informe-firmas';
   else if (tipo === 'auditoria') panelId = 'panel-auditoria';
+  else if (tipo === 'cobranza') panelId = 'panel-cobranza';
 
   const el = document.getElementById(panelId);
   if (el) { el.style.display = 'block'; el.classList.add('active'); }
@@ -11054,6 +11071,7 @@ function selectInforme(tipo) {
     renderHistorialPagos();
   }
   else if (tipo === 'firmas') renderInformeFirmas();
+  else if (tipo === 'cobranza') renderCobranza();
   else if (tipo === 'auditoria') {
     const d = document.getElementById('aud-desde');
     if (d && !d.value) { const dt = new Date(TODAY + 'T12:00:00'); dt.setDate(dt.getDate() - 7); d.value = dt.toISOString().substring(0, 10); }
@@ -11463,6 +11481,220 @@ async function renderInformeSeguro(conAviso = false) {
   window._seguroInformeFilas = filas;
   pintarTablaSeguro();
   if (conAviso) toast(`Informe generado: ${filas.length} registro${filas.length === 1 ? '' : 's'}`);
+}
+
+// ============================================================
+// TABLERO DE COBRANZA
+// Deuda VENCIDA por contrato (cuotas con saldo cuyo vencimiento ya pasó), su
+// antigüedad, lo que vence en los próximos 7 días y la cobranza del mes. Los
+// recordatorios por WhatsApp se arman con el mensaje ya escrito, pero los envía
+// la persona (abre el chat; nunca se manda nada solo).
+// ============================================================
+function _cobEsc(v) { return _audEsc(v); }
+
+// Número de WhatsApp argentino (celular): 549 + código de área + número, sin 0 ni 15.
+function _waNumero(tel) {
+  let d = String(tel || '').replace(/\D/g, '').replace(/^00/, '');
+  if (!d) return '';
+  if (d.startsWith('54')) {
+    if (!d.startsWith('549') && d.length === 12) d = '549' + d.slice(2);
+    return d.length === 13 ? d : '';
+  }
+  if (d.startsWith('0')) d = d.slice(1);
+  if (d.length === 12) {                       // código de área + 15 + número
+    for (let area = 2; area <= 4; area++) {
+      if (d.substr(area, 2) === '15') { d = d.slice(0, area) + d.slice(area + 2); break; }
+    }
+  }
+  return d.length === 10 ? '549' + d : '';
+}
+
+function calcularCobranza(hoy = TODAY) {
+  const hoyMes = hoy.substring(0, 7);
+  const contratoPorHoja = new Map(DB.contratos.map(c => [c.hoja, c]));
+  const en7 = (() => { const d = new Date(hoy + 'T12:00:00'); d.setDate(d.getDate() + 7); return d.toISOString().substring(0, 10); })();
+  const dias = (a, b) => Math.round((new Date(a + 'T12:00:00') - new Date(b + 'T12:00:00')) / 86400000);
+  // Mes siguiente al actual: con vencimiento "VENCIDO" la cuota de este mes vence el mes que viene
+  const mesSig = (() => { const [y, m] = hoyMes.split('-').map(Number); return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`; })();
+
+  // Inquilinos por contrato (en orden)
+  const inquilinosDe = new Map();
+  (DB_CONTRATO_PERSONAS || []).filter(cp => cp.rol === 'inquilino')
+    .sort((a, b) => (a.orden || 0) - (b.orden || 0))
+    .forEach(cp => {
+      const per = (DB_PERSONAS || []).find(x => x.id === cp.persona_id);
+      if (!per) return;
+      const k = parseInt(cp.contrato_id);
+      if (!inquilinosDe.has(k)) inquilinosDe.set(k, []);
+      inquilinosDe.get(k).push(per);
+    });
+
+  const porContrato = new Map();
+  const porVencer = [];
+  const buckets = { b30: { n: 0, monto: 0 }, b60: { n: 0, monto: 0 }, b90: { n: 0, monto: 0 }, bMas: { n: 0, monto: 0 } };
+  let facturadoMes = 0, cobradoMes = 0;
+
+  DB.pagos.forEach(p => {
+    if (!p.mes || p.pagado === 'RESCINDIDO') return;
+    const c = contratoPorHoja.get(p.hoja);
+    if (!c) return;
+    const mesKey = p.mes.substring(0, 7);
+    const total = p.total || 0, saldo = Math.max(0, p.saldo || 0);
+    if (mesKey === hoyMes) { facturadoMes += total; cobradoMes += Math.max(0, total - saldo); }
+    if (saldo < 1 || total <= 0) return;                       // sin deuda (o redondeo)
+    const venc = p.fecha_pago_hasta ? String(p.fecha_pago_hasta).substring(0, 10) : calcularFechaVencimiento(mesKey, c);
+    if (venc < hoy) {
+      const d = dias(hoy, venc);
+      const b = d <= 30 ? buckets.b30 : d <= 60 ? buckets.b60 : d <= 90 ? buckets.b90 : buckets.bMas;
+      b.n++; b.monto += saldo;
+      if (!porContrato.has(c.hoja)) porContrato.set(c.hoja, { c, cuotas: [] });
+      porContrato.get(c.hoja).cuotas.push({ mes: mesKey, saldo, venc, dias: d });
+    } else if (venc <= en7 && mesKey <= mesSig) {
+      porVencer.push({ c, inquilinos: inquilinosDe.get(parseInt(c.id)) || [], mes: mesKey, saldo, venc, en: dias(venc, hoy) });
+    }
+  });
+
+  const mora = [...porContrato.values()].map(x => {
+    const inqs = inquilinosDe.get(parseInt(x.c.id)) || [];
+    const conTel = inqs.find(i => _waNumero(i.telefono)) || inqs.find(i => i.telefono) || inqs[0] || null;
+    return {
+      c: x.c, estado: getEstado(x.c), inqs, contacto: conTel,
+      cuotas: x.cuotas.sort((a, b) => a.mes < b.mes ? -1 : 1),
+      saldo: x.cuotas.reduce((t, q) => t + q.saldo, 0),
+      diasMax: Math.max(...x.cuotas.map(q => q.dias))
+    };
+  });
+  porVencer.sort((a, b) => a.venc < b.venc ? -1 : 1);
+  return { mora, porVencer, buckets, facturadoMes, cobradoMes, hoy };
+}
+
+function sortCobranza(col) {
+  if (window._cobSortCol === col) window._cobSortDir = window._cobSortDir === 'asc' ? 'desc' : 'asc';
+  else { window._cobSortCol = col; window._cobSortDir = ['saldo', 'dias', 'cuotas'].includes(col) ? 'desc' : 'asc'; }
+  renderCobranza();
+}
+
+function _cobMensajeWA(r) {
+  const nombre = ((r.contacto?.nombre || '').trim().split(' ')[0]) || '';
+  const meses = r.cuotas.map(q => new Date(q.mes + '-15T12:00:00').toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })).join(', ');
+  const monto = String(formatMoney(r.saldo)).replace(/<[^>]+>/g, '');
+  return `Hola${nombre ? ' ' + nombre : ''}, te escribimos de MeGa Consultora. Nuestro registro indica un saldo vencido de ${monto} correspondiente a ${meses} del inmueble ${r.c.titulo || r.c.hoja}. Si ya lo abonaste, por favor enviá el comprobante. ¡Gracias!`;
+}
+
+function _cobFilas() {
+  const datos = calcularCobranza();
+  const estadoF = document.getElementById('cob-estado')?.value || '';
+  const q = (document.getElementById('cob-buscar')?.value || '').trim().toLowerCase();
+  const nombreInq = r => r.inqs.map(i => formatNombrePersona(i)).join(' y ');
+  let mora = datos.mora.filter(r =>
+    (!estadoF || (estadoF === 'vigente' ? r.estado === 'vigente' : r.estado !== 'vigente')) &&
+    (!q || (r.c.titulo || r.c.hoja || '').toLowerCase().includes(q) || nombreInq(r).toLowerCase().includes(q)));
+  const sortCol = window._cobSortCol || 'dias';
+  const sortDir = window._cobSortDir || 'desc';
+  const getters = {
+    contrato: r => (r.c.titulo || r.c.hoja || '').toLowerCase(), inquilino: r => nombreInq(r).toLowerCase(),
+    cuotas: r => r.cuotas.length, saldo: r => r.saldo, dias: r => r.diasMax, estado: r => r.estado
+  };
+  const g = getters[sortCol] || getters.dias;
+  mora.sort((a, b) => {
+    const va = g(a), vb = g(b);
+    const r = typeof va === 'string' ? va.localeCompare(vb, 'es', { sensitivity: 'base' }) : va - vb;
+    return (sortDir === 'asc' ? r : -r) || (b.saldo - a.saldo);
+  });
+  const porVencer = datos.porVencer.filter(r =>
+    (!estadoF || (estadoF === 'vigente' ? getEstado(r.c) === 'vigente' : getEstado(r.c) !== 'vigente')) &&
+    (!q || (r.c.titulo || r.c.hoja || '').toLowerCase().includes(q) || r.inquilinos.map(i => formatNombrePersona(i)).join(' ').toLowerCase().includes(q)));
+  return { datos, mora, porVencer, nombreInq, sortCol, sortDir };
+}
+
+function renderCobranza() {
+  const cont = document.getElementById('cob-contenido');
+  if (!cont) return;
+  const { datos, mora, porVencer, nombreInq, sortCol, sortDir } = _cobFilas();
+  const f = n => formatMoney(n);
+  const totalMora = mora.reduce((t, r) => t + r.saldo, 0);
+  const totalPorVencer = porVencer.reduce((t, r) => t + r.saldo, 0);
+  const pct = datos.facturadoMes > 0 ? Math.round(datos.cobradoMes / datos.facturadoMes * 100) : 0;
+  const bk = datos.buckets;
+  const bucketHtml = [['1 a 30 días', bk.b30], ['31 a 60 días', bk.b60], ['61 a 90 días', bk.b90], ['Más de 90 días', bk.bMas]]
+    .map(([t, b]) => `<div class="stat-card"><div class="stat-label">${t}</div><div class="stat-val" style="font-size:1.05rem;color:${b.monto > 0 ? '#c0392b' : '#2d6a4f'}">${f(b.monto)}</div><div style="font-size:0.72rem;color:#888">${b.n} cuota${b.n === 1 ? '' : 's'}</div></div>`).join('');
+  const arrow = col => `<span class="sort-ind">${sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>`;
+  const th = (col, txt, align = 'left') => `<th style="padding:8px;text-align:${align};font-size:0.72rem;text-transform:uppercase;cursor:pointer;user-select:none" onclick="sortCobranza('${col}')">${txt} ${arrow(col)}</th>`;
+  const mesTxt = m => new Date(m + '-15T12:00:00').toLocaleDateString('es-AR', { month: 'short', year: '2-digit' }).replace('.', '');
+  const colorDias = d => d > 90 ? '#7b1fa2' : d > 60 ? '#c0392b' : d > 30 ? '#e67e22' : '#b8860b';
+
+  const filasMora = mora.map(r => {
+    const num = _waNumero(r.contacto?.telefono);
+    const msg = encodeURIComponent(_cobMensajeWA(r));
+    const wa = r.contacto ? `<a href="https://wa.me/${num}?text=${msg}" target="_blank" rel="noopener" title="${num ? 'WhatsApp a ' + _cobEsc(r.contacto.telefono) : 'Sin celular válido: se abre WhatsApp para elegir el chat'}" style="text-decoration:none;font-size:1.05rem">💬</a>` : '';
+    const mail = r.contacto?.email ? `<a href="mailto:${_cobEsc(r.contacto.email)}?subject=${encodeURIComponent('Saldo vencido — ' + (r.c.titulo || r.c.hoja))}&body=${msg}" title="${_cobEsc(r.contacto.email)}" style="text-decoration:none;font-size:1.05rem;margin-left:6px">✉️</a>` : '';
+    const tel = r.contacto?.telefono ? `<div style="font-size:0.7rem;color:#888">${_cobEsc(r.contacto.telefono)}</div>` : '';
+    return `<tr style="border-bottom:1px solid #eee;vertical-align:middle">
+      <td style="padding:6px 8px;font-weight:600"><a href="#" onclick="openContrato(${r.c.id});return false" style="color:var(--blue)">${_cobEsc(r.c.titulo || r.c.hoja)}</a></td>
+      <td style="padding:6px 8px;font-size:0.8rem">${_cobEsc(nombreInq(r)) || '—'}${tel}</td>
+      <td style="padding:6px 8px;font-size:0.78rem">${r.cuotas.length} · ${r.cuotas.map(q => mesTxt(q.mes)).join(', ')}</td>
+      <td style="padding:6px 8px;text-align:right;font-weight:700;color:#c0392b;white-space:nowrap">${f(r.saldo)}</td>
+      <td style="padding:6px 8px;text-align:center"><span style="font-weight:700;color:${colorDias(r.diasMax)}">${r.diasMax}</span> <span style="font-size:0.72rem;color:#888">días</span></td>
+      <td style="padding:6px 8px;text-align:center"><span class="badge ${r.estado === 'vigente' ? 'badge-green' : r.estado === 'rescindido' ? 'badge-red' : 'badge-gray'}">${r.estado}</span></td>
+      <td style="padding:6px 8px;text-align:center;white-space:nowrap">${wa}${mail}</td>
+    </tr>`;
+  }).join('');
+
+  const filasPV = porVencer.map(r => `<tr style="border-bottom:1px solid #eee">
+      <td style="padding:5px 8px;font-weight:600"><a href="#" onclick="openContrato(${r.c.id});return false" style="color:var(--blue)">${_cobEsc(r.c.titulo || r.c.hoja)}</a></td>
+      <td style="padding:5px 8px;font-size:0.8rem">${_cobEsc(r.inquilinos.map(i => formatNombrePersona(i)).join(' y ')) || '—'}</td>
+      <td style="padding:5px 8px;font-size:0.78rem">${mesTxt(r.mes)}</td>
+      <td style="padding:5px 8px;font-size:0.78rem;white-space:nowrap">${_cobEsc(formatDate(r.venc, true))} <span style="color:#888">(${r.en === 0 ? 'hoy' : r.en === 1 ? 'mañana' : 'en ' + r.en + ' días'})</span></td>
+      <td style="padding:5px 8px;text-align:right;font-weight:600;white-space:nowrap">${f(r.saldo)}</td>
+    </tr>`).join('');
+
+  cont.innerHTML = `
+    <div class="report-stats-grid">
+      <div class="stat-card"><div class="stat-label">Deuda vencida</div><div class="stat-val" style="color:${totalMora > 0 ? '#c0392b' : '#2d6a4f'}">${f(totalMora)}</div><div style="font-size:0.72rem;color:#888">${mora.length} contrato${mora.length === 1 ? '' : 's'} en mora</div></div>
+      <div class="stat-card"><div class="stat-label">Vence en 7 días</div><div class="stat-val">${f(totalPorVencer)}</div><div style="font-size:0.72rem;color:#888">${porVencer.length} cuota${porVencer.length === 1 ? '' : 's'}</div></div>
+      <div class="stat-card"><div class="stat-label">Cobranza del mes</div><div class="stat-val">${pct}%</div><div style="font-size:0.72rem;color:#888">${f(datos.cobradoMes)} de ${f(datos.facturadoMes)}</div></div>
+    </div>
+    <div style="font-size:0.78rem;font-weight:600;color:#666;margin:0.4rem 0">Antigüedad de la deuda vencida (por cuota)</div>
+    <div class="report-stats-grid">${bucketHtml}</div>
+    <div style="font-size:0.95rem;font-weight:700;margin:1.2rem 0 0.5rem">En mora (${mora.length})</div>
+    ${mora.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+      <thead><tr style="background:#1877F2;color:white">
+        ${th('contrato', 'Contrato')}${th('inquilino', 'Inquilino')}${th('cuotas', 'Cuotas adeudadas')}${th('saldo', 'Saldo vencido', 'right')}${th('dias', 'Mora', 'center')}${th('estado', 'Estado', 'center')}
+        <th style="padding:8px;text-align:center;font-size:0.72rem;text-transform:uppercase">Avisar</th>
+      </tr></thead><tbody>${filasMora}</tbody>
+      <tfoot><tr style="background:#f5f5f5;font-weight:700"><td colspan="3" style="padding:7px 8px">TOTAL (${mora.length} contratos)</td><td style="padding:7px 8px;text-align:right;color:#c0392b">${f(totalMora)}</td><td colspan="3"></td></tr></tfoot>
+    </table></div>
+    <p style="font-size:0.74rem;color:#999;margin-top:6px">💬 abre WhatsApp con el mensaje escrito para que lo revises y lo envíes vos. La mora cuenta desde el vencimiento de la cuota más antigua.</p>`
+    : '<div class="empty-state"><div class="icon">🎉</div><p>No hay deuda vencida con estos filtros</p></div>'}
+    <div style="font-size:0.95rem;font-weight:700;margin:1.4rem 0 0.5rem">Vencen en los próximos 7 días (${porVencer.length})</div>
+    ${porVencer.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+      <thead><tr style="background:#1877F2;color:white">
+        <th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Contrato</th><th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Inquilino</th><th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Mes</th><th style="padding:8px;text-align:left;font-size:0.72rem;text-transform:uppercase">Vence</th><th style="padding:8px;text-align:right;font-size:0.72rem;text-transform:uppercase">Saldo</th>
+      </tr></thead><tbody>${filasPV}</tbody></table></div>`
+    : '<div class="empty-state"><p>No hay cuotas por vencer en los próximos 7 días</p></div>'}`;
+}
+
+function exportarCobranzaXLSX() {
+  const { mora, nombreInq } = _cobFilas();
+  if (!mora.length) { toast('No hay deuda vencida para exportar', 'error'); return; }
+  const data = mora.map(r => ({
+    'Contrato': r.c.titulo || r.c.hoja || '',
+    'Inquilino': nombreInq(r),
+    'Teléfono': r.contacto?.telefono || '',
+    'Mail': r.contacto?.email || '',
+    'Cuotas adeudadas': r.cuotas.map(q => q.mes).join(', '),
+    'Saldo vencido': Math.round(r.saldo * 100) / 100,
+    'Días de mora': r.diasMax,
+    'Estado del contrato': r.estado
+  }));
+  try {
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws['!cols'] = [{ wch: 26 }, { wch: 32 }, { wch: 16 }, { wch: 28 }, { wch: 34 }, { wch: 16 }, { wch: 12 }, { wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'En mora');
+    XLSX.writeFile(wb, `Cobranza_${TODAY}.xlsx`);
+    toast('Excel descargado ✓');
+  } catch(e) { toast('Error al generar el Excel: ' + e.message, 'error'); }
 }
 
 // ============================================================
@@ -11920,7 +12152,7 @@ function showTab(name, btn) {
   document.getElementById('informes-menu').style.display = 'none';
   if (name !== 'caja') detenerPollingCaja();
   // Hide ALL panels using both class and inline style
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','auditoria','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','auditoria','cobranza','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) { el.classList.remove('active'); el.style.display = 'none'; }
@@ -14181,7 +14413,7 @@ setInterval(async () => {
 // ============================================================
 // Initialize panel visibility
 (function() {
-  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','auditoria','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
+  const allPanels = ['dashboard','contratos','informes','reporte-total','vencimientos','recibos-emitir','numeracion-servicios','consorcios','noticias','historial-notas','srv-informe','informe-seguro','auditoria','cobranza','historial-pagos','informe-firmas','inmuebles','clientes','caja','admin'];
   allPanels.forEach(id => {
     const el = document.getElementById('panel-' + id);
     if (el) el.style.display = id === 'dashboard' ? 'block' : 'none';
