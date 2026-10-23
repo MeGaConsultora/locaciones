@@ -17,6 +17,8 @@ Sin eso se saltean y el resto corre igual. Duración: unos pocos segundos.
 |---|---|
 | `calculos.test.mjs` | total de un mes, reparto entre propietarios, excedente a meses siguientes, qué se ofrece cobrar de los extras, recibo al propietario (comisión, extras, servicios, rendición parcial, honorarios), rescisión, tablero de cobranza, teléfonos de WhatsApp, orden de listas, carga por páginas |
 | `sql.test.mjs` | `mis_roles()`, `portal_propietario_datos()` y la auditoría (qué registra, secretos, permisos) |
+| `saldos_sql.test.mjs` | el total de un mes calculado en la base es IDÉNTICO al de la pantalla (500 casos al azar) y `control_saldos()` encuentra los meses desfasados |
+| `totales_automaticos.test.mjs` | la reparación única, los triggers de 15_totales_automaticos.sql y 400 operaciones al azar comparadas contra calcularTotal |
 
 ## Cuándo correrlas
 Antes de cada subida a producción. También corren solas en GitHub (`.github/workflows/pruebas.yml`):

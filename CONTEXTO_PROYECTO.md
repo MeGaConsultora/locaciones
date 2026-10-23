@@ -149,6 +149,11 @@ Carpeta `pruebas/` en `locaciones-repo` y en `propietarios-repo` (ver su README)
 
 ---
 
+## PARTE 6D — TOTALES Y SALDOS CALCULADOS EN LA BASE
+El total, el saldo y el estado de cada mes (`pagos.total / saldo / pagado`) los mantiene la base sola con la MISMA regla que usa la pantalla (calcularTotal / recalcularFilaPago): total = alquiler + servicios + extras; saldo = total − pagado_importe (nunca negativo); estado = SI si saldo 0, PARCIAL si hay algo abonado, si no queda como estaba. `14_control_saldos.sql`: funciones de solo lectura `total_calculado_pago(id)` y `control_saldos()` (lista los meses cuyo total/saldo guardado no coincide con el calculado; debe devolver 0 filas). `15_totales_automaticos.sql`: reparación única + triggers que recalculan el mes al cambiar alquiler, montos viejos de servicios, lo abonado, extras o importes por cuenta (los meses RESCINDIDO no se tocan). Antes del 15 había 96 meses desfasados (oct 2026): 55 con el total guardado viejo y el saldo bien, 39 de noviembre 2026 con servicios contados de más, 1 de marzo con un extra cobrado fuera del sistema y 1 de 2023 con $363 cobrados un mes tarde; se corrigieron a mano los dos últimos antes de correr el 15. Pruebas: `pruebas/saldos_sql.test.mjs` (el cálculo de la base es idéntico al de la pantalla en 500 casos al azar) y `pruebas/totales_automaticos.test.mjs` (reparación, triggers y 400 operaciones al azar contra calcularTotal). Si alguna vez se cambia calcularTotal en index.html hay que cambiar también total_calculado_pago en SQL: esas pruebas avisan si dejan de coincidir. Los cambios de la reparación quedaron en la auditoría con valor anterior y nuevo.
+
+---
+
 ## PARTE 7 — PENDIENTES / TEMAS ABIERTOS
 - Portal de propietarios: sin PWA/notificaciones push todavía (el de inquilinos sí); evaluar avisarles cuando se les abona un alquiler
 - Dividir `locaciones/index.html` en módulos (ver Parte 3)
