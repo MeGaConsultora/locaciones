@@ -19,6 +19,7 @@ Sin eso se saltean y el resto corre igual. Duración: unos pocos segundos.
 | `sql.test.mjs` | `mis_roles()`, `portal_propietario_datos()` y la auditoría (qué registra, secretos, permisos) |
 | `saldos_sql.test.mjs` | el total de un mes calculado en la base es IDÉNTICO al de la pantalla (500 casos al azar) y `control_saldos()` encuentra los meses desfasados |
 | `totales_automaticos.test.mjs` | la reparación única, los triggers de 15_totales_automaticos.sql y 400 operaciones al azar comparadas contra calcularTotal |
+| `blindaje_saldos.test.mjs` | 16_blindaje_saldos.sql: la base pisa cualquier total/saldo viejo, se entera de cambios en contratos y cuentas de servicio, y el botón de reparación solo lo usa un administrador |
 
 ## Cuándo correrlas
 Antes de cada subida a producción. También corren solas en GitHub (`.github/workflows/pruebas.yml`):

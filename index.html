@@ -471,6 +471,7 @@
       <span id="notif-badge" style="display:none;position:absolute;top:2px;right:2px;background:#c8483a;color:white;font-size:0.6rem;font-weight:700;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;line-height:1"></span>
     </button>
     <div id="notif-panel" style="display:none;position:absolute;top:56px;right:1rem;width:360px;max-height:480px;overflow-y:auto;background:white;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.25);z-index:300;border:1px solid var(--border)"></div>
+    <button class="sync-btn" id="btn-desfase" style="display:none;background:#c0392b;color:#fff" onclick="repararSaldosDesfasados()"></button>
     <button class="sync-btn" onclick="loadAll()">↻ Actualizar</button><button class="sync-btn" onclick="doLogout()">Salir</button>
   </div>
 </header>
@@ -1565,6 +1566,46 @@ async function recargarSuministros() {
   DB_SUMINISTROS = filas;
 }
 
+// ============================================================
+// AVISO DE SALDOS DESFASADOS (solo administradores)
+// La base mantiene sola el total / saldo de cada mes (sql 14-16). Esto es la red de
+// seguridad: al cargar el sistema (como mucho una vez cada 10 minutos) le pregunta a
+// control_saldos() si algún mes quedó con un valor guardado distinto del calculado y,
+// si lo hay, muestra un botón rojo para recalcularlos con un clic.
+// Si las funciones todavía no existen en la base, no muestra nada ni molesta.
+// ============================================================
+let _desfaseUltimaRevision = 0;
+async function verificarSaldosDesfasados(forzar = false) {
+  const btn = document.getElementById('btn-desfase');
+  if (!btn) return;
+  if (!(currentUsuario && (currentUsuario.admin || currentUsuario.rol === 'admin'))) { btn.style.display = 'none'; return; }
+  if (!forzar && Date.now() - _desfaseUltimaRevision < 10 * 60 * 1000) return;
+  _desfaseUltimaRevision = Date.now();
+  try {
+    const r = await sbFetch(`${SB_URL}/rest/v1/rpc/control_saldos`, { method: 'POST', body: JSON.stringify({ solo_diferencias: true }) });
+    const filas = await r.json();
+    if (!Array.isArray(filas)) throw new Error(filas?.message || 'respuesta inesperada');
+    if (!filas.length) { btn.style.display = 'none'; return; }
+    btn.textContent = `⚠ ${filas.length} mes${filas.length === 1 ? '' : 'es'} con saldo desfasado`;
+    btn.title = 'El total o el saldo guardado de algunos meses no coincide con el calculado. Tocá para recalcularlos.';
+    btn.style.display = '';
+  } catch(e) {
+    btn.style.display = 'none';
+    console.warn('No se pudo revisar el control de saldos:', e.message || e);
+  }
+}
+async function repararSaldosDesfasados() {
+  if (!confirm('Se van a recalcular el total y el saldo de los meses que hoy no coinciden con el cálculo.\n\nCada cambio queda registrado en la auditoría. ¿Continuar?')) return;
+  try {
+    const r = await sbFetch(`${SB_URL}/rest/v1/rpc/recalcular_todos_los_pagos`, { method: 'POST', body: '{}' });
+    const n = await r.json();
+    if (typeof n !== 'number') throw new Error(n?.message || 'respuesta inesperada');
+    toast(`Saldos recalculados: ${n} mes${n === 1 ? '' : 'es'} ✓`);
+    _desfaseUltimaRevision = 0;
+    await loadAll();
+  } catch(e) { toast('No se pudo recalcular: ' + (e.message || e), 'error'); }
+}
+
 async function loadAll() {
   // Verify user is still approved on every loadAll.
   // IMPORTANTE: este chequeo es secundario/informativo — nunca debe tener
@@ -1637,6 +1678,7 @@ async function loadAll() {
     renderClientes();
     actualizarBadgeNotificaciones();
     verificarAccesosVencidos();
+    verificarSaldosDesfasados();
   } catch(e) {
     document.getElementById('sync-status').textContent = '⚠ Error de conexión';
     toast('Error al conectar. Verificá tu conexión a internet.', 'error');
@@ -13946,6 +13988,7 @@ function doLogout() {
   document.getElementById('login-pass').value = '';
   document.getElementById('tab-admin').style.display = 'none';
   const bAudOut = document.getElementById('btn-menu-auditoria'); if (bAudOut) bAudOut.style.display = 'none';
+  const bDesOut = document.getElementById('btn-desfase'); if (bDesOut) bDesOut.style.display = 'none';
   showLoginScreen();
 }
 

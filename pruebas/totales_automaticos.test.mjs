@@ -108,6 +108,7 @@ test('triggers == pantalla: tras 400 operaciones al azar, lo guardado coincide c
     insert into public.contrato_suministros select g, ((g - 1) / 3) + 1, (array['epe','agua','tgiu'])[((g - 1) % 3) + 1] from generate_series(1, 6) g;`);
   await db.exec(leerSql('14_control_saldos.sql'));
   await db.exec(leerSql('15_totales_automaticos.sql'));
+  await db.exec(leerSql('16_blindaje_saldos.sql'));   // el blindaje no debe cambiar ningún resultado
 
   // Espejo del estado, para calcular con las funciones de la pantalla
   const DB = { contratos: [1, 2, 3, 4, 5, 6].map(i => ({ id: i, hoja: 'C' + i })) };
