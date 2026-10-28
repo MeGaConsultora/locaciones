@@ -15224,7 +15224,9 @@ async function procesarExcelTGIU() {
     const conContrato = resultados.filter(r => !r.sinContrato);
     const sinContrato = resultados.filter(r => r.sinContrato);
     const sinMesTotalCount = conContrato.filter(r => r.contratos.every(x => x.sinMes)).length;
-    window._excelImportData = { resultados: conContrato, mesKey, srv };
+    // Se guarda la lista COMPLETA (con las filas "sin contrato"): data-idx de cada casilla es la
+    // posición en esa lista, y confirmarImportarExcel() la usa para encontrar la fila tildada.
+    window._excelImportData = { resultados, mesKey, srv };
 
     // Hide procesar button, show preview buttons
     document.getElementById('btn-procesar-excel').style.display = 'none';
@@ -15293,10 +15295,11 @@ async function confirmarImportarExcel() {
   if (!resultados?.length) return;
   // Only import checked rows
   const checkedIdxs = new Set([...document.querySelectorAll('.excel-chk-row:checked')].map(c => parseInt(c.dataset.idx)));
-  const seleccionados = resultados.filter((r, i) => checkedIdxs.has(i));
+  const seleccionados = resultados.filter((r, i) => checkedIdxs.has(i) && !r.sinContrato);
   if (!seleccionados.length) { toast('Seleccioná al menos un registro', 'error'); return; }
   const mesStr = mesKey + '-01';
   let cargados = 0;
+  const fallidos = [];
   toast('Importando...', 'info');
   try { await recargarSuministros(); } catch(e) {}
 
@@ -15354,10 +15357,11 @@ async function confirmarImportarExcel() {
         cargados++;
         break; // avoid double counting
       }
-    } catch(e) { console.error('Error:', r.nro, e.message); }
+    } catch(e) { console.error('Error:', r.nro, e.message); fallidos.push(r.nro); }
   }
 
-  toast(`✓ ${cargados} registros importados desde Excel`, 'success');
+  if (fallidos.length) toast(`${cargados} importados · ${fallidos.length} con error (${fallidos.slice(0, 5).join(', ')}${fallidos.length > 5 ? '…' : ''}). Revisalos.`, 'error');
+  else toast(`✓ ${cargados} registros importados desde Excel`, 'success');
   closeModal();
   await loadAll();
 }
