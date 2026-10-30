@@ -2784,7 +2784,6 @@ async function openContratoNuevo(c, tabInicial) {
         <div class="cn-kpi" id="cn-kpi-total"><label>Total acumulado</label><b>—</b></div>
         <div class="cn-kpi" id="cn-kpi-alq"><label>Alquiler actual</label><b>—</b></div>
       </div>
-      <div id="honorarios-row"></div>
       <details class="cn-det" ${firmaCompleta ? '' : 'open'}>
         <summary><span id="cn-sum-firma"></span></summary>
         <div id="checklist-contrato">${renderChecklistContrato(c)}</div>
@@ -2801,6 +2800,7 @@ async function openContratoNuevo(c, tabInicial) {
         <summary><span id="cn-sum-notas"></span></summary>
         <div id="notas-contrato">${renderNotasContrato(c.id, [])}</div>
       </details>
+      <div id="honorarios-row"></div>
       <div id="grilla-container"><div class="loading-overlay">Cargando grilla de pagos...</div></div>
     </div>
   `;
