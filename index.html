@@ -205,6 +205,21 @@
   .cn-futuro { background:#f0f4ff; border-color:#b5c6f2; color:#3a4a85; }
   .cn-sin { background:#f5f5f5; color:#777; }
   .cn-actual { outline:2px solid var(--ink); outline-offset:1px; }
+  .cn-chip.cn-sel { box-shadow:0 0 0 3px var(--accent); }
+  .cn-d-mes { margin-top:0.8rem; margin-bottom:0; border:1.5px solid var(--border); }
+  .cn-d-head { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:0.7rem; }
+  .cn-d-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:0.7rem 1rem; background:var(--cream); border-radius:8px; padding:0.7rem 0.9rem; }
+  .cn-d-item label { font-size:0.66rem; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#999; display:block; margin-bottom:2px; }
+  .cn-d-item span { font-size:0.88rem; color:var(--ink); }
+  .cn-d-nota { font-size:0.78rem; color:#666; margin-top:0.5rem; }
+  .cn-d-adj { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:0.7rem; }
+  .cn-d-adj-t { font-size:0.7rem; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#999; margin-right:4px; }
+  .cn-adj { border:1.5px solid var(--border); background:white; border-radius:14px; padding:3px 10px; font-size:0.76rem; font-family:inherit; cursor:pointer; color:var(--ink); }
+  .cn-adj:hover { background:var(--cream); }
+  .cn-d-btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:0.9rem; padding-top:0.8rem; border-top:1px solid var(--border); }
+  .cn-d-btns button { flex:1 1 140px; border:1.5px solid var(--border); background:white; border-radius:8px; padding:9px 10px; font-size:0.82rem; font-family:inherit; cursor:pointer; color:var(--ink); white-space:nowrap; }
+  .cn-d-btns button:hover { background:var(--cream); }
+  .cn-d-btns button.cn-peligro { flex:0 0 auto; color:#721c24; border-color:#e8a1a8; }
   .cn-leyenda { font-size:0.72rem; color:#888; margin-top:6px; }
   .search-input {
     flex:1; min-width:220px; padding:0.65rem 1rem;
@@ -2676,9 +2691,6 @@ function cnCambiarVistaMeses(v) {
   document.querySelectorAll('.cn-vista-sel button').forEach(b => b.classList.toggle('activo', b.dataset.v === v));
   if (v === 'tabla') ajustarZoomGrilla();
 }
-function cnAbrirMes(mesKey) {
-  if (contratoActual) editarMes(contratoActual.hoja, contratoActual.id, mesKey);
-}
 function cnPersonasHtml(c, rol, vacio) {
   const lista = DB_CONTRATO_PERSONAS.filter(x => x.contrato_id === c.id && x.rol === rol);
   if (!lista.length) return vacio;
@@ -2704,6 +2716,8 @@ function cnBarraVigencia(c) {
   </div>`;
 }
 async function openContratoNuevo(c, tabInicial) {
+  if (window._cnContratoId !== c.id) window._cnMesSel = null; // otro contrato: sin mes elegido
+  window._cnContratoId = c.id;
   const est = getEstado(c);
   const hojaJs = String(c.hoja).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   document.getElementById('modal-title').textContent = c.titulo || c.hoja;
@@ -2834,11 +2848,14 @@ function renderGrillaNueva(c, tablaHtml, resumen) {
       : pendiente ? 'debe ' + Math.round(r.saldoReal).toLocaleString('es-AR')
       : r.total > 0 ? '$ ' + Math.round(r.total).toLocaleString('es-AR') : '—';
     const tip = `${formatDate(p.mes)} · Total ${formatMoney(r.total)} · Abonado ${formatMoney(r.abonado)} · Saldo ${formatMoney(r.saldoReal)}`;
-    return `<div class="cn-chip ${clase}${mesKey === mesHoy ? ' cn-actual' : ''}" onclick="cnAbrirMes('${mesKey}')" title="${tip}"><b>${formatDate(p.mes)}</b><small>${abajo}</small></div>`;
+    return `<div class="cn-chip ${clase}${mesKey === mesHoy ? ' cn-actual' : ''}${mesKey === window._cnMesSel ? ' cn-sel' : ''}" data-mes="${mesKey}" onclick="cnSeleccionarMes('${mesKey}')" title="${tip}"><b>${formatDate(p.mes)}</b><small>${abajo}</small></div>`;
   }).join('');
+  window._cnResumen = {};
+  resumen.forEach(r => { window._cnResumen[(r.p.mes || '').substring(0, 7)] = r; });
+  if (!window._cnResumen[window._cnMesSel]) window._cnMesSel = null;
   document.getElementById('grilla-container').innerHTML = `
     <div class="cn-meses-head">
-      <span>💡 Clic en un mes para editarlo o registrar cobro</span>
+      <span>💡 Tocá un mes para ver su detalle y cargar, cobrar o rendir</span>
       <div class="cn-vista-sel">
         <button data-v="tira" class="${vista === 'tira' ? 'activo' : ''}" onclick="cnCambiarVistaMeses('tira')">Tira</button>
         <button data-v="tabla" class="${vista === 'tabla' ? 'activo' : ''}" onclick="cnCambiarVistaMeses('tabla')">Tabla</button>
@@ -2847,8 +2864,74 @@ function renderGrillaNueva(c, tablaHtml, resumen) {
     <div id="cn-vista-tira" style="display:${vista === 'tira' ? 'block' : 'none'}">
       <div class="cn-tira">${chips}</div>
       <div class="cn-leyenda">Verde: pagado · Amarillo: parcial · Rojo: pendiente · Celeste: futuro · Gris: sin datos o rescindido</div>
+      <div id="cn-detalle-mes"></div>
     </div>
     <div id="cn-vista-tabla" style="display:${vista === 'tabla' ? 'block' : 'none'}">${tablaHtml}</div>`;
+  cnRenderDetalleMes();
+}
+// Al tocar un mes de la Tira se despliega su detalle al pie (tocarlo de nuevo lo cierra)
+function cnSeleccionarMes(mesKey) {
+  window._cnMesSel = window._cnMesSel === mesKey ? null : mesKey;
+  document.querySelectorAll('.cn-chip').forEach(ch => ch.classList.toggle('cn-sel', ch.dataset.mes === window._cnMesSel));
+  cnRenderDetalleMes();
+  document.getElementById('cn-detalle-mes')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+function cnAbrirMesSolapa(mesKey, solapa) {
+  if (contratoActual) editarMesConSolapa(contratoActual.hoja, contratoActual.id, mesKey, solapa);
+}
+function cnEliminarMes(pagoId) {
+  if (contratoActual) eliminarMes(pagoId, contratoActual.hoja);
+}
+function cnRenderDetalleMes() {
+  const cont = document.getElementById('cn-detalle-mes');
+  if (!cont) return;
+  const mesKey = window._cnMesSel;
+  const r = mesKey && window._cnResumen ? window._cnResumen[mesKey] : null;
+  if (!r) { cont.innerHTML = ''; return; }
+  const p = r.p;
+  const esc = s => String(s ?? '').replace(/</g, '&lt;');
+  const celda = (label, valor, extra = '') => `<div class="cn-d-item"><label>${label}</label><span ${extra}>${valor}</span></div>`;
+  const montoOGuion = n => (n && n !== 0) ? formatMoney(n) : '—';
+  const lineasExtras = lista => lista.map(([concepto, imp, tipo]) => `${esc(concepto || 'Extra')}: ${(tipo === 'descuento' || tipo === 'credito') ? '− ' : ''}${formatMoney(Math.abs(imp))}`).join(' · ');
+  // Los descuentos y créditos restan (igual que en calcularTotal), así los importes del panel suman al total
+  const sumaConSigno = lista => lista.reduce((s, [, imp, tipo]) => s + ((tipo === 'descuento' || tipo === 'credito') ? -imp : imp), 0);
+  const exc = r.abonado - r.total;
+  const saldoHtml = exc > 0.01 ? `<span style="color:var(--green);font-weight:700">+${formatMoney(exc)} a favor</span>`
+    : r.saldoReal > 0 ? `<span class="saldo-pendiente">${formatMoney(r.saldoReal)}</span>` : '<span class="saldo-ok">✓ Al día</span>';
+  // Adjuntos: boletas importadas (pagos_pdf) y comprobantes de extras
+  const labelsSrv = { epe: '⚡ EPE', agua: '💧 Agua', tgiu: '🏛️ TGIU', seguro: '🔒 Seguro', internet: '🌐 Internet', expensas: '🏢 Expensas' };
+  const adj = [
+    ...(window._pagosPdf?.[+p.id] || []).map(x => ({ tipo: 'pdf', id: x.id, label: labelsSrv[x.servicio] || x.servicio })),
+    ...(extrasActuales[p.id] || []).filter(e => e.archivo_path).map(e => ({ tipo: 'extra', id: e.id, label: `🧾 ${e.concepto || 'Extra'}` }))
+  ];
+  const adjHtml = adj.length
+    ? adj.map(a => `<button class="cn-adj" onclick="verAdjuntosPago(${p.id},'${a.tipo}',${a.id})">📄 ${esc(a.label)}</button>`).join('')
+    : '<span style="font-size:0.78rem;color:#999">Sin adjuntos</span>';
+  cont.innerHTML = `<div class="cn-card cn-d-mes">
+    <div class="cn-d-head">
+      <div><strong style="font-size:1rem">${formatDate(p.mes)}</strong> <span style="font-size:0.78rem;color:#888">· vence ${formatDate(r.vence, true)}</span></div>
+      <div>${getEstadoLabel(p, r.saldoReal)}</div>
+    </div>
+    <div class="cn-d-grid">
+      ${celda('Alquiler', montoOGuion(p.importe_alquiler))}
+      ${r.servicios.map(([label, monto]) => celda(label, montoOGuion(monto))).join('')}
+      ${celda('Extras gral.', r.extrasGral.length ? formatMoney(sumaConSigno(r.extrasGral)) : '—')}
+      ${celda('Extras mes', r.extrasMes.length ? formatMoney(sumaConSigno(r.extrasMes)) : '—')}
+      ${celda('Total', formatMoney(r.total), 'style="font-weight:700"')}
+      ${celda('Abonado', r.abonado > 0 ? `<span style="color:var(--green);font-weight:600">${formatMoney(r.abonado)}</span>` : '—')}
+      ${celda('Saldo', saldoHtml)}
+    </div>
+    ${r.extrasGral.length ? `<p class="cn-d-nota"><strong>Extras generales:</strong> ${lineasExtras(r.extrasGral)}</p>` : ''}
+    ${r.extrasMes.length ? `<p class="cn-d-nota"><strong>Extras del mes:</strong> ${lineasExtras(r.extrasMes)}</p>` : ''}
+    ${r.extrasProp > 0 ? `<p class="cn-d-nota">🏷️ <strong>A cargo del propietario</strong> (informativo, no suma al total): ${esc(r.extrasPropLabel)}</p>` : ''}
+    <div class="cn-d-adj"><span class="cn-d-adj-t">Adjuntos</span>${adjHtml}</div>
+    <div class="cn-d-btns">
+      <button onclick="cnAbrirMesSolapa('${mesKey}','s1')">📋 Cargar / Modificar</button>
+      <button onclick="cnAbrirMesSolapa('${mesKey}','s2')">💰 Ingresar pago</button>
+      <button onclick="cnAbrirMesSolapa('${mesKey}','s3')">📄 Recibo propietario</button>
+      <button class="cn-peligro" onclick="cnEliminarMes(${p.id})" title="Eliminar este mes">🗑 Eliminar mes</button>
+    </div>
+  </div>`;
 }
 
 const CHECKLIST_ETAPAS = [
@@ -3478,7 +3561,16 @@ function renderGrilla(c) {
     const extrasGralLabel = extrasGral.length > 0 ? extrasGral.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
     const extrasMesLabel = extrasMes.length > 0 ? extrasMes.map(e=>`${e.concepto}: ${formatMoney(e.importe)}`).join(', ') : '—';
     const rowClass = saldoReal > 0 ? getRowClass(p) : (p.saldo > 0 ? 'row-parcial' : getRowClass(p));
-    resumenMeses.push({ p, rowClass, saldoReal, total: _totalCalc, abonado: p.pagado_importe || (p.total||0)-(p.saldo||0) });
+    resumenMeses.push({
+      p, rowClass, saldoReal, total: _totalCalc, abonado: p.pagado_importe || (p.total||0)-(p.saldo||0), excedente,
+      // detalle del mes para el panel de la Tira (mismos valores que la tabla)
+      vence: calcularFechaVencimiento(p.mes?.substring(0,7)||'', c),
+      servicios: [['epe','EPE'],['agua','Agua'],['tgiu','TGIU'],['seguro','Seguro'],['internet','Internet'],['expensas','Expensas']]
+        .filter(([k]) => serviciosInquilino[k] || getMonto(k) !== 0).map(([k, label]) => [label, getMonto(k)]),
+      extrasGral: extrasGral.map(e => [e.concepto, parseFloat(e.importe)||0, e.tipo]),
+      extrasMes: extrasMes.map(e => [e.concepto, parseFloat(e.importe)||0, e.tipo]),
+      extrasProp: totalExtrasProp, extrasPropLabel
+    });
 
     return `<tr class="${rowClass}" id="row-${p.id}"
       onclick="editarMes('${c.hoja}',${c.id},'${p.mes?.substring(0,7)}')" 
