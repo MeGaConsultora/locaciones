@@ -215,6 +215,14 @@
   .cn-d-item label { font-size:0.66rem; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#999; display:block; margin-bottom:2px; }
   .cn-d-item span { font-size:0.88rem; color:var(--ink); }
   .cn-d-nota { font-size:0.78rem; color:#666; margin-top:0.5rem; }
+  .cn-d-extras { display:flex; align-items:center; flex-wrap:wrap; gap:4px 6px; margin-top:0.6rem; }
+  .cn-d-extras-t { font-size:0.7rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#999; flex-basis:100%; }
+  .cn-ex { display:inline-flex; align-items:baseline; gap:6px; border-radius:14px; padding:3px 11px; font-size:0.8rem; border:1px solid transparent; }
+  .cn-ex b { font-weight:700; white-space:nowrap; }
+  .cn-ex small { font-size:0.62rem; text-transform:uppercase; letter-spacing:0.05em; opacity:0.8; }
+  .cn-ex-rojo { background:#fdecea; color:#a12a2a; border-color:#f1b9b9; }
+  .cn-ex-verde { background:#e8f5e9; color:#1d5a37; border-color:#a9d8b4; }
+  .cn-leg { display:inline-block; border-radius:10px; padding:0 8px; font-size:0.72rem; border:1px solid transparent; }
   .cn-d-adj { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:0.7rem; }
   .cn-d-adj-t { font-size:0.7rem; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#999; margin-right:4px; }
   .cn-adj { border:1.5px solid var(--border); background:white; border-radius:14px; padding:3px 10px; font-size:0.76rem; font-family:inherit; cursor:pointer; color:var(--ink); }
@@ -2946,7 +2954,24 @@ function cnRenderDetalleMes() {
   const esc = s => String(s ?? '').replace(/</g, '&lt;');
   const celda = (label, valor, extra = '') => `<div class="cn-d-item"><label>${label}</label><span ${extra}>${valor}</span></div>`;
   const montoOGuion = n => (n && n !== 0) ? formatMoney(n) : '—';
-  const lineasExtras = lista => lista.map(([concepto, imp, tipo]) => `${esc(concepto || 'Extra')}: ${(tipo === 'descuento' || tipo === 'credito') ? '− ' : ''}${formatMoney(Math.abs(imp))}`).join(' · ');
+  // Cada extra se pinta por su tipo: crédito (descuento al inquilino / crédito al propietario) en verde;
+  // débito (cargo al inquilino / débito al propietario) en rojo. El signo dice si suma o resta a quien corresponde.
+  const pildora = ([concepto, imp, tipo], delPropietario) => {
+    const esCredito = tipo === 'credito' || tipo === 'descuento';
+    const signo = delPropietario ? (esCredito ? '+' : '−') : (esCredito ? '−' : '+');
+    const etiqueta = delPropietario ? (esCredito ? 'crédito' : 'débito') : (esCredito ? 'descuento' : 'cargo');
+    const ayuda = delPropietario ? (esCredito ? 'Crédito: suma a lo que cobra el propietario' : 'Débito: resta a lo que cobra el propietario')
+      : (esCredito ? 'Descuento: resta al total del inquilino' : 'Cargo extra: suma al total del inquilino');
+    return `<span class="cn-ex ${esCredito ? 'cn-ex-verde' : 'cn-ex-rojo'}" title="${ayuda}"><span>${esc(concepto || 'Extra')}</span><b>${signo} ${formatMoney(Math.abs(imp))}</b><small>${etiqueta}</small></span>`;
+  };
+  const bloqueExtras = (titulo, lista, delPropietario) => lista.length
+    ? `<div class="cn-d-extras"><span class="cn-d-extras-t">${titulo}</span>${lista.map(x => pildora(x, delPropietario)).join('')}</div>` : '';
+  const netoHtml = lista => {
+    if (!lista.length) return '—';
+    const n = sumaConSigno(lista);
+    return n > 0.004 ? `<span style="color:#a12a2a;font-weight:600">+ ${formatMoney(n)}</span>`
+      : n < -0.004 ? `<span style="color:#1d5a37;font-weight:600">− ${formatMoney(-n)}</span>` : formatMoney(0);
+  };
   // Los descuentos y créditos restan (igual que en calcularTotal), así los importes del panel suman al total
   const sumaConSigno = lista => lista.reduce((s, [, imp, tipo]) => s + ((tipo === 'descuento' || tipo === 'credito') ? -imp : imp), 0);
   const exc = r.abonado - r.total;
@@ -2969,15 +2994,17 @@ function cnRenderDetalleMes() {
     <div class="cn-d-grid">
       ${celda('Alquiler', montoOGuion(p.importe_alquiler))}
       ${r.servicios.map(([label, monto]) => celda(label, montoOGuion(monto))).join('')}
-      ${celda('Extras gral.', r.extrasGral.length ? formatMoney(sumaConSigno(r.extrasGral)) : '—')}
-      ${celda('Extras mes', r.extrasMes.length ? formatMoney(sumaConSigno(r.extrasMes)) : '—')}
+      ${celda('Extras gral.', netoHtml(r.extrasGral))}
+      ${celda('Extras mes', netoHtml(r.extrasMes))}
       ${celda('Total', formatMoney(r.total), 'style="font-weight:700"')}
       ${celda('Abonado', r.abonado > 0 ? `<span style="color:var(--green);font-weight:600">${formatMoney(r.abonado)}</span>` : '—')}
       ${celda('Saldo', saldoHtml)}
     </div>
-    ${r.extrasGral.length ? `<p class="cn-d-nota"><strong>Extras generales:</strong> ${lineasExtras(r.extrasGral)}</p>` : ''}
-    ${r.extrasMes.length ? `<p class="cn-d-nota"><strong>Extras del mes:</strong> ${lineasExtras(r.extrasMes)}</p>` : ''}
-    ${r.extrasProp > 0 ? `<p class="cn-d-nota">🏷️ <strong>A cargo del propietario</strong> (informativo, no suma al total): ${esc(r.extrasPropLabel)}</p>` : ''}
+    ${bloqueExtras('Extras generales (inquilino)', r.extrasGral, false)}
+    ${bloqueExtras('Extras del mes (inquilino)', r.extrasMes, false)}
+    ${bloqueExtras('A cargo del propietario · informativo, no suma al total', r.extrasPropLista || [], true)}
+    ${(r.extrasGral.length || r.extrasMes.length || (r.extrasPropLista || []).length)
+      ? '<p class="cn-d-nota"><span class="cn-leg cn-ex-verde">verde</span> resta al inquilino o suma al propietario · <span class="cn-leg cn-ex-rojo">rojo</span> suma al inquilino o resta al propietario</p>' : ''}
     <div class="cn-d-adj"><span class="cn-d-adj-t">Adjuntos</span>${adjHtml}</div>
     <div class="cn-d-btns">
       <button onclick="cnAbrirMesSolapa('${mesKey}','s1')">📋 Cargar / Modificar</button>
@@ -3623,7 +3650,8 @@ function renderGrilla(c) {
         .filter(([k]) => serviciosInquilino[k] || getMonto(k) !== 0).map(([k, label]) => [label, getMonto(k)]),
       extrasGral: extrasGral.map(e => [e.concepto, parseFloat(e.importe)||0, e.tipo]),
       extrasMes: extrasMes.map(e => [e.concepto, parseFloat(e.importe)||0, e.tipo]),
-      extrasProp: totalExtrasProp, extrasPropLabel
+      extrasProp: totalExtrasProp, extrasPropLabel,
+      extrasPropLista: extrasProp.map(e => [e.concepto, parseFloat(e.importe)||0, e.tipo])
     });
 
     return `<tr class="${rowClass}" id="row-${p.id}"
