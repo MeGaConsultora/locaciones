@@ -206,6 +206,9 @@
   .cn-sin { background:#f5f5f5; color:#777; }
   .cn-actual { outline:2px solid var(--ink); outline-offset:1px; }
   .cn-chip.cn-sel { box-shadow:0 0 0 3px var(--accent); }
+  .cn-tag { text-transform:uppercase; letter-spacing:0.05em; opacity:0.75; font-size:0.58rem !important; }
+  .cn-ant-btn { border:1.5px solid var(--border); background:white; border-radius:8px; padding:4px 12px; font-size:0.78rem; font-family:inherit; cursor:pointer; color:var(--ink); }
+  .cn-ant-btn:hover { background:var(--cream); }
   .cn-d-mes { margin-top:0.8rem; margin-bottom:0; border:1.5px solid var(--border); }
   .cn-d-head { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:0.7rem; }
   .cn-d-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:0.7rem 1rem; background:var(--cream); border-radius:8px; padding:0.7rem 0.9rem; }
@@ -2716,7 +2719,12 @@ function cnBarraVigencia(c) {
   </div>`;
 }
 async function openContratoNuevo(c, tabInicial) {
-  if (window._cnContratoId !== c.id) window._cnMesSel = null; // otro contrato: sin mes elegido
+  // Contrato abierto de cero (otro contrato, o la ventana estaba cerrada): vuelve a arrancar con el mes corriente.
+  // Si se vuelve de la Gestión de Pago (la ventana sigue abierta) se conserva el mes elegido.
+  if (window._cnContratoId !== c.id || !document.getElementById('modal-overlay').classList.contains('open')) {
+    window._cnMesSel = undefined;
+    window._cnAntAbiertos = false;
+  }
   window._cnContratoId = c.id;
   const est = getEstado(c);
   const hojaJs = String(c.hoja).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -2819,7 +2827,14 @@ function cnActualizarResumenes(c) {
 }
 function actualizarFichaContratoNueva(c, totalAlq, totalPend) {
   const saldo = document.getElementById('cn-kpi-saldo');
-  if (saldo) saldo.innerHTML = `<label>Saldo pendiente</label><b class="${totalPend > 0 ? 'saldo-pendiente' : 'saldo-ok'}">${totalPend > 0 ? formatMoney(totalPend) : '✓ Al día'}</b>`;
+  if (saldo) {
+    const vigDesde = c.vigencia_desde ? c.vigencia_desde.substring(0, 7) : '';
+    const mesHoy = TODAY.substring(0, 7);
+    const deAnteriores = !vigDesde ? 0 : pagosActuales
+      .filter(p => p.mes && p.mes.substring(0, 7) < vigDesde && p.mes.substring(0, 7) <= mesHoy && p.saldo > 0)
+      .reduce((s2, p) => s2 + p.saldo, 0);
+    saldo.innerHTML = `<label>Saldo pendiente</label><b class="${totalPend > 0 ? 'saldo-pendiente' : 'saldo-ok'}">${totalPend > 0 ? formatMoney(totalPend) : '✓ Al día'}</b>${deAnteriores > 0 ? `<div style="font-size:0.72rem;color:#c0392b;margin-top:2px">${formatMoney(deAnteriores)} de meses anteriores a la vigencia</div>` : ''}`;
+  }
   const total = document.getElementById('cn-kpi-total');
   if (total) total.innerHTML = `<label>Total acumulado</label><b>${formatMoney(totalAlq)}</b>`;
   const alq = document.getElementById('cn-kpi-alq');
@@ -2832,12 +2847,48 @@ function actualizarFichaContratoNueva(c, totalAlq, totalPend) {
     alq.innerHTML = `<label>Alquiler actual</label><b>${p ? formatMoney(p.importe_alquiler) : '—'}</b>`;
   }
 }
+// Qué meses se muestran en la Tira: los de la vigencia actual y, de los anteriores (contratos renovados
+// sobre el mismo), solo los que tienen deuda — así una deuda vieja nunca queda escondida. El resto
+// (ya saldados) se ven con el botón "Meses anteriores". "orden" viene ordenado por mes.
+function cnPartirMeses(orden, vigDesde, mesHoy, abiertos) {
+  const clave = r => (r.p.mes || '').substring(0, 7);
+  const esAnterior = r => !!vigDesde && clave(r) < vigDesde;
+  const conDeuda = r => r.saldoReal > 0.01 && r.p.pagado !== 'RESCINDIDO' && clave(r) <= mesHoy;
+  return {
+    visibles: orden.filter(r => !esAnterior(r) || abiertos || conDeuda(r)),
+    ocultables: orden.filter(r => esAnterior(r) && !conDeuda(r)),
+    esAnterior
+  };
+}
+// Mes que arranca elegido: el corriente; si el contrato no lo tiene, el último anterior a hoy, y si no, el primero
+function cnMesPorDefecto(claves, mesHoy) {
+  const orden = [...claves].sort();
+  if (orden.includes(mesHoy)) return mesHoy;
+  const pasados = orden.filter(k => k <= mesHoy);
+  return pasados.length ? pasados[pasados.length - 1] : (orden[0] || null);
+}
+function cnAlternarAnteriores() {
+  window._cnAntAbiertos = !window._cnAntAbiertos;
+  if (contratoActual) renderGrilla(contratoActual);
+}
 // Tira de meses + tabla de siempre (la tabla viene armada de renderGrilla)
 function renderGrillaNueva(c, tablaHtml, resumen) {
   const vista = cnVistaMeses();
   const mesHoy = TODAY.substring(0, 7);
   const orden = [...resumen].sort((a, b) => (a.p.mes || '').localeCompare(b.p.mes || ''));
-  const chips = orden.map(r => {
+  window._cnResumen = {};
+  orden.forEach(r => { window._cnResumen[(r.p.mes || '').substring(0, 7)] = r; });
+  // undefined = todavía no se eligió nada (arranca el mes corriente); null = se cerró el detalle a propósito
+  if (typeof window._cnMesSel === 'string' && !window._cnResumen[window._cnMesSel]) window._cnMesSel = undefined;
+  if (window._cnMesSel === undefined) window._cnMesSel = cnMesPorDefecto(Object.keys(window._cnResumen), mesHoy);
+  const vigDesde = c.vigencia_desde ? c.vigencia_desde.substring(0, 7) : '';
+  let parte = cnPartirMeses(orden, vigDesde, mesHoy, !!window._cnAntAbiertos);
+  // si el mes elegido es uno de los anteriores ocultos, se despliegan para que se vea
+  if (window._cnMesSel && !window._cnAntAbiertos && parte.ocultables.some(r => (r.p.mes || '').substring(0, 7) === window._cnMesSel)) {
+    window._cnAntAbiertos = true;
+    parte = cnPartirMeses(orden, vigDesde, mesHoy, true);
+  }
+  const chips = parte.visibles.map(r => {
     const p = r.p;
     const mesKey = (p.mes || '').substring(0, 7);
     const clase = p.pagado === 'RESCINDIDO' ? 'cn-sin'
@@ -2848,11 +2899,13 @@ function renderGrillaNueva(c, tablaHtml, resumen) {
       : pendiente ? 'debe ' + Math.round(r.saldoReal).toLocaleString('es-AR')
       : r.total > 0 ? '$ ' + Math.round(r.total).toLocaleString('es-AR') : '—';
     const tip = `${formatDate(p.mes)} · Total ${formatMoney(r.total)} · Abonado ${formatMoney(r.abonado)} · Saldo ${formatMoney(r.saldoReal)}`;
-    return `<div class="cn-chip ${clase}${mesKey === mesHoy ? ' cn-actual' : ''}${mesKey === window._cnMesSel ? ' cn-sel' : ''}" data-mes="${mesKey}" onclick="cnSeleccionarMes('${mesKey}')" title="${tip}"><b>${formatDate(p.mes)}</b><small>${abajo}</small></div>`;
+    const anterior = parte.esAnterior(r);
+    return `<div class="cn-chip ${clase}${mesKey === mesHoy ? ' cn-actual' : ''}${mesKey === window._cnMesSel ? ' cn-sel' : ''}" data-mes="${mesKey}" onclick="cnSeleccionarMes('${mesKey}')" title="${tip}"><b>${formatDate(p.mes)}</b><small>${abajo}</small>${anterior ? '<small class="cn-tag">anterior</small>' : ''}</div>`;
   }).join('');
-  window._cnResumen = {};
-  resumen.forEach(r => { window._cnResumen[(r.p.mes || '').substring(0, 7)] = r; });
-  if (!window._cnResumen[window._cnMesSel]) window._cnMesSel = null;
+  const hayAnteriores = parte.ocultables.length > 0 || (window._cnAntAbiertos && orden.some(r => parte.esAnterior(r)));
+  const botonAnteriores = hayAnteriores
+    ? `<div style="margin-bottom:6px"><button class="cn-ant-btn" onclick="cnAlternarAnteriores()">${window._cnAntAbiertos ? 'Ocultar meses anteriores ▴' : 'Meses anteriores (' + parte.ocultables.length + ') ▾'}</button></div>`
+    : '';
   document.getElementById('grilla-container').innerHTML = `
     <div class="cn-meses-head">
       <span>💡 Tocá un mes para ver su detalle y cargar, cobrar o rendir</span>
@@ -2862,8 +2915,9 @@ function renderGrillaNueva(c, tablaHtml, resumen) {
       </div>
     </div>
     <div id="cn-vista-tira" style="display:${vista === 'tira' ? 'block' : 'none'}">
+      ${botonAnteriores}
       <div class="cn-tira">${chips}</div>
-      <div class="cn-leyenda">Verde: pagado · Amarillo: parcial · Rojo: pendiente · Celeste: futuro · Gris: sin datos o rescindido</div>
+      <div class="cn-leyenda">Verde: pagado · Amarillo: parcial · Rojo: pendiente · Celeste: futuro · Gris: sin datos o rescindido${vigDesde ? ' · Los meses anteriores a la vigencia solo se muestran si tienen deuda' : ''}</div>
       <div id="cn-detalle-mes"></div>
     </div>
     <div id="cn-vista-tabla" style="display:${vista === 'tabla' ? 'block' : 'none'}">${tablaHtml}</div>`;
