@@ -154,6 +154,11 @@ El total, el saldo y el estado de cada mes (`pagos.total / saldo / pagado`) los 
 
 ---
 
+## PARTE 6E — PANTALLA DE CONTRATO: VISTA NUEVA (oct 2026)
+La ficha del contrato (`openContrato`) tiene dos vistas. La CLÁSICA es el código de siempre (no se tocó). La NUEVA (`openContratoNuevo`, arranca por defecto) se agregó al lado: barra de acciones en una línea (Actualizar, Editar, Acceso, Regenerar, Duplicar, Rescindir/Revertir rescisión, Eliminar; Historial y Proyectar alquiler ya no tienen botón en la vista nueva, las funciones `imprimirHistorial` y `abrirProyectarContrato` siguen en el código y se usan desde la clásica), ficha con barra de vigencia y tarjetas (saldo, total acumulado, alquiler actual), franja de honorarios, secciones plegables (Contrato y firma —abierta si la firma está incompleta—, Extras generales, Notas) y los meses como **Tira** de colores o **Tabla** (la tabla es la de siempre, armada en `renderGrilla`; la tira sale de los mismos valores). Al tocar un mes se abre la Gestión de Pago de siempre. Reusa las funciones existentes (editar, rescindir, notas, firma, grilla): solo cambia la presentación; no toca cálculos ni base de datos. La preferencia se guarda en el navegador (`localStorage.mega_vista_contrato` = 'clasica' | 'nueva', y `mega_vista_meses` = 'tira' | 'tabla'); el interruptor está arriba a la derecha de cada vista. Para volver al estado anterior al rediseño: etiqueta de git `antes-rediseno-contrato` (commit 64454e9) o `git revert` del commit del rediseño. Pruebas: `pruebas/contrato_vista.test.mjs`.
+
+---
+
 ## PARTE 7 — PENDIENTES / TEMAS ABIERTOS
 - DECIDIDO (oct 2026): la regla del total de un mes vive en DOS lugares (calcularTotal en index.html y total_calculado_pago en SQL) a propósito; las pruebas (saldos_sql.test.mjs) avisan si divergen. Pasar a una sola regla (que la pantalla lea el valor de la base) queda como opción SOLO si la regla empieza a cambiar seguido o reaparecen desfases.
 - Ambiente de prueba (staging): herramienta lista en herramientas/, sin usar; ver PARTE 6B.
