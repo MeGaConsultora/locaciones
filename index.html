@@ -1612,6 +1612,13 @@ async function sbDelete(table, id) {
 async function sbDeleteWhere(table, where) {
   await sbFetch(`${SB_URL}/rest/v1/${table}?${where}`, { method:'DELETE' });
 }
+// Al revertir un cobro del inquilino se borran sus movimientos de Caja (el ingreso), pero NUNCA los pagos
+// al propietario: esos son egresos reales que se revierten solo desde "Ya emitidos".
+async function borrarMovimientosCajaDelCobro(pagoId) {
+  const movs = await sbGet('caja_movimientos', `pago_id=eq.${pagoId}&select=id,categoria`);
+  const ids = movs.filter(m => m.categoria !== 'Pago a propietario').map(m => m.id);
+  if (ids.length) await sbDeleteWhere('caja_movimientos', `id=in.(${ids.join(',')})`);
+}
 
 // ============================================================
 // STATE
@@ -3890,20 +3897,42 @@ async function eliminarExtra(extraId, pagoId) {
   } catch(e) { toast('Error: '+e.message,'error'); }
 }
 
+// Aviso previo a borrar un mes (o un contrato) que ya tiene una rendición al propietario: pagos registrados
+// en Caja y/o recibos emitidos. Devuelve '' si no hay nada de eso.
+function textoAvisoRendicion(pagosProp, hayRecibo, alcance) {
+  pagosProp = pagosProp || [];
+  if (!pagosProp.length && !hayRecibo) return '';
+  const total = pagosProp.reduce((s, m) => s + (parseFloat(m.monto) || 0), 0);
+  const lineas = [];
+  if (pagosProp.length) lineas.push(`• ${pagosProp.length === 1 ? 'Hay 1 pago al propietario registrado' : 'Hay ' + pagosProp.length + ' pagos al propietario registrados'} en Caja por ${formatMoney(total)}.`);
+  if (hayRecibo) lineas.push('• Hay recibos de propietario emitidos.');
+  const consecuencia = alcance === 'contrato'
+    ? 'Si continuás, los movimientos de Caja de este contrato QUEDAN en Caja sin contrato asociado (ese dinero ya se movió) y los recibos emitidos se borran.'
+    : 'Si continuás, ese pago se BORRA de Caja (el saldo de Caja cambia) y los recibos emitidos de este mes también. Si el dinero ya salió de verdad, cancelá y revertí antes el pago desde Recibos → Ya emitidos.';
+  return `⚠ ${alcance === 'contrato' ? 'Este contrato' : 'Este mes'} ya tiene rendiciones al propietario:\n${lineas.join('\n')}\n\n${consecuencia}`;
+}
+
 async function eliminarMes(pagoId, hoja) {
   const p = pagosActuales.find(x => x.id === pagoId);
   if (!p) return;
   const tieneDatos = (p.total > 0) || (p.pagado && p.pagado !== '0') || (p.saldo > 0);
+  let pagosProp = [], recibos = [];
+  try { pagosProp = await sbGet('caja_movimientos', `pago_id=eq.${pagoId}&categoria=eq.${encodeURIComponent('Pago a propietario')}&select=fecha,monto`); } catch(e) {}
+  try { recibos = await sbGet('recibos_propietario_emitidos', `pago_id=eq.${pagoId}&select=fecha`); } catch(e) {}
+  const aviso = textoAvisoRendicion(pagosProp, (recibos && recibos.length > 0) || !!p.recibo_prop_emitido, 'mes');
+  const prefijo = aviso ? aviso + '\n\n' : '';
   if (tieneDatos) {
-    if (!confirm(`Este mes tiene datos cargados (total: ${formatMoney(p.total).replace(/<[^>]+>/g,'')}, pagado: ${p.pagado}).\n\n¿Eliminarlo de todas formas? Esta acción no se puede deshacer.`)) return;
+    if (!confirm(prefijo + `Este mes tiene datos cargados (total: ${formatMoney(p.total).replace(/<[^>]+>/g,'')}, pagado: ${p.pagado}).\n\n¿Eliminarlo de todas formas? Esta acción no se puede deshacer.`)) return;
   } else {
-    if (!confirm('¿Eliminar este mes? Esta acción no se puede deshacer.')) return;
+    if (!confirm(prefijo + '¿Eliminar este mes? Esta acción no se puede deshacer.')) return;
   }
   try {
     // Also delete related extras and movimientos
     try { await sbDeleteWhere('pagos_extras', `pago_id=eq.${pagoId}`); } catch(e) {}
     try { await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${pagoId}`); } catch(e) {}
     try { await sbDeleteWhere('caja_movimientos', `pago_id=eq.${pagoId}`); } catch(e) {}
+    // recibos_propietario_emitidos no tiene clave hacia pagos: sin esto quedarían sueltos
+    try { await sbDeleteWhere('recibos_propietario_emitidos', `pago_id=eq.${pagoId}`); } catch(e) {}
     await sbDelete('pagos', pagoId);
     pagosActuales = pagosActuales.filter(p => p.id !== pagoId);
     const c = DB.contratos.find(x => x.hoja === hoja);
@@ -3952,13 +3981,28 @@ async function confirmarRescision(contratoId, hoja) {
     // sigue con los demás y al final se informa cuáles quedaron, en vez de dejar
     // el contrato "a medias" sin que nadie se entere.
     const mesRescision = fechaRescision.substring(0, 7);
-    const pagosFrescos = await sbGet('pagos', `hoja=eq.${encodeURIComponent(hoja)}&select=id,mes,pagado_importe&limit=1000`);
+    const pagosFrescos = await sbGet('pagos', `hoja=eq.${encodeURIComponent(hoja)}&select=id,mes,pagado_importe,recibo_prop_emitido&limit=1000`);
     const pagosContrato = pagosFrescos.filter(p => p.mes && p.mes.substring(0,7) > mesRescision);
     const noBorrados = [];
+    // Meses con movimientos en Caja (p. ej. un pago al propietario) o con recibos emitidos: tampoco se borran solos
+    const conCaja = new Set(), conRecibo = new Set();
+    if (pagosContrato.length) {
+      const ids = pagosContrato.map(p => p.id).join(',');
+      try { (await sbGet('caja_movimientos', `pago_id=in.(${ids})&select=pago_id`)).forEach(m => conCaja.add(m.pago_id)); } catch(e) {}
+      try { (await sbGet('recibos_propietario_emitidos', `pago_id=in.(${ids})&select=pago_id`)).forEach(r => conRecibo.add(r.pago_id)); } catch(e) {}
+    }
     for (const p of pagosContrato) {
       const mesTxt = formatDate(p.mes);
       if ((parseFloat(p.pagado_importe) || 0) > 0.004) {
         noBorrados.push(`${mesTxt}: tiene cobros registrados`);
+        continue;
+      }
+      if (conCaja.has(p.id)) {
+        noBorrados.push(`${mesTxt}: tiene movimientos de Caja (por ejemplo un pago al propietario)`);
+        continue;
+      }
+      if (conRecibo.has(p.id) || p.recibo_prop_emitido) {
+        noBorrados.push(`${mesTxt}: tiene un recibo de propietario emitido`);
         continue;
       }
       try {
@@ -8018,7 +8062,7 @@ async function revertirItem(pagoId, itemId, montoPagado, montoTotal, hoja, contr
     // Bertolino-Rodríguez).
     await revertirRendidoDirectoPropietario(parseInt(pagoId), itemId);
     try { await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${pagoId}`); } catch(e) {}
-    try { await sbDeleteWhere('caja_movimientos', `pago_id=eq.${pagoId}`); } catch(e) {}
+    try { await borrarMovimientosCajaDelCobro(pagoId); } catch(e) {}
     toast(`${itemId} revertido ✓`);
     const c = DB.contratos.find(x => x.id === contratoId);
     if (c) {
@@ -8210,7 +8254,7 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
     // rendido_prop_items antes de perder el historial que lo sustenta.
     await revertirRendidoDirectoPropietario(p.id);
     try { await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${p.id}`); } catch(e) {}
-    try { await sbDeleteWhere('caja_movimientos', `pago_id=eq.${p.id}`); } catch(e) {}
+    try { await borrarMovimientosCajaDelCobro(p.id); } catch(e) {}
 
     // Revertir honorarios: descontar exactamente lo que ESTA transacción aportó
     // a cada cuota (puede haber tocado cuotas de meses anteriores si había
@@ -17346,7 +17390,18 @@ function abrirCrearInmuebleParaContrato(contratoId) {
 
 async function eliminarContrato(id) {
   const c = DB.contratos.find(x => x.id === id);
-  if (!confirm(`¿Eliminar el contrato "${c?.titulo||c?.hoja}"?\n\nSe eliminarán también todos sus pagos, extras y cuotas de gastos. Esta acción no se puede deshacer.`)) return;
+  const idsPagos = DB.pagos.filter(p => p.hoja === c?.hoja).map(p => p.id);
+  let movs = [], recibos = [];
+  if (idsPagos.length) {
+    try { movs = await sbGet('caja_movimientos', `pago_id=in.(${idsPagos.join(',')})&select=categoria,monto`); } catch(e) {}
+    try { recibos = await sbGet('recibos_propietario_emitidos', `pago_id=in.(${idsPagos.join(',')})&select=fecha`); } catch(e) {}
+  }
+  const pagosProp = movs.filter(m => m.categoria === 'Pago a propietario');
+  const otrosMovs = movs.length - pagosProp.length;
+  let aviso = textoAvisoRendicion(pagosProp, recibos.length > 0, 'contrato');
+  if (!aviso && otrosMovs > 0) aviso = `⚠ Este contrato tiene ${otrosMovs} movimiento${otrosMovs === 1 ? '' : 's'} de Caja (cobros u honorarios). Si continuás, quedan en Caja sin contrato asociado (ese dinero ya se movió).`;
+  else if (aviso && otrosMovs > 0) aviso += `\nAdemás tiene ${otrosMovs} movimiento${otrosMovs === 1 ? '' : 's'} de cobros u honorarios, que también quedan en Caja.`;
+  if (!confirm((aviso ? aviso + '\n\n' : '') + `¿Eliminar el contrato "${c?.titulo||c?.hoja}"?\n\nSe eliminarán también todos sus pagos, extras y cuotas de gastos. Esta acción no se puede deshacer.`)) return;
   try {
     // Delete related records first
     await sbDeleteWhere('gastos_inicio_cuotas', `contrato_id=eq.${id}`);
@@ -17355,6 +17410,8 @@ async function eliminarContrato(id) {
     if (pagos.length) {
       const pagoIds = pagos.map(p => p.id).join(',');
       await sbDeleteWhere('pagos_extras', `pago_id=in.(${pagoIds})`);
+      // recibos_propietario_emitidos no tiene clave hacia pagos: sin esto quedarían sueltos
+      try { await sbDeleteWhere('recibos_propietario_emitidos', `pago_id=in.(${pagoIds})`); } catch(e) {}
     }
     await sbDeleteWhere('pagos', `hoja=eq.${encodeURIComponent(c?.hoja||'')}`);
     await sbDelete('contratos', id);

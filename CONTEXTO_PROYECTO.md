@@ -159,6 +159,11 @@ La ficha del contrato (`openContrato`) tiene dos vistas. La CLÁSICA es el códi
 
 ---
 
+## PARTE 6F — BORRADOS Y CAJA (oct 2026)
+En la base solo cascadean al borrar un mes (pagos): pagos_extras, pagos_pdf, movimientos_pagos y pagos_suministros. `caja_movimientos` y `recibos_propietario_emitidos` tienen pago_id pero SIN clave foránea hacia pagos (verificado con pg_constraint): no se borran solos ni se protegen, lo decide la app. Reglas actuales: (1) revertir un cobro del inquilino (revertirItem / revertirCobro) borra sus movimientos de Caja con `borrarMovimientosCajaDelCobro`, que NUNCA toca los de categoría "Pago a propietario" (esos solo se revierten desde "Ya emitidos"); (2) "Eliminar mes" avisa si el mes tiene pagos al propietario o recibos emitidos (`textoAvisoRendicion`, se elige continuar o cancelar), y al continuar borra Caja, las rendiciones emitidas y el mes; (3) "Eliminar contrato" avisa lo mismo, borra las rendiciones emitidas pero DEJA los movimientos de Caja (el dinero ya se movió; sus conceptos ya llevan el nombre del contrato); (4) rescindir no borra meses posteriores que tengan cobros, movimientos de Caja o recibos emitidos: los lista para revisar a mano. La auditoría (13) guarda la fila completa de cada borrado de Caja. Pruebas: `pruebas/borrados.test.mjs`.
+
+---
+
 ## PARTE 7 — PENDIENTES / TEMAS ABIERTOS
 - DECIDIDO (oct 2026): la regla del total de un mes vive en DOS lugares (calcularTotal en index.html y total_calculado_pago en SQL) a propósito; las pruebas (saldos_sql.test.mjs) avisan si divergen. Pasar a una sola regla (que la pantalla lea el valor de la base) queda como opción SOLO si la regla empieza a cambiar seguido o reaparecen desfases.
 - Ambiente de prueba (staging): herramienta lista en herramientas/, sin usar; ver PARTE 6B.
