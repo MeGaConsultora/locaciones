@@ -2673,7 +2673,7 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
       <div class="detail-item" id="detail-total-alq"><label>Total acumulado</label><span>—</span></div>
       <div class="detail-item" id="detail-saldo"><label>Saldo pendiente</label><span>—</span></div>
       <div class="detail-item"><label>Inmueble</label><span style="display:flex;align-items:center;gap:0.5rem">
-        ${c.inmueble_id ? (() => { const inm=DB_INMUEBLES.find(x=>x.id===c.inmueble_id); return `<span>${inm?formatDireccion(inm,true):'—'}</span><button onclick="quitarInmuebleContrato(${c.id})" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:0.72rem">✕</button>`; })()
+        ${c.inmueble_id ? (() => { const inm=DB_INMUEBLES.find(x=>x.id===c.inmueble_id); return `<span>${inm?formatDireccion(inm,true):'—'}</span>`; })()
         : `<button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px" onclick="abrirAsignarInmueble(${c.id})">＋ Asignar inmueble</button>`}
       </span></div>
     </div>
@@ -2792,7 +2792,7 @@ async function openContratoNuevo(c, tabInicial) {
           <div><label>Actualización</label><span>${c.periodicidad_actualizacion || '—'} ${c.indice_actualizacion ? '· ' + c.indice_actualizacion : ''}</span></div>
           <div><label>Inmueble</label><span style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
             ${c.inmueble_id
-              ? `<span>${inm ? formatDireccion(inm, true) : '—'}</span><button onclick="quitarInmuebleContrato(${c.id})" title="Quitar inmueble del contrato" style="background:#f8d7da;border:none;color:#721c24;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:0.72rem">✕</button>`
+              ? `<span>${inm ? formatDireccion(inm, true) : '—'}</span>`
               : `<button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px" onclick="abrirAsignarInmueble(${c.id})">＋ Asignar inmueble</button>`}
           </span></div>
         </div>
