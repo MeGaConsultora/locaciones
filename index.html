@@ -194,10 +194,8 @@
   .cn-vista-sel { display:inline-flex; border:1.5px solid var(--border); border-radius:8px; overflow:hidden; }
   .cn-vista-sel button { border:none; background:white; padding:4px 12px; font-size:0.78rem; font-family:inherit; cursor:pointer; color:var(--ink); }
   .cn-vista-sel button.activo { background:var(--cream); font-weight:700; }
-  .cn-fila { display:flex; align-items:center; justify-content:center; gap:10px; }
-  .cn-fila .cn-ant-btn { flex:0 0 auto; white-space:nowrap; }
-  .cn-tira { display:flex; flex:0 1 auto; flex-wrap:wrap; justify-content:center; gap:6px; }
-  @media(max-width:640px) { .cn-fila { flex-direction:column; gap:8px; } }
+  .cn-tira { display:flex; flex-wrap:wrap; justify-content:flex-start; align-items:center; gap:6px; }
+  .cn-tira .cn-ant-btn { flex:0 0 auto; white-space:nowrap; align-self:center; }
   .cn-chip { flex:0 0 84px; border:1.5px solid var(--border); border-radius:8px; padding:6px 2px; text-align:center; cursor:pointer; font-size:0.72rem; background:white; line-height:1.3; }
   .cn-chip b { display:block; font-size:0.8rem; }
   .cn-chip small { display:block; font-size:0.66rem; }
@@ -2952,7 +2950,7 @@ function renderGrillaNueva(c, tablaHtml, resumen) {
       </div>
     </div>
     <div id="cn-vista-tira" style="display:${vista === 'tira' ? 'block' : 'none'}">
-      <div class="cn-fila">${botonAnt}<div class="cn-tira">${chips}</div>${botonSig}</div>
+      <div class="cn-tira">${botonAnt}${chips}${botonSig}</div>
       <div class="cn-leyenda">Verde: pagado · Amarillo: parcial · Rojo: pendiente · Celeste: futuro · Gris: sin datos o rescindido · Los meses anteriores al corriente solo se ven si tienen deuda; los siguientes, si ya tienen importes</div>
       <div id="cn-detalle-mes"></div>
     </div>
