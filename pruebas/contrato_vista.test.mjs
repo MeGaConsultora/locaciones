@@ -142,3 +142,48 @@ test('mes que arranca elegido: el corriente; si no existe, el último anterior; 
   assert.equal(cnMesPorDefecto(['2027-01', '2027-02'], '2026-10'), '2027-01');
   assert.equal(cnMesPorDefecto([], '2026-10'), null);
 });
+
+// --- Ficha informativa y sección de suministros ---
+import { leerHtml } from './helpers.mjs';
+const fmt = n => '$ ' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+test('la ficha del contrato es solo informativa: ni nombres ni inmueble ofrecen editar o asignar (en las dos vistas)', () => {
+  const src = leerHtml('index.html');
+  // desde openContrato (vista clásica) hasta cnActualizarResumenes: incluye las dos fichas y cnPersonasHtml
+  const ini = src.indexOf('async function openContrato(');
+  const fin = src.indexOf('function cnActualizarResumenes(');
+  assert.ok(ini > 0 && fin > ini, 'no se encontraron los límites de las fichas');
+  const fichas = src.slice(ini, fin);
+  for (const prohibido of ['openEditPersona', 'abrirAsignarInmueble', 'quitarInmuebleContrato']) {
+    assert.ok(!fichas.includes(prohibido), `la ficha no debe llamar a ${prohibido}: eso se hace desde Editar contrato`);
+  }
+});
+
+test('suministros y extras generales: trae todos los suministros del contrato, con porcentajes, descuento y rendición', () => {
+  const DB_SUMINISTROS = [
+    { id: 3, contrato_id: 7, tipo: 'internet', nro_cuenta: 'Internet', pct_inquilino: 100, pct_propietario: 0, propietario_persona_id: 20, orden: 3 },
+    { id: 1, contrato_id: 7, tipo: 'epe', nro_cuenta: '6810567', pct_inquilino: 100, pct_propietario: 0, orden: 1 },
+    { id: 2, contrato_id: 7, tipo: 'agua', nro_cuenta: '202801', pct_inquilino: 50, pct_propietario: 50, descuenta_persona_id: 20, orden: 2 },
+    { id: 4, contrato_id: 7, tipo: 'otro', nro_cuenta: 'Cochera', pct_inquilino: 100, pct_propietario: 0, monto_fijo: 15000, rinde_todos: true, orden: 4 },
+    { id: 9, contrato_id: 8, tipo: 'epe', nro_cuenta: 'OTRO CONTRATO', pct_inquilino: 100, pct_propietario: 0 },
+  ];
+  const DB_PERSONAS = [{ id: 20, apellido: 'CILLARIO', nombre: 'Clelia Catalina' }];
+  const { cnSuministrosHtml } = cargar('index.html', ['cnSuministrosHtml', 'formatNombrePersona'], { DB_SUMINISTROS, DB_PERSONAS, formatMoney: fmt });
+  const r = cnSuministrosHtml({ id: 7 });
+  assert.equal(r.n, 4);                                                       // los del otro contrato no entran
+  const orden = [...r.html.matchAll(/cn-sum-tipo[^>]*>([^<]+)</g)].map(m => m[1]);
+  assert.deepEqual(orden, ['EPE', 'Agua', 'Internet', 'Extra general']);      // por orden, con rótulo legible
+  assert.match(r.html, /Inquilino 50% · Propietario 50%/);
+  assert.match(r.html, /Descuenta a CILLARIO, Clelia Catalina/);
+  assert.match(r.html, /Rinde a CILLARIO, Clelia Catalina/);
+  assert.match(r.html, /Rinde a todos los propietarios/);
+  assert.match(r.html, /\$\s15\.000,00 fijo mensual/);
+  assert.match(r.html, /cn-sum-otro/);                                        // el extra general se distingue
+});
+
+test('suministros y extras generales: un contrato sin suministros lo dice', () => {
+  const { cnSuministrosHtml } = cargar('index.html', ['cnSuministrosHtml', 'formatNombrePersona'], { DB_SUMINISTROS: [], DB_PERSONAS: [], formatMoney: fmt });
+  const r = cnSuministrosHtml({ id: 1 });
+  assert.equal(r.n, 0);
+  assert.match(r.html, /no tiene suministros ni extras generales/);
+});

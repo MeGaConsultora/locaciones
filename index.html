@@ -212,6 +212,11 @@
   .cn-sin { background:#f5f5f5; color:#777; }
   .cn-actual { outline:2px solid var(--ink); outline-offset:1px; }
   .cn-chip.cn-sel { box-shadow:0 0 0 3px var(--accent); }
+  .cn-sum { display:flex; flex-wrap:wrap; align-items:baseline; gap:3px 14px; padding:7px 0; border-bottom:1px solid var(--border); font-size:0.82rem; color:#666; }
+  .cn-sum:last-of-type { border-bottom:none; }
+  .cn-sum-tipo { font-weight:700; color:var(--ink); min-width:90px; }
+  .cn-sum-otro { color:#a35a00; }
+  .cn-sum-cta { color:var(--ink); }
   .cn-tag { text-transform:uppercase; letter-spacing:0.05em; opacity:0.75; font-size:0.58rem !important; }
   .cn-ant-btn { border:1.5px solid var(--border); background:white; border-radius:8px; padding:4px 12px; font-size:0.78rem; font-family:inherit; cursor:pointer; color:var(--ink); }
   .cn-ant-btn:hover { background:var(--cream); }
@@ -2644,7 +2649,7 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
           if (!props.length) return c._locador||c.locador||'—';
           return props.map(cp => {
             const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
-            return p ? `<span onclick="openEditPersona(${p.id}, ${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.88rem" title="Editar">${formatNombrePersona(p)}</span>` : '—';
+            return p ? `<span style="font-size:0.88rem">${formatNombrePersona(p)}</span>` : '—';
           }).join(', ');
         })()
       }</span></div>
@@ -2654,7 +2659,7 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
           if (!inqs.length) return c._locatario||c.locatario||'—';
           return inqs.map(cp => {
             const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
-            return p ? `<span onclick="openEditPersona(${p.id}, ${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.88rem" title="Editar">${formatNombrePersona(p)}</span>` : '—';
+            return p ? `<span style="font-size:0.88rem">${formatNombrePersona(p)}</span>` : '—';
           }).join(', ');
         })()
       }</span></div>
@@ -2663,7 +2668,7 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
         if (!gars.length) return '';
         return `<div class="detail-item"><label>Garante/s</label><span>${gars.map(cp => {
           const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
-          return p ? `<span onclick="openEditPersona(${p.id}, ${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.88rem" title="Editar">${formatNombrePersona(p)}</span>` : '—';
+          return p ? `<span style="font-size:0.88rem">${formatNombrePersona(p)}</span>` : '—';
         }).join(', ')}</span></div>`;
       })()}
       <div class="detail-item"><label>Vigencia</label><span>${formatDate(c.vigencia_desde,true)} → ${formatDate(c.vigencia_hasta,true)}</span></div>
@@ -2674,7 +2679,7 @@ async function openContrato(id, _unused1, _unused2, tabInicial) {
       <div class="detail-item" id="detail-saldo"><label>Saldo pendiente</label><span>—</span></div>
       <div class="detail-item"><label>Inmueble</label><span style="display:flex;align-items:center;gap:0.5rem">
         ${c.inmueble_id ? (() => { const inm=DB_INMUEBLES.find(x=>x.id===c.inmueble_id); return `<span>${inm?formatDireccion(inm,true):'—'}</span>`; })()
-        : `<button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px" onclick="abrirAsignarInmueble(${c.id})">＋ Asignar inmueble</button>`}
+        : `<span style="color:#999">Sin inmueble</span>`}
       </span></div>
     </div>
     <div id="notas-contrato">${renderNotasContrato(c.id, [])}</div>
@@ -2725,7 +2730,7 @@ function cnPersonasHtml(c, rol, vacio) {
   if (!lista.length) return vacio;
   return lista.map(cp => {
     const p = DB_PERSONAS.find(x => x.id === cp.persona_id);
-    return p ? `<span onclick="openEditPersona(${p.id}, ${c.id})" style="cursor:pointer;color:var(--accent);text-decoration:underline;font-size:0.88rem" title="Editar">${formatNombrePersona(p)}</span>` : '—';
+    return p ? `<span style="font-size:0.88rem">${formatNombrePersona(p)}</span>` : '—';
   }).join(', ');
 }
 function cnBarraVigencia(c) {
@@ -2744,6 +2749,31 @@ function cnBarraVigencia(c) {
     <div class="cn-vig-barra"><div style="width:${pct.toFixed(1)}%;background:${color}"></div></div>
   </div>`;
 }
+// Suministros del contrato (cuentas de EPE, agua, internet… y los "Otro" = extras generales): quién paga qué
+// porcentaje, a quién se descuenta y a quién se rinde. Es solo lectura: se editan desde "Editar contrato".
+function cnSuministrosHtml(c) {
+  const lista = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id)
+    .sort((a, b) => ((a.orden || 0) - (b.orden || 0)) || (a.id - b.id));
+  if (!lista.length) return { n: 0, html: '<p style="font-size:0.82rem;color:#999;margin-bottom:0.5rem">Este contrato no tiene suministros ni extras generales cargados.</p>' };
+  const esc = t => String(t ?? '').replace(/</g, '&lt;');
+  const rotulo = { epe: 'EPE', agua: 'Agua', tgiu: 'TGIU', seguro: 'Seguro', internet: 'Internet', expensas: 'Expensas', otro: 'Extra general' };
+  const persona = id => { const p = DB_PERSONAS.find(x => x.id === parseInt(id)); return p ? formatNombrePersona(p) : ''; };
+  const html = lista.map(s => {
+    const tipo = String(s.tipo || '').toLowerCase();
+    const descuenta = s.descuenta_todos ? 'todos los propietarios' : persona(s.descuenta_persona_id);
+    const rinde = s.rinde_todos ? 'todos los propietarios' : persona(s.propietario_persona_id);
+    const fijo = s.monto_fijo != null && s.monto_fijo !== '' ? formatMoney(s.monto_fijo) + ' fijo mensual' : '';
+    return `<div class="cn-sum">
+      <span class="cn-sum-tipo${tipo === 'otro' ? ' cn-sum-otro' : ''}">${rotulo[tipo] || esc(s.tipo)}</span>
+      <span class="cn-sum-cta">${esc(s.nro_cuenta || s.nombre || '—')}</span>
+      <span>Inquilino ${s.pct_inquilino ?? 100}% · Propietario ${s.pct_propietario ?? 0}%</span>
+      ${descuenta ? `<span>Descuenta a ${esc(descuenta)}</span>` : ''}
+      ${rinde ? `<span>Rinde a ${esc(rinde)}</span>` : ''}
+      ${fijo ? `<span>${fijo}</span>` : ''}
+    </div>`;
+  }).join('');
+  return { n: lista.length, html };
+}
 async function openContratoNuevo(c, tabInicial) {
   // Contrato abierto de cero (otro contrato, o la ventana estaba cerrada): vuelve a arrancar con el mes corriente.
   // Si se vuelve de la Gestión de Pago (la ventana sigue abierta) se conserva el mes elegido.
@@ -2761,10 +2791,7 @@ async function openContratoNuevo(c, tabInicial) {
   const estadoBadge = est === 'rescindido'
     ? `<span class="badge badge-red">Rescindido ${formatDate(c.fecha_rescision, true)}</span>`
     : `<span class="badge ${est === 'vigente' ? 'badge-green' : 'badge-gray'}">${est}</span>`;
-  const otros = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id && s.tipo === 'otro');
-  const extrasGralHtml = otros.length
-    ? otros.map(s => `<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.85rem"><span>${(s.nro_cuenta || s.nombre || 'Extra general').replace(/</g, '&lt;')}</span><span>${s.monto_fijo != null && s.monto_fijo !== '' ? formatMoney(s.monto_fijo) + ' fijo mensual' : 'importe por mes'}</span></div>`).join('')
-    : `<p style="font-size:0.82rem;color:#999;margin-bottom:0.5rem">Este contrato no tiene extras generales.</p>`;
+  const suministros = cnSuministrosHtml(c);
   const firmaCompleta = CHECKLIST_ETAPAS.every(e => c[e.key]);
   document.getElementById('modal-body').innerHTML = `
     <div id="cn-root">
@@ -2793,7 +2820,7 @@ async function openContratoNuevo(c, tabInicial) {
           <div><label>Inmueble</label><span style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
             ${c.inmueble_id
               ? `<span>${inm ? formatDireccion(inm, true) : '—'}</span>`
-              : `<button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px" onclick="abrirAsignarInmueble(${c.id})">＋ Asignar inmueble</button>`}
+              : `<span style="color:#999">Sin inmueble</span>`}
           </span></div>
         </div>
       </div>
@@ -2807,10 +2834,10 @@ async function openContratoNuevo(c, tabInicial) {
         <div id="checklist-contrato">${renderChecklistContrato(c)}</div>
       </details>
       <details class="cn-det">
-        <summary><span>🧩 Extras generales · <span style="font-weight:400;color:#888">se aplican todos los meses${otros.length ? ' · ' + otros.length : ''}</span></span></summary>
+        <summary><span>🧩 Suministros y extras generales · <span style="font-weight:400;color:#888">se aplican todos los meses${suministros.n ? ' · ' + suministros.n : ''}</span></span></summary>
         <div class="cn-card" style="margin-bottom:0">
-          ${extrasGralHtml}
-          <div style="margin-top:0.6rem"><button class="btn btn-secondary" style="font-size:0.78rem" onclick="openEditContrato(${c.id})">✏️ Agregar o editar extras generales</button></div>
+          ${suministros.html}
+          <div style="margin-top:0.6rem"><button class="btn btn-secondary" style="font-size:0.78rem" onclick="openEditContrato(${c.id})">✏️ Agregar o editar suministros</button></div>
           <p style="font-size:0.72rem;color:#999;margin-top:0.4rem">Los extras de un solo mes se cargan dentro de ese mes.</p>
         </div>
       </details>
