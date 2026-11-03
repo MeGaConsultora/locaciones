@@ -164,6 +164,11 @@ En la base solo cascadean al borrar un mes (pagos): pagos_extras, pagos_pdf, mov
 
 ---
 
+## PARTE 6G — PORTAL DE INQUILINOS: CONTRASEÑA GUARDADA Y DURACIÓN DE LA SESIÓN (nov 2026)
+El ingreso del portal (inquilinos-repo/index.html) es un <form> real con autocomplete="username" / "current-password" (antes eran inputs sueltos con autocomplete=off, así que el navegador no ofrecía guardar la clave), igual que "¿Olvidaste?" y las pantallas de contraseña nueva (autocomplete="new-password" + usuario oculto). El Enter lo resuelve el formulario (se quitó el atajo global de teclado, que habría ingresado dos veces). Casillero "Mantener la sesión iniciada en este dispositivo" (tildado por defecto, se guarda en localStorage.inq_mantener): con él la sesión se cierra tras 14 días sin uso; sin él, a la hora como antes (el cierre por inactividad de 1 hora era la causa de las caídas en el celular). 14 días entra en el máximo de setTimeout (~24 días). Sesiones ya abiertas sin esa preferencia usan 14 días. No se agregó renovación extra del token al volver a la pestaña: dos pestañas refrescando a la vez pueden invalidar el refresh token. Los portales de propietarios y de administración no se tocaron.
+
+---
+
 ## PARTE 7 — PENDIENTES / TEMAS ABIERTOS
 - DECIDIDO (oct 2026): la regla del total de un mes vive en DOS lugares (calcularTotal en index.html y total_calculado_pago en SQL) a propósito; las pruebas (saldos_sql.test.mjs) avisan si divergen. Pasar a una sola regla (que la pantalla lea el valor de la base) queda como opción SOLO si la regla empieza a cambiar seguido o reaparecen desfases.
 - Ambiente de prueba (staging): herramienta lista en herramientas/, sin usar; ver PARTE 6B.
