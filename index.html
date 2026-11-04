@@ -6698,7 +6698,13 @@ function mostrarSolapa(id, btn) {
   if (btnSrv) btnSrv.style.display = isExtrasGral ? 'none' : '';
 }
 
-function obtenerItemsPendientesGP(p, contratoId) {
+// extrasCubiertosNeto: parte del total pagado que corresponde a extras ya
+// cobrados. En registros sin desglose por ítem, el pagado se reparte entre
+// alquiler, EPE, etc. — sin este descuento, el pago de un extra (caso real:
+// Monje-Espíndor nov 2026, EPE convenio cuota 4/6 de $67.780,25) se restaba
+// también del alquiler y "Total a cobrar" quedaba $67.780,25 por debajo del
+// saldo real.
+function obtenerItemsPendientesGP(p, contratoId, extrasCubiertosNeto = 0) {
   if (!p) return [];
   const ps = window._pagosSuministros?.[p?.id] || {};
   const getSrvMonto = (tipo) => {
@@ -6722,7 +6728,7 @@ function obtenerItemsPendientesGP(p, contratoId) {
 
   // Legacy: pago fully paid but pagado_ fields are null — reconstruct from montos
   if (!tieneItemsPagados && (p.pagado === 'SI' || p.saldo === 0)) {
-    const totalPagado = p.pagado_importe || (p.total||0) - (p.saldo||0);
+    const totalPagado = (p.pagado_importe || (p.total||0) - (p.saldo||0)) - extrasCubiertosNeto;
     if (totalPagado > 0) {
       const orden = ['alquiler','epe','agua','tgiu','expensas','seguro','internet'];
       let restante = totalPagado;
@@ -6748,7 +6754,7 @@ function obtenerItemsPendientesGP(p, contratoId) {
     ].filter(i => i.val > 0.004);
   } else {
     // No per-item tracking — distribute ya-abonado (total-saldo) across items in sequence
-    const yaAbonadoGP = Math.max(0, (p.total||0) - (p.saldo||0));
+    const yaAbonadoGP = Math.max(0, (p.total||0) - (p.saldo||0) - extrasCubiertosNeto);
     const ordenGP = ['alquiler','epe','agua','tgiu','expensas','seguro','internet'];
     const brutosGP = { alquiler: p.importe_alquiler||0, epe, agua, tgiu, seguro, internet, expensas };
     let restGP = yaAbonadoGP;
@@ -6791,7 +6797,10 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEst
   const epe = getSrvMonto('epe'), agua = getSrvMonto('agua'), tgiu = getSrvMonto('tgiu');
   const seguro = getSrvMonto('seguro'), internet = getSrvMonto('internet'), expensas = getSrvMonto('expensas');
 
-  const items = obtenerItemsPendientesGP(p, contratoId);
+  // Lo ya imputado a extras cobrados no puede volver a descontarse de los
+  // ítems regulares (ver obtenerItemsPendientesGP).
+  const extrasCubiertosNetoYC = extrasInqCubiertos.reduce((s, e) => s + (e.tipo === 'credito' ? -1 : 1) * Math.abs(parseFloat(e.importe)||0), 0);
+  const items = obtenerItemsPendientesGP(p, contratoId, extrasCubiertosNetoYC);
 
   // Use per-item pagado if available (obtenerItemsPendientesGP may have reconstructed
   // pagado_x fields for legacy fully-paid records, so this is checked after that call)
@@ -6821,7 +6830,6 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEst
   // real: Bertolino-Rodríguez, indemnización por rescisión de $272.118) se
   // mostraba dos veces: como "Pago a cuenta" (porque pagado_importe lo
   // contiene y no hay ítems con pagado_xxx) y como el extra cobrado.
-  const extrasCubiertosNetoYC = extrasInqCubiertos.reduce((s, e) => s + (e.tipo === 'credito' ? -1 : 1) * Math.abs(parseFloat(e.importe)||0), 0);
   const yaAbonadoGP = !tieneItemsPagados
     ? redondear2(Math.max(0, (p.pagado_importe || (p.total||0) - (p.saldo||0)) - extrasCubiertosNetoYC))
     : 0;
@@ -8295,6 +8303,19 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
       pagado_internet: 0,
       pagado_expensas: 0
     });
+    // Los extras que ese cobro había marcado como cobrados vuelven a quedar
+    // pendientes. Antes se dejaban con cobrado=true: aparecían en "Ya cobrado"
+    // con su ↩, pero el saldo del mes los seguía contando como impagos y
+    // "Ingresar Pago" ya no los ofrecía (caso real: Monje-Espíndor, EPE
+    // convenio cuota 4/6, saldo $67.780,25 mayor que el total a cobrar).
+    // El interés punitorio no se toca: se calcula aparte, no se re-ofrece.
+    try {
+      const extrasCobrados = await sbGet('pagos_extras', `pago_id=eq.${p.id}&cobrado=eq.true&select=id,concepto,a_cargo_de`);
+      for (const e of extrasCobrados) {
+        if (e.a_cargo_de === 'propietario' || e.concepto === 'Interés punitorio') continue;
+        await sbPatch('pagos_extras', e.id, { cobrado: false });
+      }
+    } catch(e) { console.warn('extras no reabiertos al revertir cobro:', e); }
     // Mismo motivo que en revertirItem: si parte de este cobro había quedado
     // marcado como "rendido directo al propietario", hay que descontarlo de
     // rendido_prop_items antes de perder el historial que lo sustenta.
@@ -8645,7 +8666,13 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
       const idExtra = parseInt(chk.id.replace('cobro-chk-extra-',''));
       const signo = parseFloat(chk.dataset.signo||'1');
       const monto = parseFloat(chk.value)||0;
-      const label = chk.closest('div')?.querySelector('label')?.childNodes?.[1]?.textContent?.trim() || 'Extra';
+      // Nombre del extra: solo los nodos de texto del <label>. Antes se leía
+      // childNodes[1], que es el <input> (texto vacío), así que SIEMPRE caía en
+      // 'Extra' y el historial/Caja guardaban "Extra" en vez del concepto real
+      // (caso real: "EPE convenio cuota 4/6" quedó como "Extra — Monje-Espindor
+      // Nuevo"). El recibo no tenía el problema: lee el texto completo del label.
+      const lblEl = chk.closest('div')?.querySelector('label');
+      const label = [...(lblEl?.childNodes || [])].filter(n => n.nodeType === 3).map(n => n.textContent).join(' ').replace(/\s+/g, ' ').trim() || 'Extra';
       return { id: idExtra, signo, monto, label };
     });
   const montoExtrasChk = extrasChkDetalle.reduce((s, e) => s + (e.signo * e.monto), 0);
