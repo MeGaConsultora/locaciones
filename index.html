@@ -8375,6 +8375,12 @@ function obtenerChecksCobroGP() {
     // usuario destildó explícitamente en la pantalla de cobro.
     chk[k] = el ? el.checked : true;
   });
+  // Extras pendientes de cobrar: cada uno tiene su casillero
+  // "cobro-chk-extra-<id>". Un extra ya cobrado no tiene casillero, así que
+  // no figura acá y el Detalle de deuda lo sigue mostrando (lo cubre "Ya abonado").
+  document.querySelectorAll('[id^="cobro-chk-extra-"]').forEach(el => {
+    chk['extra-' + el.id.replace('cobro-chk-extra-', '')] = el.checked;
+  });
   return chk;
 }
 
@@ -8409,7 +8415,10 @@ async function verDetalleDeuda(hoja, contratoId, mesKey, conIntereses = false, f
     ...extras.map(e => {
       const importe = parseFloat(e.importe)||0;
       const esCredito = e.tipo === 'descuento' || e.tipo === 'credito';
-      return { label: e.concepto||'Extra', monto: esCredito ? -importe : importe };
+      // key 'extra-<id>': para que el filtro de abajo respete si el extra
+      // está destildado en "Ingresar Pago" (antes los extras no tenían key y
+      // pasaban siempre, aunque estuvieran destildados).
+      return { label: e.concepto||'Extra', monto: esCredito ? -importe : importe, key: 'extra-' + e.id };
     })
   ]
     .filter(i => i.monto !== 0)
