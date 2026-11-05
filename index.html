@@ -8565,6 +8565,12 @@ async function confirmarCobroInquilino(hoja, contratoId, mesKey, comisionPct) {
   }
 }
 
+// Nombre de un extra a partir del <label> de la pantalla de cobro: solo los nodos de texto del propio label
+// (el <input> y el <span> con "(débito)" no cuentan). Sin texto, 'Extra'.
+function nombreExtraDeLabel(lblEl) {
+  return [...(lblEl?.childNodes || [])].filter(n => n.nodeType === 3).map(n => n.textContent).join(' ').replace(/\s+/g, ' ').trim() || 'Extra';
+}
+
 async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPct) {
   // Aviso ANTES de confirmar, no después — si hay "directo al propietario"
   // en un contrato con más de un propietario, hay que poder frenar acá y
@@ -8672,7 +8678,7 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
       // (caso real: "EPE convenio cuota 4/6" quedó como "Extra — Monje-Espindor
       // Nuevo"). El recibo no tenía el problema: lee el texto completo del label.
       const lblEl = chk.closest('div')?.querySelector('label');
-      const label = [...(lblEl?.childNodes || [])].filter(n => n.nodeType === 3).map(n => n.textContent).join(' ').replace(/\s+/g, ' ').trim() || 'Extra';
+      const label = nombreExtraDeLabel(lblEl);
       return { id: idExtra, signo, monto, label };
     });
   const montoExtrasChk = extrasChkDetalle.reduce((s, e) => s + (e.signo * e.monto), 0);

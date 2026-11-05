@@ -169,6 +169,11 @@ El ingreso del portal (inquilinos-repo/index.html) es un <form> real con autocom
 
 ---
 
+## PARTE 6H — GESTIÓN DE PAGO CON EXTRAS COBRADOS (nov 2026)
+Cuando un mes tiene extras ya cobrados (`pagos_extras.cobrado=true`): (1) `obtenerItemsPendientesGP(p, contratoId, extrasCubiertosNeto)` descuenta lo imputado a esos extras antes de repartir lo abonado entre alquiler y servicios (caso Monje-Espíndor: el alquiler pendiente salía $67.780,25 de menos); (2) `generarItemsCobro` muestra como "Pago a cuenta" solo la parte que no es de extras (caso Bertolino-Rodríguez: se veía doble) y su botón ↩ pasa esa parte a `revertirPagoACuenta(..., montoACuenta)`, que revierte solo eso y deja el resto como PARCIAL; (3) `revertirCobro` vuelve `cobrado=false` en los extras, salvo el "Interés punitorio" y los del propietario; (4) el nombre del extra que se guarda en el historial y en Caja sale de `nombreExtraDeLabel` (solo los nodos de texto del label; antes quedaba siempre "Extra"). Pruebas: `pruebas/cobros_con_extras.test.mjs` (20 casos; se verificó que cada corrección, rota a propósito, hace fallar alguna prueba).
+
+---
+
 ## PARTE 7 — PENDIENTES / TEMAS ABIERTOS
 - DECIDIDO (oct 2026): la regla del total de un mes vive en DOS lugares (calcularTotal en index.html y total_calculado_pago en SQL) a propósito; las pruebas (saldos_sql.test.mjs) avisan si divergen. Pasar a una sola regla (que la pantalla lea el valor de la base) queda como opción SOLO si la regla empieza a cambiar seguido o reaparecen desfases.
 - Ambiente de prueba (staging): herramienta lista en herramientas/, sin usar; ver PARTE 6B.
