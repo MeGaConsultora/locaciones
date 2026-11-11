@@ -512,33 +512,33 @@
       <button class="login-tab active" onclick="switchLoginTab('login',this)">Iniciar sesión</button>
       <button class="login-tab" onclick="switchLoginTab('registro',this)">Registrarse</button>
     </div>
-    <div id="login-panel" class="login-form">
-      <input type="email" id="login-email" placeholder="Email" autocomplete="off">
-      <input type="password" id="login-pass" placeholder="Contraseña" autocomplete="current-password">
-      <button class="login-btn" onclick="doLogin()">Entrar</button>
+    <form id="login-panel" class="login-form" method="post" onsubmit="event.preventDefault();doLogin()">
+      <input type="email" id="login-email" name="email" placeholder="Email" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="email">
+      <input type="password" id="login-pass" name="password" placeholder="Contraseña" autocomplete="current-password">
+      <button type="submit" class="login-btn">Entrar</button>
       <div style="text-align:center;margin-top:0.5rem">
-        <button onclick="showForgotAdmin()" style="background:none;border:none;color:#999;font-size:0.8rem;cursor:pointer;text-decoration:underline;font-family:'DM Sans',sans-serif">¿Olvidaste tu contraseña?</button>
+        <button type="button" onclick="showForgotAdmin()" style="background:none;border:none;color:#999;font-size:0.8rem;cursor:pointer;text-decoration:underline;font-family:'DM Sans',sans-serif">¿Olvidaste tu contraseña?</button>
       </div>
       <div id="login-msg"></div>
-    </div>
+    </form>
 
-    <div id="forgot-panel-admin" class="login-form" style="display:none">
+    <form id="forgot-panel-admin" class="login-form" style="display:none" onsubmit="event.preventDefault();doForgotAdmin()">
       <p style="font-size:0.82rem;color:#666;text-align:center">Ingresá tu email y te enviaremos un link para restablecer tu contraseña.</p>
       <p style="font-size:0.76rem;color:#b8860b;text-align:center;background:#fff8e1;border-radius:6px;padding:6px 10px">⚠ El email puede llegar a la carpeta de Spam o No deseados — revisá ahí si no lo ves en la bandeja de entrada en unos minutos.</p>
-      <input type="email" id="forgot-email-admin" placeholder="Tu email" autocomplete="off">
-      <button class="login-btn" onclick="doForgotAdmin()">Enviar link</button>
+      <input type="email" id="forgot-email-admin" name="email" placeholder="Tu email" autocomplete="username" autocapitalize="none" spellcheck="false" inputmode="email">
+      <button type="submit" class="login-btn">Enviar link</button>
       <div style="text-align:center;margin-top:0.5rem">
-        <button onclick="showLoginAdmin()" style="background:none;border:none;color:#999;font-size:0.8rem;cursor:pointer;text-decoration:underline;font-family:'DM Sans',sans-serif">← Volver</button>
+        <button type="button" onclick="showLoginAdmin()" style="background:none;border:none;color:#999;font-size:0.8rem;cursor:pointer;text-decoration:underline;font-family:'DM Sans',sans-serif">← Volver</button>
       </div>
       <div id="forgot-msg-admin"></div>
-    </div>
-    <div id="registro-panel" class="login-form" style="display:none">
-      <input type="text" id="reg-nombre" placeholder="Nombre completo">
-      <input type="email" id="reg-email" placeholder="Email">
-      <input type="password" id="reg-pass" placeholder="Contraseña (mínimo 6 caracteres)">
-      <button class="login-btn" onclick="doRegistro()">Crear cuenta</button>
+    </form>
+    <form id="registro-panel" class="login-form" style="display:none" method="post" onsubmit="event.preventDefault();doRegistro()">
+      <input type="text" id="reg-nombre" name="name" placeholder="Nombre completo" autocomplete="name">
+      <input type="email" id="reg-email" name="email" placeholder="Email" autocomplete="username" autocapitalize="none" spellcheck="false" inputmode="email">
+      <input type="password" id="reg-pass" name="password" placeholder="Contraseña (mínimo 6 caracteres)" autocomplete="new-password">
+      <button type="submit" class="login-btn">Crear cuenta</button>
       <div id="registro-msg"></div>
-    </div>
+    </form>
   </div>
 </div>
 
@@ -14466,9 +14466,39 @@ async function doLogin() {
     // admin logueado.
     if (data.refresh_token) localStorage.setItem('sb_refresh_token', data.refresh_token);
     await verificarAprobacion();
+    // Solo si la cuenta quedó adentro (aprobada): se recuerda el email para el próximo ingreso y se le ofrece
+    // al navegador guardar la contraseña.
+    if (currentUsuario) {
+      recordarEmailLogin(email);
+      ofrecerGuardarContrasena(email, pass, currentUsuario.nombre);
+    }
   } catch(e) {
     showLoginMsg('login', 'Email o contraseña incorrectos', 'error');
   }
+}
+
+// El navegador no siempre completa el email (depende del dispositivo y de su configuración): se guarda acá el
+// último email con el que se ingresó y se vuelve a poner en la pantalla de ingreso. Es solo el email, nunca la clave.
+function recordarEmailLogin(email) {
+  try { localStorage.setItem('adm_ultimo_email', email); } catch(e) {}
+}
+function prellenarEmailLogin() {
+  try {
+    const el = document.getElementById('login-email');
+    const guardado = localStorage.getItem('adm_ultimo_email');
+    if (el && !el.value && guardado) el.value = guardado;
+  } catch(e) {}
+}
+// Le entrega la credencial al navegador (API de credenciales de Chrome / Edge / Android): es lo que hace que
+// aparezca el cartel "Guardar contraseña" en una pantalla que ingresa sin cambiar de página.
+function ofrecerGuardarContrasena(email, pass, nombre) {
+  try {
+    if (window.PasswordCredential && navigator.credentials && navigator.credentials.store) {
+      navigator.credentials.store(new PasswordCredential({ id: email, password: pass, name: nombre || email })).catch(() => {});
+      return 'api';
+    }
+  } catch(e) {}
+  return 'sin-api';
 }
 
 async function doRegistro() {
@@ -14578,6 +14608,7 @@ function doLogout() {
 
 function showLoginScreen() {
   document.getElementById('login-screen').style.display = 'flex';
+  prellenarEmailLogin();
 }
 function hideLoginScreen() {
   document.getElementById('login-screen').style.display = 'none';
@@ -14685,13 +14716,7 @@ async function doForgotAdmin() {
   }
 }
 
-// Enter key support
-document.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && document.getElementById('login-screen').style.display !== 'none') {
-    const activePanel = document.getElementById('login-panel').style.display !== 'none' ? 'login' : 'registro';
-    activePanel === 'login' ? doLogin() : doRegistro();
-  }
-});
+// (El Enter en el ingreso / registro / "olvidé mi contraseña" lo resuelve cada <form>.)
 
 // ============================================================
 // ADMIN USUARIOS

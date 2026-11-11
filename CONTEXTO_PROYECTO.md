@@ -174,6 +174,11 @@ Cuando un mes tiene extras ya cobrados (`pagos_extras.cobrado=true`): (1) `obten
 
 ---
 
+## PARTE 6I — INGRESO AL SISTEMA DE GESTIÓN: CLAVE GUARDADA Y EMAIL RECORDADO (nov 2026)
+El ingreso de administración (locaciones-repo/index.html) pasó a ser un <form> real (igual que el de inquilinos, ver 6G): email con autocomplete="username" (antes "off", por eso Chrome nunca lo completaba), clave con "current-password", "¿Olvidaste?" y registro también son <form>, y se quitó el atajo global de Enter. Al ingresar y quedar adentro (currentUsuario aprobado) se recuerda el email en localStorage.adm_ultimo_email (solo el email, nunca la clave) y se le entrega la credencial al navegador con la API de credenciales (`ofrecerGuardarContrasena`); showLoginScreen vuelve a poner ese email. Una cuenta no aprobada o con clave incorrecta no deja nada guardado. La sesión sigue cerrándose a la 1 hora sin uso (INACTIVIDAD_LIMITE_MS): decisión de Hugo, por tratarse de datos de todos los clientes. No hay reintento con recarga para Safari/Firefox (a diferencia del portal de inquilinos): recargar volvería a cargar todo el sistema. Pruebas: `pruebas/login_admin.test.mjs`.
+
+---
+
 ## PARTE 7 — PENDIENTES / TEMAS ABIERTOS
 - DECIDIDO (oct 2026): la regla del total de un mes vive en DOS lugares (calcularTotal en index.html y total_calculado_pago en SQL) a propósito; las pruebas (saldos_sql.test.mjs) avisan si divergen. Pasar a una sola regla (que la pantalla lea el valor de la base) queda como opción SOLO si la regla empieza a cambiar seguido o reaparecen desfases.
 - Ambiente de prueba (staging): herramienta lista en herramientas/, sin usar; ver PARTE 6B.
