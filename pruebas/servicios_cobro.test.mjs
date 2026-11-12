@@ -17,7 +17,7 @@ const SUMINISTROS = [
 
 function pendientes(ps) {
   const env = { window: { _pagosSuministros: { 59648: ps } }, DB_SUMINISTROS: SUMINISTROS };
-  return cargar('index.html', ['redondear2', 'montoServicioInquilinoGP', 'obtenerItemsPendientesGP'], env).obtenerItemsPendientesGP;
+  return cargar('index.html', ['redondear2', 'montoServicioInquilino', 'obtenerItemsPendientesGP'], env).obtenerItemsPendientesGP;
 }
 const valor = (items, id) => items.find(i => i.id === id)?.val;
 
@@ -46,6 +46,6 @@ test('una fila con importe 0 en pagos_suministros no se pisa con el campo viejo'
 
 test('contrato sin cuenta real de ese servicio (sistema viejo): usa el campo viejo, como siempre', () => {
   const env = { window: { _pagosSuministros: {} }, DB_SUMINISTROS: [] };
-  const { montoServicioInquilinoGP } = cargar('index.html', ['montoServicioInquilinoGP'], env);
-  assert.equal(montoServicioInquilinoGP({ monto_tgiu: 5000 }, 1, 'tgiu', {}), 5000);
+  const { montoServicioInquilino } = cargar('index.html', ['montoServicioInquilino'], env);
+  assert.equal(montoServicioInquilino({ monto_tgiu: 5000 }, 1, 'tgiu', {}), 5000);
 });

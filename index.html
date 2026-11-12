@@ -3647,19 +3647,7 @@ function renderGrilla(c) {
     const extras = extrasActuales[p.id] || [];
     const ps = window._pagosSuministros?.[p.id] || {};
     // Calculate per-type totals from pagos_suministros (with fallback to pagos.monto_xxx)
-    const getMonto = (tipo) => {
-      const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === c.id && s.tipo === tipo);
-      if (sums.length > 0) {
-        const psTotal = sums.reduce((t, s) => {
-          const entry = ps[s.id];
-          if (entry === undefined) return t;
-          return t + (typeof entry === 'object' ? (entry.inq||0) : (entry||0));
-        }, 0);
-        // Only use pagos_suministros if it has actual values, otherwise fallback to monto_xxx
-        if (psTotal > 0) return psTotal;
-      }
-      return p['monto_'+tipo] || 0;
-    };
+    const getMonto = (tipo) => montoServicioInquilino(p, c.id, tipo, ps);
     const extrasGral = extras.filter(e => {
       if (!e.suministro_id || e.a_cargo_de === 'propietario') return false;
       const sum = DB_SUMINISTROS.find(s => s.id === parseInt(e.suministro_id));
@@ -6447,21 +6435,11 @@ async function cargarPantallaGestionPago(hoja, contratoId, mesKey, meses, comisi
           };
           // Get value from pagos_suministros — fallback to monto_xxx if no suministros data
           const getSrvVal = (srv) => {
-            const ps = window._pagosSuministros?.[p?.id] || {};
-            const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === srv);
-            if (sums.length > 0) {
-              // _pagosSuministros stores {suministro_id: {inq, prop}} structure
-              const psTotal = sums.reduce((t, s) => {
-                const entry = ps[s.id];
-                if (entry === undefined) return t;
-                // Handle both numeric and {inq, prop} formats
-                const val = (typeof entry === 'object') ? (entry.inq||0) : (entry||0);
-                return t + val;
-              }, 0);
-              if (psTotal > 0) return Math.round(psTotal * 100) / 100;
-            }
-            // Fallback to monto_xxx from pagos table
-            return p?.['monto_'+srv] || '';
+            if (!p) return '';
+            const ps = window._pagosSuministros?.[p.id] || {};
+            // Mismo importe que suma la grilla y que se ofrece en "Ingresar Pago"
+            const monto = montoServicioInquilino(p, contratoId, srv, ps);
+            return monto ? Math.round(monto * 100) / 100 : '';
           };
           const servs = (c?.servicios_inquilino||'').toLowerCase();
           let fields = '';
@@ -6712,7 +6690,7 @@ function mostrarSolapa(id, btn) {
 // TGIU figuraba en la grilla y sumaba en el total, pero no se ofrecía para
 // cobrar ni salía en el recibo hasta volver a guardar los importes en el GP
 // (caso real: Goitre-Pennacino nov 2026, TGIU $13.053).
-function montoServicioInquilinoGP(p, contratoId, tipo, ps) {
+function montoServicioInquilino(p, contratoId, tipo, ps) {
   const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(contratoId) && s.tipo === tipo);
   if (sums.length > 0) {
     let hayFila = false;
@@ -6730,7 +6708,7 @@ function montoServicioInquilinoGP(p, contratoId, tipo, ps) {
 function obtenerItemsPendientesGP(p, contratoId, extrasCubiertosNeto = 0) {
   if (!p) return [];
   const ps = window._pagosSuministros?.[p?.id] || {};
-  const getSrvMonto = (tipo) => montoServicioInquilinoGP(p, contratoId, tipo, ps);
+  const getSrvMonto = (tipo) => montoServicioInquilino(p, contratoId, tipo, ps);
   const epe = getSrvMonto('epe'), agua = getSrvMonto('agua'), tgiu = getSrvMonto('tgiu');
   const seguro = getSrvMonto('seguro'), internet = getSrvMonto('internet'), expensas = getSrvMonto('expensas');
 
@@ -6794,7 +6772,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEst
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
 
   const ps = window._pagosSuministros?.[p?.id] || {};
-  const getSrvMonto = (tipo) => montoServicioInquilinoGP(p, contratoId, tipo, ps);
+  const getSrvMonto = (tipo) => montoServicioInquilino(p, contratoId, tipo, ps);
   const epe = getSrvMonto('epe'), agua = getSrvMonto('agua'), tgiu = getSrvMonto('tgiu');
   const seguro = getSrvMonto('seguro'), internet = getSrvMonto('internet'), expensas = getSrvMonto('expensas');
 
@@ -8418,14 +8396,7 @@ async function verDetalleDeuda(hoja, contratoId, mesKey, conIntereses = false, f
   const ps = {};
   const psRows = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&select=*`);
   psRows.forEach(r => ps[r.suministro_id] = r.importe);
-  const getSrv = tipo => {
-    const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id)===contratoId && s.tipo===tipo);
-    if (sums.length) {
-      const total = sums.reduce((t,s)=>t+(ps[s.id]||0),0);
-      if (total > 0) return total;
-    }
-    return p['monto_'+tipo]||0;
-  };
+  const getSrv = tipo => montoServicioInquilino(p, contratoId, tipo, ps);
   const items = [
     { label:'Alquiler', monto: p.importe_alquiler||0, key:'alquiler' },
     { label:'EPE', monto: getSrv('epe'), key:'epe' },
