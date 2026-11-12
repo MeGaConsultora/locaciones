@@ -179,6 +179,11 @@ El ingreso de administración (locaciones-repo/index.html) pasó a ser un <form>
 
 ---
 
+## PARTE 6J — CAMPO VIEJO monto_xxx DE LOS SERVICIOS (nov 2026)
+Desde "Importe de servicios, paso 2" (12/11/2026) todas las cargas (servicios del mes, importador de Excel/EPE/PDF) dejan el campo viejo `pagos.monto_xxx` en 0 cuando el servicio tiene cuenta real (`pagos_suministros`). Los meses de nov 2026 cargados ANTES tienen el mismo importe en los dos lugares (unas 90 filas en la revisión del 12/11): el total estaba bien porque la regla (calcularTotal / total_calculado_pago) ignora el campo viejo de un tipo ya cubierto por una cuenta. `sql_historial_local/17_limpiar_campo_viejo_servicios.sql` los deja en 0 (solo desde 2026-11-01, solo el tipo cubierto, sin tocar rescindidos ni servicios cargados solo en el campo viejo); no mueve ningún total ni saldo (`pruebas/limpieza_campo_viejo.test.mjs`). Revisión del 12/11: control_saldos() dio 0 filas; las ~100 filas de pagos_suministros con cuentas de OTRO contrato (nov 2025 a jun 2026, 8 contratos que tomaron un inmueble de otro) son el único registro de esos servicios y NO deben borrarse (cambiarían totales de meses cobrados); no hay doble conteo.
+
+---
+
 ## PARTE 7 — PENDIENTES / TEMAS ABIERTOS
 - DECIDIDO (oct 2026): la regla del total de un mes vive en DOS lugares (calcularTotal en index.html y total_calculado_pago en SQL) a propósito; las pruebas (saldos_sql.test.mjs) avisan si divergen. Pasar a una sola regla (que la pantalla lea el valor de la base) queda como opción SOLO si la regla empieza a cambiar seguido o reaparecen desfases.
 - Ambiente de prueba (staging): herramienta lista en herramientas/, sin usar; ver PARTE 6B.
