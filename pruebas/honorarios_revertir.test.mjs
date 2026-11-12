@@ -78,6 +78,37 @@ test('un movimiento de honorarios viejo (sin detalle por cuota) revierte la cuot
   assert.deepEqual(t.orden.find(x => x[0] === 'gastos_inicio_cuotas'), ['gastos_inicio_cuotas', 1333, { pagado_inquilino: 0 }]);
 });
 
+// ---------- Ingresar Pago: importe de honorarios que se precarga ----------
+// Goitre-Pennacino: honorarios de $282.000 en 2 cuotas de $141.000 (nov y dic); pagó $125.044,36.
+// Se precarga TODO lo adeudado ($156.955,64) en cualquier mes, no solo lo que falta de la cuota de ese mes.
+function precargaHonorarios(mesGP, cuotas) {
+  const env = {
+    window: { _pagosSuministros: {}, _gpMesKey: mesGP }, DB: { contratos: [] }, DB_SUMINISTROS: [], DB_GASTOS_CUOTAS: cuotas,
+    formatMoney: n => '$ ' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2 }), TODAY: '2026-11-12', _gpHoja: 'Goitre-Pennacino', _gpComision: 8
+  };
+  const { generarItemsCobro } = cargar('index.html', ['redondear2', 'calcularTotal', 'montoServicioInquilino', 'obtenerItemsPendientesGP', 'generarItemsCobro'], env);
+  const p = { id: 59648, importe_alquiler: 470000, total: 470000, saldo: 470000, pagado: '0', pagado_importe: 0 };
+  const html = generarItemsCobro(p, [], 4562, mesGP, 0, []);
+  return Number(html.match(/id="val-honorarios" value="([\d.]+)"/)[1]);
+}
+const cuotasGoitre = () => [
+  { id: 1333, contrato_id: 4562, mes: '2026-11-01', monto_inquilino: 141000, pagado_inquilino: 125044.36 },
+  { id: 1334, contrato_id: 4562, mes: '2026-12-01', monto_inquilino: 141000, pagado_inquilino: 0 },
+];
+
+test('honorarios: en noviembre se precarga todo lo adeudado (no solo lo que falta de la cuota de noviembre)', () => {
+  assert.equal(precargaHonorarios('2026-11', cuotasGoitre()), 156955.64);
+});
+
+test('honorarios: en diciembre se precarga todo lo adeudado (el resto de noviembre más la cuota de diciembre)', () => {
+  assert.equal(precargaHonorarios('2026-12', cuotasGoitre()), 156955.64);
+});
+
+test('honorarios: sin pagos previos se precarga el total de las cuotas', () => {
+  const cuotas = cuotasGoitre(); cuotas[0].pagado_inquilino = 0;
+  assert.equal(precargaHonorarios('2026-11', cuotas), 282000);
+});
+
 // ---------- revertirHonorarios: cobro sin ningún registro ----------
 test('revertirHonorarios: si no hay movimientos, revierte la cuota del mes en vez de abortar', async () => {
   const cuota = { id: 1333, contrato_id: 4562, mes: '2026-11-01', monto_inquilino: 141000, pagado_inquilino: 138097.36 };

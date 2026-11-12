@@ -6873,9 +6873,13 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEst
   const totalInqH = cuotasH.reduce((s,g) => s+(g.monto_inquilino||0), 0);
   const pagadoInqH = cuotasH.reduce((s,g) => s+(parseFloat(g.pagado_inquilino)||0), 0);
   const saldoInqH = Math.round(Math.max(0, totalInqH - pagadoInqH) * 100) / 100;
-  // Buscar la cuota del mes actual para precargar ese importe
-  const cuotaMesActual = cuotasH.find(g => g.mes && g.mes.startsWith(window._gpMesKey || TODAY.substring(0,7)));
-  const importePrecargar = cuotaMesActual ? Math.round(Math.max(0, (cuotaMesActual.monto_inquilino||0) - (parseFloat(cuotaMesActual.pagado_inquilino)||0)) * 100) / 100 : saldoInqH;
+  // Se precarga TODO lo adeudado de honorarios (saldo de todas las cuotas), no
+  // solo lo que falta de la cuota de este mes: los inquilinos rara vez pagan
+  // la cuota exacta del mes, así que lo que quedó de una cuota anterior (o lo
+  // que viene) tiene que aparecer en cualquier mes (caso real: Goitre-Pennacino,
+  // 2 cuotas de $141.000, pagado parcial en noviembre). El cobro igual se
+  // imputa a las cuotas en orden (la más vieja primero) y el importe es editable.
+  const importePrecargar = saldoInqH;
 
   const honorariosItem = saldoInqH > 0 ? `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:5px 0;border-bottom:1px solid #f0ece4">
