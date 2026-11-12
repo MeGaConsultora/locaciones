@@ -5841,8 +5841,13 @@ async function guardarServicioItem(inputId) {
           .reduce((s,e) => s + ((e.tipo==='credito' ? -1 : 1) * (parseFloat(e.importe)||0)), 0);
         const newTotal = (pago.importe_alquiler||0) + await getTotalServiciosPago(pago.id, srv, totalTipo) + extrasTotal;
         const yaAbonado = pago.pagado_importe || (pago.total||0) - (pago.saldo||0);
+        // Con cuenta real (sumId) el importe ya quedó en pagos_suministros: el
+        // campo viejo se deja en 0 para no duplicarlo (la base lo ignora igual en
+        // el total, pero quedaba un valor pegado que después confundía). Sin
+        // cuenta (sistema viejo) sigue siendo la única fuente. La clave se
+        // escribe siempre: es lo que dispara el recálculo del total en la base.
         const patchPago = {
-          ['monto_'+srv]: totalTipo,
+          ['monto_'+srv]: sumId ? 0 : totalTipo,
           total: newTotal,
           saldo: Math.max(0, newTotal - yaAbonado)
         };
@@ -10112,6 +10117,15 @@ async function guardarNuevoMes(hoja, contratoId) {
   const totalExtras = extras.reduce((s,e)=>s+e.importe,0);
   const total = alq+epe+agua+tgiu+seguro+totalExtras;
 
+  // Servicios con cuenta real del contrato: el importe va a pagos_suministros
+  // (más abajo) y el campo viejo queda en 0. Antes se guardaba SOLO en el campo
+  // viejo: el mes quedaba con el importe sin fila en pagos_suministros, y
+  // "Ingresar Pago", el recibo y el portal del inquilino no lo veían (caso
+  // real: Goitre-Pennacino dic 2026, TGIU). Sin cuenta real (sistema viejo) no cambia.
+  const importesForm = { epe, agua, tgiu, seguro };
+  const conCuentaNM = t => DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === parseInt(contratoId) && s.tipo === t && (s.pct_inquilino||0) > 0);
+  const viejoNM = t => conCuentaNM(t) ? 0 : importesForm[t];
+
   try {
     // Check if month already exists
     const hojaEncoded = encodeURIComponent(hoja);
@@ -10120,8 +10134,8 @@ async function guardarNuevoMes(hoja, contratoId) {
     if (existing.length > 0) {
       // Update existing
       await sbPatch('pagos', existing[0].id, {
-        importe_alquiler:alq, monto_epe:epe, monto_agua:agua,
-        monto_tgiu:tgiu, monto_seguro:seguro, total,
+        importe_alquiler:alq, monto_epe:viejoNM('epe'), monto_agua:viejoNM('agua'),
+        monto_tgiu:viejoNM('tgiu'), monto_seguro:viejoNM('seguro'), total,
         fecha_pago_hasta:vence, saldo:total
       });
       pagoId = existing[0].id;
@@ -10130,12 +10144,19 @@ async function guardarNuevoMes(hoja, contratoId) {
       // Create new
       const r = await sbPost('pagos', {
         hoja, mes, corresponde_a_mes:mes,
-        importe_alquiler:alq, monto_epe:epe, monto_agua:agua,
-        monto_tgiu:tgiu, monto_seguro:seguro, total,
+        importe_alquiler:alq, monto_epe:viejoNM('epe'), monto_agua:viejoNM('agua'),
+        monto_tgiu:viejoNM('tgiu'), monto_seguro:viejoNM('seguro'), total,
         fecha_pago_hasta:vence, saldo:total, pagado:'0'
       });
       pagoId = r[0]?.id;
       toast('Mes cargado ✓');
+    }
+    // Importes de los servicios con cuenta real: a pagos_suministros (solo los
+    // que se completaron en el formulario; un campo en blanco no pisa lo ya cargado).
+    if (pagoId) {
+      const montosNM = {};
+      ['epe','agua','tgiu','seguro'].forEach(t => { if (conCuentaNM(t) && importesForm[t] !== 0) montosNM[t] = importesForm[t]; });
+      if (Object.keys(montosNM).length) await _syncPagosSuministros(pagoId, contratoId, montosNM);
     }
     // Save extras
     for (const e of extras) {
@@ -11153,6 +11174,8 @@ async function actualizarContrato(id) {
               const oldPct = oldContrato?.['pct_'+srv] ?? 100;
               const newPct = body['pct_'+srv] ?? oldPct;
               if (newPct === 0) continue; // service unticked - don't touch the monto
+              // Con cuenta real del servicio, el importe vive en pagos_suministros: el campo viejo no se toca.
+              if (DB_SUMINISTROS.some(s => parseInt(s.contrato_id) === parseInt(id) && s.tipo === srv)) continue;
               const currentMonto = p['monto_'+srv] || 0;
               if (currentMonto > 0 && oldPct > 0) {
                 const totalBill = Math.round(currentMonto * 100 / oldPct * 100) / 100;
@@ -15991,7 +16014,9 @@ async function confirmarImportarExcel() {
           const abonadoP2 = freshP2.pagado_importe || (freshP2.total||0) - (freshP2.saldo||0);
           const newTotal = (freshP2.importe_alquiler||0) + await getTotalServiciosPago(freshP2.id, srv, totalSrv);
           const patch = { total: Math.round(newTotal*100)/100, saldo: Math.round(Math.max(0, newTotal - abonadoP2)*100)/100 };
-          patch['monto_'+srv] = totalSrv;
+          // Los importes ya están en pagos_suministros (arriba): el campo viejo queda en 0
+          // para no duplicarlos. La clave se escribe igual: dispara el recálculo del total en la base.
+          patch['monto_'+srv] = 0;
           await sbPatch('pagos', p2.id, patch);
         }
         cargados++;

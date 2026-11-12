@@ -76,6 +76,18 @@ test('importar con "seleccionar todos": se carga cada fila con contrato, tambié
   assert.match(t.env.toasts.at(-1)[0], /^✓ 4 registros importados/);
 });
 
+test('el importe queda en pagos_suministros y el campo viejo monto_tgiu en 0 (no se duplica)', async () => {
+  const t = armar();
+  for (const p of t.pagos) p.monto_tgiu = 99999;           // un valor viejo pegado de antes
+  const lista = listaCompleta(t.env);
+  await ejecutar(t, lista, [0, 3, 4]);
+  for (const id of [1, 2, 3, 4, 5]) {
+    const pago = t.pagos.find(p => p.id === 100 + id);
+    if (cargado(t, id).length) assert.equal(pago.monto_tgiu, 0, `contrato ${id}`);
+  }
+  assert.deepEqual(cargado(t, 1), [10000]);
+});
+
 test('importar tildando una sola fila: se carga esa y ninguna otra', async () => {
   const t = armar();
   const lista = listaCompleta(t.env);
