@@ -8221,8 +8221,12 @@ async function revertirHonorarios(contratoId, hoja, mesKey, comisionPct) {
   // Buscar el movimiento de honorarios de ESTA transacción puntual, que guarda
   // el desglose exacto de qué cuota(s) recibieron la plata (puede no ser la
   // cuota de "este mes" si había cuotas atrasadas de meses anteriores).
+  // Si no hay ningún movimiento (la cuota figura cobrada pero el cobro no dejó
+  // registro: caso real Goitre-Pennacino nov 2026, $138.097,36), no se aborta:
+  // sigue por la rama de más abajo, que revierte la cuota de este mes. Antes
+  // salía con "No hay honorarios registrados" y la pantalla seguía mostrando el
+  // cobro, sin forma de revertirlo.
   const movs = await sbGet('movimientos_pagos', `pago_id=eq.${pagoId}&concepto=eq.Honorarios&select=*`);
-  if (!movs.length) { toast('No hay honorarios registrados en este mes', 'error'); return; }
 
   let cuotasAfectadas = [];
   let montoTotal = 0;
@@ -8239,7 +8243,10 @@ async function revertirHonorarios(contratoId, hoja, mesKey, comisionPct) {
     // Mejor esfuerzo: revertir la cuota de este mes específico si existe.
     const cuota = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey));
     if (!cuota) { toast('No se encontró la cuota de honorarios de este mes', 'error'); return; }
-    if (!confirm(`¿Revertir el pago de honorarios de este mes (${formatMoney(cuota.pagado_inquilino)})?\n\nEste pago es anterior a una corrección del sistema y no tiene el desglose exacto guardado — se va a revertir la cuota de este mes como mejor estimación.`)) return;
+    const motivoSinDesglose = movs.length
+      ? 'Este pago es anterior a una corrección del sistema y no tiene el desglose exacto guardado'
+      : 'Este cobro no tiene registro en el historial de pagos ni en Caja';
+    if (!confirm(`¿Revertir el pago de honorarios de este mes (${formatMoney(cuota.pagado_inquilino)})?\n\n${motivoSinDesglose} — se va a revertir la cuota de este mes como mejor estimación.`)) return;
     try {
       await sbPatch('gastos_inicio_cuotas', cuota.id, { pagado_inquilino: 0 });
       cuota.pagado_inquilino = 0;
