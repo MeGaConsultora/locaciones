@@ -139,7 +139,7 @@ const ARCHIVO = 'index.html';
 
 // ───────── "Ingresar Pago": qué se ofrece cobrar de los extras pendientes ─────────
 {
-  const { generarItemsCobro } = cargar(ARCHIVO, ['generarItemsCobro', 'obtenerItemsPendientesGP', 'calcularTotal', 'redondear2'], {
+  const { generarItemsCobro } = cargar(ARCHIVO, ['generarItemsCobro', 'obtenerItemsPendientesGP', 'montoServicioInquilinoGP', 'calcularTotal', 'redondear2'], {
     window: { _pagosSuministros: {}, _gpMesKey: '2026-09' },
     DB_SUMINISTROS: [], DB_GASTOS_CUOTAS: [], DB: { contratos: [] },
     formatMoney: dinero, _gpHoja: 'X', _gpComision: 8

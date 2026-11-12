@@ -14,7 +14,7 @@ const REDONDEAR = ['redondear2'];
 // ---------- obtenerItemsPendientesGP: lo que falta cobrar de alquiler y servicios ----------
 function pendientes() {
   const env = { window: { _pagosSuministros: {} }, DB_SUMINISTROS: [] };
-  return cargar('index.html', [...REDONDEAR, 'obtenerItemsPendientesGP'], env).obtenerItemsPendientesGP;
+  return cargar('index.html', [...REDONDEAR, 'montoServicioInquilinoGP', 'obtenerItemsPendientesGP'], env).obtenerItemsPendientesGP;
 }
 const valor = (items, id) => items.find(i => i.id === id)?.val;
 
@@ -70,7 +70,7 @@ function pantallaCobro() {
     window: { _pagosSuministros: {} }, DB: { contratos: [] }, DB_SUMINISTROS: [], DB_GASTOS_CUOTAS: [],
     formatMoney, TODAY: '2026-11-04', _gpHoja: 'Monje-Espindor', _gpComision: 8
   };
-  return cargar('index.html', [...REDONDEAR, 'calcularTotal', 'obtenerItemsPendientesGP', 'generarItemsCobro'], env).generarItemsCobro;
+  return cargar('index.html', [...REDONDEAR, 'calcularTotal', 'montoServicioInquilinoGP', 'obtenerItemsPendientesGP', 'generarItemsCobro'], env).generarItemsCobro;
 }
 const extra = (id, concepto, importe, tipo = 'debito') => ({ id, concepto, importe, tipo, a_cargo_de: 'inquilino', cobrado: true });
 

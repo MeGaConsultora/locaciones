@@ -6704,21 +6704,33 @@ function mostrarSolapa(id, btn) {
 // Monje-Espíndor nov 2026, EPE convenio cuota 4/6 de $67.780,25) se restaba
 // también del alquiler y "Total a cobrar" quedaba $67.780,25 por debajo del
 // saldo real.
+// Importe de un servicio (epe/agua/tgiu/...) a cobrar al inquilino en un mes.
+// Misma regla que calcularTotal (la que suma la grilla y el campo del GP): si
+// hay fila en pagos_suministros para alguna cuenta del tipo, manda esa; si NO
+// hay ninguna fila (el importe quedó solo en el campo viejo pagos.monto_xxx),
+// se usa ese. Antes "Ingresar Pago" y el recibo ignoraban el campo viejo: el
+// TGIU figuraba en la grilla y sumaba en el total, pero no se ofrecía para
+// cobrar ni salía en el recibo hasta volver a guardar los importes en el GP
+// (caso real: Goitre-Pennacino nov 2026, TGIU $13.053).
+function montoServicioInquilinoGP(p, contratoId, tipo, ps) {
+  const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(contratoId) && s.tipo === tipo);
+  if (sums.length > 0) {
+    let hayFila = false;
+    const total = sums.reduce((t, s) => {
+      const entry = ps[s.id];
+      if (entry === undefined) return t;
+      hayFila = true;
+      return t + (typeof entry === 'object' ? (entry.inq||0) : (entry||0));
+    }, 0);
+    if (hayFila) return total;
+  }
+  return p['monto_'+tipo] || 0;
+}
+
 function obtenerItemsPendientesGP(p, contratoId, extrasCubiertosNeto = 0) {
   if (!p) return [];
   const ps = window._pagosSuministros?.[p?.id] || {};
-  const getSrvMonto = (tipo) => {
-    const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === tipo);
-    if (sums.length > 0) {
-      // Desde junio 2026: usar solo pagos_suministros, sin fallback a monto_xxx
-      return sums.reduce((t, s) => {
-        const entry = ps[s.id];
-        if (entry === undefined) return t;
-        return t + (typeof entry === 'object' ? (entry.inq||0) : (entry||0));
-      }, 0);
-    }
-    return p['monto_'+tipo] || 0;
-  };
+  const getSrvMonto = (tipo) => montoServicioInquilinoGP(p, contratoId, tipo, ps);
   const epe = getSrvMonto('epe'), agua = getSrvMonto('agua'), tgiu = getSrvMonto('tgiu');
   const seguro = getSrvMonto('seguro'), internet = getSrvMonto('internet'), expensas = getSrvMonto('expensas');
 
@@ -6782,18 +6794,7 @@ function generarItemsCobro(p, extrasInq, contratoId, mesKey, honorariosPagadoEst
   if (!p) return '<p style="color:#aaa;font-size:0.85rem">Guardá los importes primero</p>';
 
   const ps = window._pagosSuministros?.[p?.id] || {};
-  const getSrvMonto = (tipo) => {
-    const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === tipo);
-    if (sums.length > 0) {
-      // Desde junio 2026: usar solo pagos_suministros, sin fallback a monto_xxx
-      return sums.reduce((t, s) => {
-        const entry = ps[s.id];
-        if (entry === undefined) return t;
-        return t + (typeof entry === 'object' ? (entry.inq||0) : (entry||0));
-      }, 0);
-    }
-    return p['monto_'+tipo] || 0;
-  };
+  const getSrvMonto = (tipo) => montoServicioInquilinoGP(p, contratoId, tipo, ps);
   const epe = getSrvMonto('epe'), agua = getSrvMonto('agua'), tgiu = getSrvMonto('tgiu');
   const seguro = getSrvMonto('seguro'), internet = getSrvMonto('internet'), expensas = getSrvMonto('expensas');
 
