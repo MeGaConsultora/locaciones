@@ -5822,6 +5822,7 @@ async function guardarServicioItem(inputId) {
           } else {
             await sbPost('pagos_suministros', { pago_id: pago.id, suministro_id: sumId, importe: montoInq, importe_propietario: montoProp });
           }
+          await retirarFilasServicioAjenas(pago.id, c?.id ?? sum?.contrato_id, srv);
         }
 
         // Update pagos.monto_srv = sum of all inquilino portions for this type
@@ -5983,6 +5984,7 @@ async function guardarServicios() {
             } else {
               await sbPost('pagos_suministros', { pago_id: parseInt(pagoId), suministro_id: sumId, importe: montoInq, importe_propietario: montoProp });
             }
+            await retirarFilasServicioAjenas(parseInt(pagoId), parseInt(sum.contrato_id), sum.tipo);
           } else {
             // Sin suministro_id propio: sistema legado, aplica el % general del contrato
             const pct = pctData?.['pct_'+srv] ?? 100;
@@ -7726,6 +7728,44 @@ function mensajeExcedenteCascada(excedenteInicial, resultado) {
   return msg;
 }
 
+// Quita de un mes las filas de pagos_suministros que apuntan a una cuenta de
+// OTRO contrato del MISMO tipo de servicio, una vez que el contrato ya tiene su
+// propia fila de ese tipo. Esas filas ajenas quedan de cuando una cuenta pasó de
+// un contrato a otro (renovación, nuevo inquilino del mismo inmueble); la
+// grilla no las ve (mira solo las cuentas del contrato) pero el total del mes
+// las suma, y al guardar el mes se creaba la fila propia SIN quitar la ajena:
+// el servicio quedaba contado dos veces en el total (casos reales:
+// Galetto-Severini abr 2026, $74.330,16; Cavallero-Varengo ago 2025, $36.967,50).
+// Solo actúa si ya existe la fila propia del tipo (nunca se pierde el importe).
+// Devuelve cuántas filas ajenas quitó.
+async function retirarFilasServicioAjenas(pagoId, contratoId, tipo) {
+  let filas = [];
+  try { filas = await sbGet('pagos_suministros', `pago_id=eq.${pagoId}&select=id,suministro_id,pagado_proveedor`); }
+  catch(e) { console.warn('No se pudieron revisar las filas de servicios del mes:', e); return 0; }
+  const deTipo = filas
+    .map(f => ({ f, s: DB_SUMINISTROS.find(x => x.id === f.suministro_id) }))
+    .filter(x => x.s && x.s.tipo === tipo);
+  const propias = deTipo.filter(x => parseInt(x.s.contrato_id) === parseInt(contratoId));
+  const ajenas = deTipo.filter(x => parseInt(x.s.contrato_id) !== parseInt(contratoId));
+  if (!propias.length || !ajenas.length) return 0;
+  let quitadas = 0;
+  for (const { f } of ajenas) {
+    try {
+      // Si la fila ajena ya figuraba como pagada al proveedor, esa marca pasa a la propia.
+      if (f.pagado_proveedor) {
+        for (const pr of propias) {
+          if (!pr.f.pagado_proveedor) { await sbPatch('pagos_suministros', pr.f.id, { pagado_proveedor: true }); pr.f.pagado_proveedor = true; }
+        }
+      }
+      await sbDelete('pagos_suministros', f.id);
+      if (window._pagosSuministros?.[pagoId]) delete window._pagosSuministros[pagoId][f.suministro_id];
+      quitadas++;
+    } catch(e) { console.warn('No se pudo quitar una fila de servicio de otro contrato:', e); }
+  }
+  if (quitadas) toast('Se quitó un importe duplicado de una cuenta de otro contrato ✓');
+  return quitadas;
+}
+
 async function _syncPagosSuministros(pagoId, contratoId, montosMap) {
   // montosMap = {epe: X, agua: Y, tgiu: Z, seguro: W, internet: V, expensas: U}
   // For each type, find suministros of that type for this contract and upsert
@@ -7759,6 +7799,7 @@ async function _syncPagosSuministros(pagoId, contratoId, montosMap) {
         window._pagosSuministros[pagoId][s.id] = { inq: importe, prop: importe_propietario };
       } catch(e) { console.error('_syncPagosSuministros error:', e); }
     }
+    await retirarFilasServicioAjenas(pagoId, contratoId, tipo);
   }
 }
 
@@ -15711,6 +15752,7 @@ async function confirmarImportarEPE() {
       } else {
         await sbPost('pagos_suministros', { pago_id: p.id, suministro_id: sum.id, importe: montoInq, importe_propietario: montoProp });
       }
+      await retirarFilasServicioAjenas(p.id, parseInt(sum.contrato_id), sum.tipo);
 
       // Leer todos los pagos_suministros del pago para calcular totalSrv correcto
       const allPsActuales = await sbGet('pagos_suministros', `pago_id=eq.${p.id}&select=suministro_id,importe`).catch(()=>[]);
@@ -15936,6 +15978,7 @@ async function confirmarImportarExcel() {
             } else {
               await sbPost('pagos_suministros', { pago_id: p2.id, suministro_id: sum.id, importe: montoInq, importe_propietario: montoProp });
             }
+            await retirarFilasServicioAjenas(p2.id, parseInt(contratoId), sum.tipo);
           }
 
           // Recalculate total from pagos_suministros
@@ -16209,6 +16252,7 @@ async function confirmarImportarPDF() {
           } else {
             await sbPost('pagos_suministros', { pago_id: p.id, suministro_id: s.id, importe: montoInq, importe_propietario: montoProp });
           }
+          await retirarFilasServicioAjenas(p.id, contrato.id, s.tipo);
         }
       }
 

@@ -41,9 +41,10 @@ function armar({ fallarPatchPagosDe = null } = {}) {
         Object.assign(pagos.find(p => p.id === id), cambios);
       } else Object.assign(ps.find(p => p.id === id), cambios);
     },
+    sbDelete: async (tabla, id) => { ps.splice(ps.findIndex(p => p.id === id), 1); },
     encodeURIComponent,
   };
-  const { confirmarImportarExcel } = cargar('index.html', ['confirmarImportarExcel', 'getTotalServiciosPago'], env);
+  const { confirmarImportarExcel } = cargar('index.html', ['confirmarImportarExcel', 'getTotalServiciosPago', 'retirarFilasServicioAjenas'], env);
   return { env, confirmarImportarExcel, ps, pagos };
 }
 
