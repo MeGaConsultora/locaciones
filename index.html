@@ -8288,15 +8288,50 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
     // para poder revertir con precisión qué cuota(s) recibieron la plata
     // (pueden ser de meses anteriores si había atraso).
     let cuotasAfectadas = [];
+    let hayHonorariosSinDesglose = false; // movimiento de honorarios viejo, sin el detalle por cuota
     try {
       const movsHon = await sbGet('movimientos_pagos', `pago_id=eq.${p.id}&concepto=eq.Honorarios&select=*`);
       movsHon.forEach(m => {
+        let conDesglose = false;
         try {
           const items = JSON.parse(m.items || '[]');
-          items.forEach(it => { if (it.cuotas) cuotasAfectadas = cuotasAfectadas.concat(it.cuotas); });
+          items.forEach(it => { if (it.cuotas) { cuotasAfectadas = cuotasAfectadas.concat(it.cuotas); conDesglose = true; } });
         } catch(e) {}
+        if (!conDesglose) hayHonorariosSinDesglose = true;
       });
     } catch(e) {}
+
+    // PRIMERO las cuotas de honorarios, antes de borrar el historial y la Caja.
+    // Antes se hacía al final: si algo fallaba en ese último paso (o la cuota no
+    // estaba en memoria y se salteaba en silencio), el cobro quedaba sin
+    // historial ni Caja pero con la cuota todavía cobrada, sin forma de
+    // revertirla (caso real: Goitre-Pennacino nov 2026, $138.097,36). Ahora, si
+    // esto falla, se corta acá con el error y no se toca nada más.
+    // Descuenta exactamente lo que ESTA transacción aportó a cada cuota (puede
+    // haber tocado cuotas de meses anteriores si había atraso) — nunca resetea
+    // a 0 de más, por si esa cuota recibió aportes de otro mes también.
+    if (cuotasAfectadas.length) {
+      for (const ca of cuotasAfectadas) {
+        let gc = DB_GASTOS_CUOTAS.find(g => g.id === ca.cuota_id);
+        if (!gc) {
+          // No está en memoria (lista desactualizada): se lee de la base en vez de saltearla.
+          gc = (await sbGet('gastos_inicio_cuotas', `id=eq.${ca.cuota_id}&limit=1`))[0];
+          if (!gc) continue;
+        }
+        const nuevoPagado = Math.max(0, Math.round(((parseFloat(gc.pagado_inquilino)||0) - ca.monto) * 100) / 100);
+        await sbPatch('gastos_inicio_cuotas', gc.id, { pagado_inquilino: nuevoPagado });
+        gc.pagado_inquilino = nuevoPagado;
+      }
+    } else if (hayHonorariosSinDesglose) {
+      // Dato viejo sin desglose guardado: mejor esfuerzo con la cuota de este mes.
+      // Solo si ESTE cobro tiene un movimiento de honorarios; si no lo tiene, la
+      // cuota puede haberse cobrado en otra transacción y no se toca.
+      const cuotaH = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey));
+      if (cuotaH && (parseFloat(cuotaH.pagado_inquilino)||0) > 0) {
+        await sbPatch('gastos_inicio_cuotas', cuotaH.id, { pagado_inquilino: 0 });
+        cuotaH.pagado_inquilino = 0;
+      }
+    }
 
     await sbPatch('pagos', p.id, {
       pagado_importe: 0,
@@ -8330,27 +8365,6 @@ async function revertirCobro(hoja, contratoId, mesKey, comisionPct) {
     await revertirRendidoDirectoPropietario(p.id);
     try { await sbDeleteWhere('movimientos_pagos', `pago_id=eq.${p.id}`); } catch(e) {}
     try { await borrarMovimientosCajaDelCobro(p.id); } catch(e) {}
-
-    // Revertir honorarios: descontar exactamente lo que ESTA transacción aportó
-    // a cada cuota (puede haber tocado cuotas de meses anteriores si había
-    // atraso) — nunca resetear a 0 de más, por si esa cuota recibió aportes
-    // de otro mes también.
-    if (cuotasAfectadas.length) {
-      for (const ca of cuotasAfectadas) {
-        const gc = DB_GASTOS_CUOTAS.find(g => g.id === ca.cuota_id);
-        if (!gc) continue;
-        const nuevoPagado = Math.max(0, Math.round(((parseFloat(gc.pagado_inquilino)||0) - ca.monto) * 100) / 100);
-        await sbPatch('gastos_inicio_cuotas', gc.id, { pagado_inquilino: nuevoPagado });
-        gc.pagado_inquilino = nuevoPagado;
-      }
-    } else {
-      // Dato viejo sin desglose guardado: mejor esfuerzo con la cuota de este mes
-      const cuotaH = DB_GASTOS_CUOTAS.find(g => parseInt(g.contrato_id) === contratoId && g.mes && g.mes.startsWith(mesKey));
-      if (cuotaH && (parseFloat(cuotaH.pagado_inquilino)||0) > 0) {
-        await sbPatch('gastos_inicio_cuotas', cuotaH.id, { pagado_inquilino: 0 });
-        cuotaH.pagado_inquilino = 0;
-      }
-    }
 
     toast('Cobro revertido ✓');
     const c = DB.contratos.find(x=>x.id===contratoId);
@@ -8980,18 +8994,26 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
       // Guardar movimiento de honorarios, incluyendo el desglose exacto por cuota
       // (necesario para poder revertir sin ambigüedad, ya que el pago puede
       // repartirse entre cuotas de meses distintos al que se está cobrando).
+      // Si falla, se reintenta una vez; si sigue fallando se AVISA (antes solo
+      // quedaba un aviso en la consola y la cuota figuraba cobrada sin
+      // ningún registro que permitiera revertirla ni verla en Caja/historial).
+      const movHonorarios = {
+        pago_id: p.id,
+        contrato_id: contratoId,
+        hoja,
+        mes: p.mes,
+        fecha: fechaMovimiento,
+        monto: honMonto,
+        concepto: 'Honorarios',
+        items: JSON.stringify([{ label: 'Honorarios', monto: honMonto, cuotas: cuotasAfectadas }])
+      };
       try {
-        await sbPost('movimientos_pagos', {
-          pago_id: p.id,
-          contrato_id: contratoId,
-          hoja,
-          mes: p.mes,
-          fecha: fechaMovimiento,
-          monto: honMonto,
-          concepto: 'Honorarios',
-          items: JSON.stringify([{ label: 'Honorarios', monto: honMonto, cuotas: cuotasAfectadas }])
-        });
-      } catch(e) { console.warn('movimientos_pagos honorarios:', e); }
+        try { await sbPost('movimientos_pagos', movHonorarios); }
+        catch(e1) { console.warn('movimientos_pagos honorarios, reintento:', e1); await new Promise(r => setTimeout(r, 800)); await sbPost('movimientos_pagos', movHonorarios); }
+      } catch(e) {
+        console.warn('movimientos_pagos honorarios:', e);
+        toast('⚠️ Los honorarios se cobraron pero NO quedó el registro en el historial de pagos. Revisá este mes antes de seguir.', 'error');
+      }
     }
   }
 
