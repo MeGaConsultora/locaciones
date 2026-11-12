@@ -7649,14 +7649,26 @@ async function distribuirExcedenteEnCascada(hojaEncoded, mesInicialKey, excedent
     let restanteItem = aAplicar;
     const patchSig = {};
     const itemsMovCascada = []; // detalle para el registro en movimientos_pagos
+    // Importe de cada servicio de ESE mes con la misma regla que la grilla y el
+    // cobro (pagos_suministros si hay fila del tipo; si no, el campo viejo).
+    // Antes se leía solo el campo viejo monto_xxx, que queda en 0 en los
+    // contratos con cuentas reales: el excedente no encontraba a qué ítem
+    // imputarse, quedaba sumado al abonado sin ítem y la lista de pendientes no
+    // lo descontaba (caso real: Aguinaga-Uviedo mar 2026, $11.751,37).
+    const psSig = {};
+    try {
+      const filasSig = await sbGet('pagos_suministros', `pago_id=eq.${sp.id}&select=suministro_id,importe,importe_propietario`);
+      filasSig.forEach(f => { psSig[f.suministro_id] = { inq: parseFloat(f.importe)||0, prop: parseFloat(f.importe_propietario)||0 }; });
+    } catch(e) { console.warn('No se pudieron leer los servicios del mes siguiente:', e); }
+    const montoSig = tipo => montoServicioInquilino(sp, contratoId, tipo, psSig);
     const ordenItems = [
       { campo: 'pagado_alquiler', tipo: 'alquiler', monto: sp.importe_alquiler||0 },
-      { campo: 'pagado_epe',      tipo: 'epe',      monto: sp.monto_epe||0 },
-      { campo: 'pagado_agua',     tipo: 'agua',     monto: sp.monto_agua||0 },
-      { campo: 'pagado_tgiu',     tipo: 'tgiu',     monto: sp.monto_tgiu||0 },
-      { campo: 'pagado_seguro',   tipo: 'seguro',   monto: sp.monto_seguro||0 },
-      { campo: 'pagado_internet', tipo: 'internet', monto: sp.monto_internet||0 },
-      { campo: 'pagado_expensas', tipo: 'expensas', monto: sp.monto_expensas||0 },
+      { campo: 'pagado_epe',      tipo: 'epe',      monto: montoSig('epe') },
+      { campo: 'pagado_agua',     tipo: 'agua',     monto: montoSig('agua') },
+      { campo: 'pagado_tgiu',     tipo: 'tgiu',     monto: montoSig('tgiu') },
+      { campo: 'pagado_seguro',   tipo: 'seguro',   monto: montoSig('seguro') },
+      { campo: 'pagado_internet', tipo: 'internet', monto: montoSig('internet') },
+      { campo: 'pagado_expensas', tipo: 'expensas', monto: montoSig('expensas') },
     ];
     for (const item of ordenItems) {
       if (restanteItem <= 0) break;

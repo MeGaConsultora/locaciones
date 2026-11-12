@@ -83,11 +83,12 @@ const ARCHIVO = 'index.html';
   const montar = meses => {
     const parches = [], movimientos = [];
     const entorno = {
-      sbGet: async (_t, q) => { const m = /mes=gt\.([\d-]+)/.exec(q)[1]; return meses.filter(x => x.mes > m).sort((a, b) => a.mes < b.mes ? -1 : 1).slice(0, 1); },
+      sbGet: async (_t, q) => { if (_t === 'pagos_suministros') return []; const m = /mes=gt\.([\d-]+)/.exec(q)[1]; return meses.filter(x => x.mes > m).sort((a, b) => a.mes < b.mes ? -1 : 1).slice(0, 1); },
       sbPatch: async (_t, id, cuerpo) => { parches.push({ id, ...cuerpo }); },
       sbPost: async (_t, cuerpo) => { movimientos.push(cuerpo); }
     };
-    const { distribuirExcedenteEnCascada } = cargar(ARCHIVO, ['distribuirExcedenteEnCascada'], entorno);
+    entorno.DB_SUMINISTROS = [];
+    const { distribuirExcedenteEnCascada } = cargar(ARCHIVO, ['montoServicioInquilino', 'distribuirExcedenteEnCascada'], entorno);
     return { correr: exc => distribuirExcedenteEnCascada('Hoja', '2026-10-01', exc, 7), parches, movimientos };
   };
   const vacio = (id, mes) => ({ id, mes, total: 0, pagado_importe: 0, importe_alquiler: 0, pagado: '0' });
