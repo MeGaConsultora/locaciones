@@ -44,6 +44,26 @@ test('una fila con importe 0 en pagos_suministros no se pisa con el campo viejo'
   assert.equal(valor(items, 'tgiu'), undefined);     // cargado en 0 a propósito: no se cobra
 });
 
+// ---------- informes: misma regla con los importes ya sumados por tipo ----------
+test('montoServicioDeMapa: manda el importe por tipo si existe (aunque sea 0); si no, el campo viejo', () => {
+  const { montoServicioDeMapa } = cargar('index.html', ['montoServicioDeMapa'], {});
+  const p = { monto_tgiu: 13053, monto_agua: 500 };
+  assert.equal(montoServicioDeMapa(p, { tgiu: 26106 }, 'tgiu'), 26106);   // hay fila: manda la tabla nueva
+  assert.equal(montoServicioDeMapa(p, { tgiu: 0 }, 'tgiu'), 0);           // fila en 0 a propósito: no se pisa
+  assert.equal(montoServicioDeMapa(p, { epe: 10 }, 'tgiu'), 13053);       // sin fila de ese tipo: campo viejo
+  assert.equal(montoServicioDeMapa(p, undefined, 'agua'), 500);           // mes sin ninguna fila
+  assert.equal(montoServicioDeMapa({}, undefined, 'epe'), 0);
+});
+
+// ---------- cobro y recibo: lo que sale del mismo importe que la grilla ----------
+test('un servicio solo en el campo viejo también se ve en los pendientes del recibo (misma regla que la grilla)', () => {
+  const env = { DB_SUMINISTROS: SUMINISTROS };
+  const { montoServicioInquilino } = cargar('index.html', ['montoServicioInquilino'], env);
+  assert.equal(montoServicioInquilino(mesConTgiuViejo, 1, 'tgiu', psSinTgiu), 13053);
+  // y si la tabla nueva tiene otro valor, manda la tabla nueva (antes, en el cobro, ganaba el campo viejo)
+  assert.equal(montoServicioInquilino({ ...mesConTgiuViejo, monto_tgiu: 10934.31 }, 1, 'tgiu', { 1106: { inq: 1389, prop: 0 } }), 1389);
+});
+
 test('contrato sin cuenta real de ese servicio (sistema viejo): usa el campo viejo, como siempre', () => {
   const env = { window: { _pagosSuministros: {} }, DB_SUMINISTROS: [] };
   const { montoServicioInquilino } = cargar('index.html', ['montoServicioInquilino'], env);

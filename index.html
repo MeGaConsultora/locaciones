@@ -4635,11 +4635,7 @@ async function proyectarPeriodo(hoja, desdeKey, importe, periodicidad, diaVenc, 
       });
     }
   } catch(e) { console.error('Error cargando pagos_suministros para actualizar alquileres:', e); }
-  const montoServicioProy = (p, tipo) => {
-    const porTipo = psPorTipoProy[p.id];
-    if (porTipo && porTipo[tipo] !== undefined) return porTipo[tipo];
-    return p['monto_'+tipo] || 0;
-  };
+  const montoServicioProy = (p, tipo) => montoServicioDeMapa(p, psPorTipoProy[p.id], tipo);
 
   // Now update pagos in range
   let count = 0;
@@ -6705,6 +6701,14 @@ function montoServicioInquilino(p, contratoId, tipo, ps) {
   return p['monto_'+tipo] || 0;
 }
 
+// Misma regla que montoServicioInquilino, para los informes, que ya traen los
+// importes sumados por tipo de servicio (psPorTipo: {epe: 123, agua: 45, ...},
+// o undefined si el mes no tiene ninguna fila en pagos_suministros).
+function montoServicioDeMapa(p, psPorTipo, tipo) {
+  if (psPorTipo && psPorTipo[tipo] !== undefined) return psPorTipo[tipo];
+  return p['monto_'+tipo] || 0;
+}
+
 function obtenerItemsPendientesGP(p, contratoId, extrasCubiertosNeto = 0) {
   if (!p) return [];
   const ps = window._pagosSuministros?.[p?.id] || {};
@@ -7222,18 +7226,7 @@ function generarItemsPropietario(p, extrasProp, comisionPct, c, propPersonaId, r
       const servRinde = (c?.servicios_rendir_propietario||'').toLowerCase();
       const hayMultiplesProp = propsCp.length > 1;
       const ps = window._pagosSuministros?.[p?.id] || {};
-      const getSrvMonto = (tipo) => {
-        const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === tipo);
-        if (sums.length > 0) {
-          // Desde junio 2026: usar solo pagos_suministros, sin fallback a monto_xxx
-          return sums.reduce((t, s) => {
-            const entry = ps[s.id];
-            if (entry === undefined) return t;
-            return t + (typeof entry === 'object' ? (entry.inq||0) : (entry||0));
-          }, 0);
-        }
-        return p['monto_'+tipo] || 0;
-      };
+      const getSrvMonto = (tipo) => montoServicioInquilino(p, c?.id, tipo, ps);
       const getSrvMontoProp = (tipo) => {
         const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === parseInt(c?.id) && s.tipo === tipo);
         if (sums.length > 0) {
@@ -8722,17 +8715,12 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
   // Helper: get item amount from pagos field or pagos_suministros
   // (definido ANTES de leer los checkboxes, para poder recalcular en vivo)
   const getItemMonto = (item) => {
-    const montoDirecto = parseFloat(p[`monto_${item}`] || (item==='alquiler'?p.importe_alquiler:0)) || 0;
-    if (montoDirecto > 0) return montoDirecto;
-    // Buscar en pagos_suministros si no está en el campo directo.
+    if (item === 'alquiler') return parseFloat(p.importe_alquiler) || 0;
+    // Servicios: la misma regla que la grilla y que lo que se ofrece en pantalla
+    // (pagos_suministros si hay fila del tipo; si no, el campo viejo).
     // window._pagosSuministros[p.id] es un objeto keyed por suministro_id: {inq, prop} — no un array.
-    const psMap = window._pagosSuministros?.[p.id] || {};
-    const sums = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === item);
-    return sums.reduce((sum, s) => {
-      const entry = psMap[s.id];
-      if (entry === undefined) return sum;
-      return sum + (typeof entry === 'object' ? (entry.inq||0) : (entry||0));
-    }, 0);
+    // Antes el campo viejo ganaba aunque hubiera fila en pagos_suministros.
+    return parseFloat(montoServicioInquilino(p, contratoId, item, window._pagosSuministros?.[p.id] || {})) || 0;
   };
 
   // Get ticked items and their amounts.
@@ -9228,15 +9216,10 @@ async function _confirmarCobroInquilinoImpl(hoja, contratoId, mesKey, comisionPc
     if (item === 'alquiler') {
       monto = parseFloat(p.importe_alquiler) || 0;
     } else {
-      // Usar pagos_suministros si el contrato tiene cuenta real para este
-      // tipo — el campo legado monto_xxx queda en 0 una vez migrado, y por
-      // eso este desglose nunca mostraba EPE/Agua/etc., solo Alquiler.
-      const sumsItem = DB_SUMINISTROS.filter(s => parseInt(s.contrato_id) === contratoId && s.tipo === item);
-      if (sumsItem.length) {
-        monto = sumsItem.reduce((t,s) => { const e = psParaPendientes[s.id]; return t + (e===undefined ? 0 : (typeof e==='object' ? (e.inq||0) : (e||0))); }, 0);
-      } else {
-        monto = parseFloat(p[`monto_${item}`]) || 0;
-      }
+      // Misma regla que la grilla: pagos_suministros si hay fila del tipo (el
+      // campo legado monto_xxx queda en 0 una vez migrado el contrato); si no,
+      // el campo viejo.
+      monto = parseFloat(montoServicioInquilino(p, contratoId, item, psParaPendientes)) || 0;
     }
     const pagadoTotal = pagadoPorItem[`pagado_${item}`] ?? (parseFloat(p[`pagado_${item}`])||0);
     const saldoItem = Math.max(0, monto - pagadoTotal);
@@ -9460,11 +9443,7 @@ async function renderInforme() {
       });
     }
   } catch(e) { console.error('Error cargando pagos_suministros para el informe:', e); }
-  const montoServicioInf = (p, tipo) => {
-    const porTipo = psPorPagoInf[p.id];
-    if (porTipo && porTipo[tipo] !== undefined) return porTipo[tipo];
-    return p['monto_'+tipo] || 0;
-  };
+  const montoServicioInf = (p, tipo) => montoServicioDeMapa(p, psPorPagoInf[p.id], tipo);
 
   // Build rows
   let rows = pagosMes.map(p => {
@@ -10161,11 +10140,7 @@ async function imprimirHistorial(contratoId) {
       extrasMap[e.pago_id] += (e.tipo === 'credito' ? -1 : 1) * (parseFloat(e.importe) || 0);
     });
   }
-  const montoServicioHist = (p, tipo) => {
-    const porTipo = psPorTipo[p.id];
-    if (porTipo && porTipo[tipo] !== undefined) return porTipo[tipo];
-    return p['monto_'+tipo] || 0;
-  };
+  const montoServicioHist = (p, tipo) => montoServicioDeMapa(p, psPorTipo[p.id], tipo);
 
   const calcularTotalHistorial = p => {
     const servicios = psMap[p.id] > 0 ? psMap[p.id]
@@ -12856,11 +12831,7 @@ async function generarReporteMes() {
       psPorTipoRep[r.pago_id][tipo] = (psPorTipoRep[r.pago_id][tipo]||0) + (parseFloat(r.importe)||0);
     });
   } catch(e) { console.error('Error cargando pagos_suministros para el reporte:', e); }
-  const montoServicioRep = (p, tipo) => {
-    const porTipo = psPorTipoRep[p.id];
-    if (porTipo && porTipo[tipo] !== undefined) return porTipo[tipo];
-    return p['monto_'+tipo] || 0;
-  };
+  const montoServicioRep = (p, tipo) => montoServicioDeMapa(p, psPorTipoRep[p.id], tipo);
 
   ventana.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8">
