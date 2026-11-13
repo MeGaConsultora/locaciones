@@ -28,7 +28,7 @@ async function anchos(bytes) {
 }
 
 const SB_URL = 'https://x.supabase.co';
-const NOMBRES = ['esBoletaSeparada', 'rutaBoletaSeparada', 'separarPaginaPdf', 'subirBoletaSeparada',
+const NOMBRES = ['fetchStorage', 'esBoletaSeparada', 'rutaBoletaSeparada', 'separarPaginaPdf', 'subirBoletaSeparada',
   'guardarBoletaSeparada', 'descargarArchivoServicios', 'separarBoletasExistentes'];
 
 // Entorno de mentira: un "Storage" en memoria y una tabla pagos_pdf
@@ -56,6 +56,7 @@ function entorno({ filas, archivos = {}, subidaFalla = false }) {
     throw new Error('pedido inesperado: ' + m);
   };
   const env = {
+    refreshAdminToken: async () => { env.renovaciones++; env.HEADERS.Authorization = 'Bearer nuevo'; return true; }, renovaciones: 0,
     PDFLib, SB_URL, SB_KEY: 'k', HEADERS: { Authorization: 'Bearer t' }, fetch: fetchFalso, console: { error() {}, log() {} },
     sbGetAll: async () => tabla.map(f => ({ ...f })),
     sbPatch: async (t, id, cambios) => { parches.push({ t, id, cambios }); Object.assign(tabla.find(f => f.id === id), cambios); }
@@ -313,4 +314,20 @@ test('SQL 18: correrlo dos veces es seguro', { skip: skipSql }, async () => {
   await db.exec(SQL18);
   const { rows } = await db.query(`select count(*)::int n from pg_policies where tablename = 'objects' and policyname = 'inquilino lee sus boletas de servicios'`);
   assert.equal(rows[0].n, 1);
+});
+
+// ---------- Corridas largas: si el token vence, se renueva y se reintenta ----------
+test('storage: si el token venció (401) se renueva y se reintenta con el token nuevo', async () => {
+  const HEADERS = { Authorization: 'Bearer viejo' };
+  const llamadas = []; let renovaciones = 0;
+  const fetchFalso = async (url, op) => { llamadas.push(op.headers.Authorization); return { ok: op.headers.Authorization === 'Bearer nuevo', status: op.headers.Authorization === 'Bearer nuevo' ? 200 : 401 }; };
+  const { fetchStorage } = cargar('index.html', ['fetchStorage'], { SB_KEY: 'k', HEADERS, fetch: fetchFalso,
+    refreshAdminToken: async () => { renovaciones++; HEADERS.Authorization = 'Bearer nuevo'; return true; } });
+  const r = await fetchStorage('https://x/y', { method: 'POST', headers: { 'Content-Type': 'application/pdf' } });
+  assert.equal(r.ok, true); assert.equal(renovaciones, 1); assert.deepEqual(llamadas, ['Bearer viejo', 'Bearer nuevo']);
+});
+test('storage: si no se puede renovar, devuelve el error (la fila queda sin cambiar)', async () => {
+  const { fetchStorage } = cargar('index.html', ['fetchStorage'], { SB_KEY: 'k', HEADERS: { Authorization: 'Bearer viejo' },
+    fetch: async () => ({ ok: false, status: 401 }), refreshAdminToken: async () => false });
+  assert.equal((await fetchStorage('https://x/y', { headers: {} })).ok, false);
 });

@@ -6200,11 +6200,18 @@ async function separarPaginaPdf(bytes, pagina) {
   salida.addPage(copiadas[0]);
   return salida.save();
 }
+// Pedido a Storage que, si el token venció (corridas largas), lo renueva y reintenta una vez.
+async function fetchStorage(url, opts) {
+  const armar = () => fetch(url, { ...opts, headers: { 'apikey': SB_KEY, 'Authorization': HEADERS['Authorization'], ...opts.headers } });
+  let r = await armar();
+  if ((r.status === 401 || r.status === 403) && typeof refreshAdminToken === 'function') {
+    if (await refreshAdminToken()) r = await armar();
+  }
+  return r;
+}
 async function subirBoletaSeparada(ruta, bytes) {
-  const r = await fetch(`${SB_URL}/storage/v1/object/servicios/${ruta}`, {
-    method: 'POST',
-    headers: { 'apikey': SB_KEY, 'Authorization': HEADERS['Authorization'], 'Content-Type': 'application/pdf', 'x-upsert': 'true' },
-    body: bytes
+  const r = await fetchStorage(`${SB_URL}/storage/v1/object/servicios/${ruta}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/pdf', 'x-upsert': 'true' }, body: bytes
   });
   return r.ok;
 }
@@ -6220,10 +6227,8 @@ async function guardarBoletaSeparada(pagoId, servicio, pagina, bytesOrigen) {
   }
 }
 async function descargarArchivoServicios(path) {
-  const resp = await fetch(`${SB_URL}/storage/v1/object/sign/servicios/${path}`, {
-    method: 'POST',
-    headers: { 'apikey': SB_KEY, 'Authorization': HEADERS['Authorization'], 'Content-Type': 'application/json' },
-    body: JSON.stringify({ expiresIn: 600 })
+  const resp = await fetchStorage(`${SB_URL}/storage/v1/object/sign/servicios/${path}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expiresIn: 600 })
   });
   const data = await resp.json();
   if (!data.signedURL) throw new Error(data.message || data.error || 'no se pudo obtener la URL');
