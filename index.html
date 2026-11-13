@@ -6180,6 +6180,66 @@ function abrirAdjunto(item) {
 // Boleta importada (pagos_pdf): vive dentro de un PDF más grande en el
 // bucket "servicios", en una página específica — se renderiza esa página
 // puntual con pdf.js.
+// Página (HTML) que muestra UNA página de una boleta. El PDF de origen trae las boletas de muchos clientes: por eso
+// "Descargar" nunca baja el archivo completo — arma un PDF de una sola página (pdf-lib) y, si eso fallara, baja la imagen
+// de la página que se está viendo.
+function htmlVisorBoleta(signedUrl, pagina, nombre) {
+  // JSON.stringify con el signo "menor que" escapado: así nada de lo que venga adentro (un nombre con la etiqueta de cierre de script) puede cortar el script del visor
+  const seguro = v => JSON.stringify(v).replace(/</g, '\\u003c');
+  const url = seguro(signedUrl), nom = seguro(nombre), pag = parseInt(pagina) || 1;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Boleta</title>
+<style>body{margin:0;background:#f5f5f5;display:flex;flex-direction:column;align-items:center;font-family:sans-serif}
+.tb{background:#333;color:white;width:100%;padding:8px 16px;display:flex;justify-content:space-between;box-sizing:border-box}
+.tb a{color:white;cursor:pointer;text-decoration:underline}
+canvas{max-width:100%;box-shadow:0 2px 8px rgba(0,0,0,.3);margin:16px}</style>
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"><\/script>
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"><\/script></head>
+<body><div class="tb"><span>Boleta</span><a id="dl">Descargar</a></div>
+<div id="c" style="text-align:center;color:#888;padding:2rem">Cargando...</div>
+<script>
+var URL_PDF = ${url}, PAGINA = ${pag}, NOMBRE = ${nom};
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+function bajar(blob, nombreArchivo) {
+  var u = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = u; a.download = nombreArchivo; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(u); }, 5000);
+}
+document.getElementById("dl").onclick = async function (ev) {
+  if (ev && ev.preventDefault) ev.preventDefault();
+  var enlace = this, texto = enlace.textContent;
+  enlace.textContent = "Preparando...";
+  try {
+    var bytes = await (await fetch(URL_PDF)).arrayBuffer();
+    var origen = await PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
+    var salida = await PDFLib.PDFDocument.create();
+    var copiadas = await salida.copyPages(origen, [PAGINA - 1]);
+    salida.addPage(copiadas[0]);
+    var datos = await salida.save();
+    bajar(new Blob([datos], { type: "application/pdf" }), NOMBRE + ".pdf");
+  } catch (e) {
+    var lienzo = document.querySelector("canvas");
+    if (lienzo) lienzo.toBlob(function (b) { bajar(b, NOMBRE + ".png"); });
+    else alert("No se pudo preparar la boleta: " + e.message);
+  }
+  enlace.textContent = texto;
+};
+pdfjsLib.getDocument(URL_PDF).promise.then(function (d) { return d.getPage(PAGINA); }).then(function (p) {
+  var c = document.getElementById("c"); c.innerHTML = "";
+  var v = p.getViewport({ scale: 1.5 });
+  var cv = document.createElement("canvas"); cv.width = v.width; cv.height = v.height;
+  c.appendChild(cv); p.render({ canvasContext: cv.getContext("2d"), viewport: v });
+}).catch(function (e) { document.getElementById("c").textContent = "No se pudo mostrar la boleta: " + e.message; });
+<\/script></body></html>`;
+}
+
+// Nombre del archivo que se descarga: "Boleta Agua - Contrato - 2026-10".
+function nombreArchivoBoleta(pdfRec) {
+  const etiquetas = { epe: 'EPE', agua: 'Agua', tgiu: 'TGIU', seguro: 'Seguro', internet: 'Internet', expensas: 'Expensas' };
+  const pago = (DB.pagos || []).find(p => p.id === pdfRec.pago_id);
+  const partes = ['Boleta ' + (etiquetas[pdfRec.servicio] || pdfRec.servicio || ''), pago?.hoja, pago?.mes ? String(pago.mes).substring(0, 7) : ''];
+  return partes.filter(x => x && String(x).trim()).join(' - ').replace(/[\\/:*?\x22<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Boleta';
+}
+
 async function abrirBoletaPdf(pdfRec) {
   try {
     const resp = await fetch(
@@ -6194,26 +6254,8 @@ async function abrirBoletaPdf(pdfRec) {
     const signedUrl = data.signedURL ? `${SB_URL}/storage/v1${data.signedURL}` : null;
     if (!signedUrl) throw new Error(data.message || data.error || 'No se pudo obtener URL');
 
-    // Open in new window — use blob to avoid script tag parsing issues
-    const html = [
-      '<!DOCTYPE html><html><head><title>Boleta</title>',
-      '<style>body{margin:0;background:#f5f5f5;display:flex;flex-direction:column;align-items:center;font-family:sans-serif}',
-      '.tb{background:#333;color:white;width:100%;padding:8px 16px;display:flex;justify-content:space-between;box-sizing:border-box}',
-      'canvas{max-width:100%;box-shadow:0 2px 8px rgba(0,0,0,.3);margin:16px}</style>',
-      '<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"><\/script></head>',
-      '<body><div class="tb"><span>Boleta</span>',
-      '<a href="' + signedUrl + '" download style="color:white">Descargar</a></div>',
-      '<div id="c" style="text-align:center;color:#888;padding:2rem">Cargando...</div>',
-      '<script>',
-      'pdfjsLib.GlobalWorkerOptions.workerSrc="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js";',
-      'pdfjsLib.getDocument("' + signedUrl + '").promise.then(d=>d.getPage(' + pdfRec.pdf_pagina + ')).then(p=>{',
-      'var c=document.getElementById("c");c.innerHTML="";',
-      'var v=p.getViewport({scale:1.5});',
-      'var cv=document.createElement("canvas");cv.width=v.width;cv.height=v.height;',
-      'c.appendChild(cv);p.render({canvasContext:cv.getContext("2d"),viewport:v});',
-      '});<\/script></body></html>'
-    ].join('');
-    const blob = new Blob([html], {type:'text/html'});
+    // Se abre en una ventana nueva armada con un blob (evita problemas de parseo de <script>)
+    const blob = new Blob([htmlVisorBoleta(signedUrl, pdfRec.pdf_pagina, nombreArchivoBoleta(pdfRec))], {type:'text/html'});
     const blobUrl = URL.createObjectURL(blob);
     window.open(blobUrl, '_blank', 'width=900,height=800');
 

@@ -184,6 +184,11 @@ Desde "Importe de servicios, paso 2" (12/11/2026) todas las cargas (servicios de
 
 ---
 
+## PARTE 6K — VISOR DE BOLETAS DE SERVICIOS: DESCARGAR SOLO LA PÁGINA (nov 2026)
+Las boletas importadas (pagos_pdf) viven dentro de un PDF grande del bucket "servicios" (las de muchos clientes) y se muestran página por página con pdf.js (`abrirBoletaPdf` → `htmlVisorBoleta`). "Descargar" bajaba el PDF COMPLETO; ahora arma con pdf-lib un PDF de UNA página (la que se ve) y, si no puede, baja la imagen de esa página; nunca el archivo entero. Nombre: "Boleta Agua - <contrato> - <mes>.pdf" (`nombreArchivoBoleta`). Pruebas: `pruebas/boleta_visor.test.mjs` y la guarda `pruebas/sintaxis_html.test.mjs` (cada <script> en línea debe compilar como lo lee el navegador: una etiqueta de cierre de script escrita dentro de un comentario o texto corta TODO el script de la página; las pruebas que extraen funciones por nombre no lo detectan). PENDIENTE (portal de inquilinos): `abrirBoletaPdfInq` deja el enlace de descarga apuntando al PDF completo hasta que termina de armar la imagen de la página, y lo conserva si ese armado falla; además el navegador del inquilino recibe una URL firmada del archivo completo (con boletas de otros clientes). Solución de fondo: guardar cada boleta como archivo de una sola página al importarla.
+
+---
+
 ## PARTE 7 — PENDIENTES / TEMAS ABIERTOS
 - DECIDIDO (oct 2026): la regla del total de un mes vive en DOS lugares (calcularTotal en index.html y total_calculado_pago en SQL) a propósito; las pruebas (saldos_sql.test.mjs) avisan si divergen. Pasar a una sola regla (que la pantalla lea el valor de la base) queda como opción SOLO si la regla empieza a cambiar seguido o reaparecen desfases.
 - Ambiente de prueba (staging): herramienta lista en herramientas/, sin usar; ver PARTE 6B.
