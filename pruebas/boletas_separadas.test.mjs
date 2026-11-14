@@ -29,7 +29,7 @@ async function anchos(bytes) {
 
 const SB_URL = 'https://x.supabase.co';
 const NOMBRES = ['fetchStorage', 'esBoletaSeparada', 'rutaBoletaSeparada', 'separarPaginaPdf', 'subirBoletaSeparada',
-  'guardarBoletaSeparada', 'descargarArchivoServicios', 'separarBoletasExistentes'];
+  'guardarBoletaSeparada'];
 
 // Entorno de mentira: un "Storage" en memoria y una tabla pagos_pdf
 function entorno({ filas, archivos = {}, subidaFalla = false }) {
@@ -101,80 +101,6 @@ test('al importar: si no se puede subir o el PDF está dañado, devuelve null (n
   assert.deepEqual(Object.keys(roto.guardados), []);
   const fueraDeRango = entorno({ filas: [] });
   assert.equal(await fueraDeRango.guardarBoletaSeparada(1, 'agua', 9, await pdfDe(2)), null);
-});
-
-async function escenario() {
-  const grande = await pdfDe(4);       // 4 boletas de clientes distintos
-  const sola = await pdfDe(1);
-  return entorno({
-    archivos: { 'agua/oct/grande.pdf': grande, 'tgiu/oct/sola.pdf': sola, 'agua/oct/otro.pdf': await pdfDe(2) },
-    filas: [
-      { id: 1, pago_id: 10, servicio: 'agua', pdf_path: 'agua/oct/grande.pdf', pdf_pagina: 1 },
-      { id: 2, pago_id: 11, servicio: 'agua', pdf_path: 'agua/oct/grande.pdf', pdf_pagina: 3 },
-      { id: 3, pago_id: 12, servicio: 'agua', pdf_path: 'agua/oct/grande.pdf', pdf_pagina: 4 },
-      { id: 4, pago_id: 13, servicio: 'tgiu', pdf_path: 'tgiu/oct/sola.pdf', pdf_pagina: 1 },
-      { id: 5, pago_id: 14, servicio: 'agua', pdf_path: 'boletas/14/agua_5.pdf', pdf_pagina: 1 },      // ya separada
-      { id: 6, pago_id: 15, servicio: 'agua', pdf_path: 'agua/oct/otro.pdf', pdf_pagina: 9 },         // página inexistente
-      { id: 7, pago_id: 16, servicio: 'agua', pdf_path: 'agua/oct/perdido.pdf', pdf_pagina: 1 },      // el archivo ya no está
-      { id: 8, pago_id: 17, servicio: 'agua', pdf_path: null, pdf_pagina: null }
-    ]
-  });
-}
-
-test('migración: solo contar no modifica nada', { skip: skipPdf }, async () => {
-  const e = await escenario();
-  const r = await e.separarBoletasExistentes({ soloContar: true });
-  assert.equal(r.total, 8); assert.equal(r.pendientes, 6); assert.equal(r.yaSeparadas, 1); assert.equal(r.sinArchivo, 1); assert.equal(r.archivos, 4);
-  assert.deepEqual(e.parches, []); assert.deepEqual(e.guardados, {}); assert.deepEqual(e.bajadas, []);
-});
-
-test('migración: cada boleta queda en su propio archivo de una página, con SU página', { skip: skipPdf }, async () => {
-  const e = await escenario();
-  const r = await e.separarBoletasExistentes({ soloContar: false });
-  assert.equal(r.separadas, 4);
-  const porId = id => e.tabla.find(f => f.id === id);
-  for (const id of [1, 2, 3, 4]) {
-    assert.match(porId(id).pdf_path, /^boletas\//);
-    assert.equal(porId(id).pdf_pagina, 1);
-  }
-  // el archivo de cada fila tiene exactamente una página y es la que correspondía (ancho = 100 + página original)
-  assert.deepEqual(await anchos(e.guardados[porId(1).pdf_path]), [101]);
-  assert.deepEqual(await anchos(e.guardados[porId(2).pdf_path]), [103]);
-  assert.deepEqual(await anchos(e.guardados[porId(3).pdf_path]), [104]);
-  assert.deepEqual(await anchos(e.guardados[porId(4).pdf_path]), [101]);
-  // ninguno de los archivos nuevos tiene más de una página
-  for (const bytes of Object.values(e.guardados)) assert.equal((await anchos(bytes)).length, 1);
-  // cada archivo origen se descarga una sola vez aunque tenga varias boletas
-  assert.equal(e.bajadas.filter(x => x === 'agua/oct/grande.pdf').length, 1);
-  // lo que no se pudo queda como estaba y se informa
-  assert.deepEqual(r.fallidas.map(f => f.id).sort(), [6, 7]);
-  assert.equal(porId(6).pdf_path, 'agua/oct/otro.pdf');
-  assert.equal(porId(7).pdf_path, 'agua/oct/perdido.pdf');
-  assert.equal(porId(5).pdf_path, 'boletas/14/agua_5.pdf');                 // la ya separada no se toca
-  assert.ok(!e.parches.some(p => p.id === 5 || p.id === 8));
-  // respaldo para poder volver atrás
-  assert.equal(r.mapeo.length, 4);
-  assert.deepEqual(r.mapeo.find(m => m.id === 2).antes, { pdf_path: 'agua/oct/grande.pdf', pdf_pagina: 3 });
-});
-
-test('migración: se puede repetir sin duplicar ni rehacer lo ya separado', { skip: skipPdf }, async () => {
-  const e = await escenario();
-  await e.separarBoletasExistentes({ soloContar: false });
-  const subidos = Object.keys(e.guardados).length, parchesAntes = e.parches.length;
-  const otra = await e.separarBoletasExistentes({ soloContar: false });
-  assert.equal(otra.separadas, 0);
-  assert.equal(Object.keys(e.guardados).length, subidos);
-  assert.equal(e.parches.length, parchesAntes);
-  assert.deepEqual(otra.fallidas.map(f => f.id).sort(), [6, 7]);            // solo reintenta las que fallaron
-});
-
-test('migración: si no se puede subir el archivo nuevo, la fila NO cambia (sigue apuntando a lo de antes)', { skip: skipPdf }, async () => {
-  const e = entorno({ archivos: { 'a/g.pdf': await pdfDe(3) }, subidaFalla: true,
-    filas: [{ id: 1, pago_id: 1, servicio: 'agua', pdf_path: 'a/g.pdf', pdf_pagina: 2 }] });
-  const r = await e.separarBoletasExistentes({ soloContar: false });
-  assert.equal(r.separadas, 0); assert.equal(r.fallidas.length, 1);
-  assert.deepEqual(e.parches, []);
-  assert.equal(e.tabla[0].pdf_path, 'a/g.pdf');
 });
 
 // ---------- Importación (confirmarImportarPDF): qué se adjunta ----------
